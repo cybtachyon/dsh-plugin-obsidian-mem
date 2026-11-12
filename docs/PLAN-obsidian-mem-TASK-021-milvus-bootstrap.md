@@ -26,6 +26,15 @@ verified spawn command, db-file semantics, and Node SDK connection shape BEFORE 
 - Crash resilience: if the child dies, mark service degraded (memory_search returns
   explicit "index offline" message; audit reports it) and respawn with backoff.
 
+## Prior-art traps (RESEARCH-FINDINGS.md §2 "scar tissue" — enforce all)
+
+- Milvus Lite 3.x stores the DB as a DIRECTORY (2.x stored a file): detect layout; no auto
+  migration — move aside + rebuild with a loud log line.
+- Collection can sit "released": `loadCollection` before every search path.
+- On shutdown `releaseCollection`/`releaseServer` (client close) or memory.db stays locked.
+- Empty collection + BM25 hybrid can NaN: strong-consistency `count(*)` guard before
+  querying; skip hybrid when empty (TASK-024).
+
 ## DoD
 
 Unit tests with injected spawner/child stubs (spawn args, config yaml contents, port

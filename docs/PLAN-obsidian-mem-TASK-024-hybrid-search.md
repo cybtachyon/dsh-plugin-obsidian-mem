@@ -20,6 +20,14 @@ Depends: TASK-022, TASK-023. `packages/service/src/search.ts`.
   exact file, fall back to ARRAY_CONTAINS(ext) + framework filters + query text.
 - Guard: Milvus unavailable → typed `IndexOfflineError` (callers degrade quietly).
 
+## Prior-art specifics (RESEARCH-FINDINGS.md §2)
+
+- Hybrid: `hybridSearch` with dense + BM25 ann requests and `RRFRanker(k=60)` (memsearch);
+  normalize score by `num_retrievers/(k+1)`.
+- ALWAYS `loadCollection` before search (lite 'released' trap) and count(*)-guard empty
+  collections before dispatching BM25 (NaN crash).
+- `ensureMemoryAccess` first (lazy default vault; Decision log).
+
 ## DoD
 
 Golden-expression tests, dedupe/budget tests, offline degradation test (fakes); commit.

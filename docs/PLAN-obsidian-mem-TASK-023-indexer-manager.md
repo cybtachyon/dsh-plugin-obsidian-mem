@@ -19,9 +19,11 @@ Depends: TASK-013, TASK-015, TASK-022. `packages/service/src/indexer.ts`.
   completion extracts `{wake_keywords, trigger_frameworks}` per chunk; failure falls back to
   heuristics; never blocks indexing.
 - Triggers: activation full-scan (background, non-blocking), per-vault debounced
-  fs.watch (recursive where available, 30s polling fallback), manual `reindexAll()`
+  fs.watch (recursive where available, 30s polling fallback; debounce 1500 ms per memsearch
+  watchdog, watch for duplicate events), manual `reindexAll()`
   (used by card + audit), write-through single-file reindex hook for memory_write.
-- Cap: max files per vault, max chunks per file, embed batch 16; progress counters exposed
+- Cap: max files per vault, max chunks per file, embed batch 32 (memsearch measured
+  throughput plateau); progress counters exposed
   for status (`indexed/pending/errors`) consumed by ui + audit.
 - Milvus offline → queue dirty state, retry on next activation (state file diff covers it).
 

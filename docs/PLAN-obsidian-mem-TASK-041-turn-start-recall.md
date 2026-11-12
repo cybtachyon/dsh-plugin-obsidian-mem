@@ -10,6 +10,9 @@ Depends: TASK-040, TASK-014, TASK-045 (globalMemoryIndex). `packages/events/src/
   `next()` and return the decision unchanged; spread the decision) when
   `turn === 1 && step === 1` or first-seen session.
 - Flow (once per session):
+  0. Call `ctx.obsidianMem.ensureMemoryAccess()` (lazy default vault per Decision log);
+     when it returns the one-time default-vault notice, prepend it to the injected
+     context (full path included).
   1. build WorkspaceManifest from the agent cwd (`agent.session.header.cwd`).
   2. query = first user message text (payload `messages`) + `manifestQueryText()`.
   3. `ctx.obsidianMem.search(query, topK=budget-fit)`; filter `shouldInject` per source.

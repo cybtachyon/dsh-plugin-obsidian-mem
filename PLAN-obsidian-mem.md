@@ -5,7 +5,8 @@ turns Markdown vaults into shared agent memory. Tools: `memory_read`, `memory_se
 `memory_write`, `memory_dream`, `memory_audit`. Lifecycle hooks inject automatic recall at turn
 start, on Read tool calls, and on Think-stream keyword hits; turn end sends the save/audit
 reminder. Backend: Milvus-Lite (via @zilliz/milvus2-sdk-node) + @huggingface/transformers
-(Xenova/multilingual-e5-small, ONNX int8, passage:/query: prefixes, MRL truncation). Settings
+(Xenova/multilingual-e5-small, ONNX int8, passage:/query: prefixes; full 768-d vectors by
+default, optional truncation via vectorDim). Settings
 card manages multiple Vaults as "Adopt and Share" or "Read-only".
 
 ## Verification guidelines
@@ -128,3 +129,17 @@ task file lists explicit cross-phase prerequisites.
   `$HOME/.dsh/obsidian-mem/models`; `scripts/prefetch-model.mjs` for offline pre-seed.
 - Q6 Install: **Yes**, install bundle into current profile via plugin_manager and verify
   live (rows active, five tools listed, card mounted, collection created).
+
+## Decision log (post-questionnaire)
+
+- 2026-11-12 **Lazy default vault**: the default shared vault at `$HOME/.dsh/obsidian-mem/`
+  is created ONLY at the first moment the plugin needs to access memory (first tool call or
+  lifecycle hook that reads/writes memory), never at install/activation. The first memory
+  access must notify the agent that a default memory vault is in use and give the full
+  path (one-time notice, re-stated by memory_audit). Rationale: the user gets time between
+  installing the plugin and their next agent run to set up their own vaults, while
+  unconfigured installs still work out of the box. Activation must stay side-effect free
+  when no vaults are configured (no vault dirs, no DB, no Milvus child). Implementation
+  seam: `service.ensureMemoryAccess()` (idempotent; provisions default vault + .INTENTS.md
+  + dbDir + Milvus + collection + indexer on first call and returns a one-time `notice`
+  string with the path). Tasks affected: 011, 030..034, 041, 063.

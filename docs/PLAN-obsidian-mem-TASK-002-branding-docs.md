@@ -6,8 +6,10 @@ Depends: TASK-001.
 
 - `README.md`: user-facing overview. Obsidian Mem uses markdown vaults as shared agent
   memory; frictionless human-editable working wikis; Milvus-Lite vector recall; tools
-  memory_read/search/write/dream/audit; shared vs read-only vaults; default vault at
-  `$HOME/.dsh/obsidian-mem/`; DB at `$HOME/.dsh/obsidian-mem-db/`; config knobs table; uv
+  memory_read/search/write/dream/audit; shared vs read-only vaults; works out of the box:
+  with no shared vault configured, a default vault at `$HOME/.dsh/obsidian-mem/` is
+  created on FIRST memory access (not at install) and the agent is told so with the full
+  path; DB at `$HOME/.dsh/obsidian-mem-db/`; config knobs table; uv
   auto-spawn note; model prefetch script note.
 - `AGENTS.md`: copy local-infer's structure and code style sections, rewrite Architecture for
   this plugin's packages {core,service,ui,tools,events,client,bundle}, dev env tips (no

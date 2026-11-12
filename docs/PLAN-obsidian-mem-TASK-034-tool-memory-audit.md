@@ -8,7 +8,11 @@ as the canonical reference before implementing.
 
 - No required params (`{}` → full doctor). Checks, each with ok/warn/fail + fix text:
   1. vaults exist, markdown/ present, shared vaults writable, read-only list.
-  2. at least one shared vault (default created if none, report it).
+  2. shared vault present. If none is configured AND the default has not been provisioned
+     yet: report that the default vault will be created at its full path on first memory
+     access (do NOT create it from audit; audit is a doctor, not an accessor). If the
+     default vault is provisioned and in use: state that it is the default and give the
+     full path (restating the Decision-log notice).
   3. .INTENTS.md present in first shared vault; which of the 9 intent markers have
      recorded intents vs empty.
   4. Milvus reachable; collection exists; live count vs indexer state (drift N).

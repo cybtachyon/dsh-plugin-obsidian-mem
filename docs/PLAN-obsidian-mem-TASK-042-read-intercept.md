@@ -11,6 +11,8 @@ Depends: TASK-040, TASK-024. `packages/events/src/readIntercept.ts`.
   snippet (first ~2 KB: `import|require|use|from` lines, max 12 lines).
 - Call `searchExactSections(filePath, { ext, dirSignals, snippet, k=2,
   sectionTokens=350 })` (exact-file chunks first, ext/framework ARRAY_CONTAINS fallback).
+  Search goes through `service.ensureMemoryAccess()`; a pending one-time default-vault
+  notice is prepended to the injection (Decision log).
 - Respect `shouldInject` (source once per session) + per-session throttle (skip when last
   read-injection < 15s or same dir already covered) + thinkBudget-independent cap.
 - Inject with `agent.inject()` wrapped `<recalled_memory source=...>`; mark injected.

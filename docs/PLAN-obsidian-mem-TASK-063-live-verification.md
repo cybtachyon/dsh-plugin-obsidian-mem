@@ -12,9 +12,10 @@ Depends: TASK-062.
   install, note that tool visibility applies to newly created agents; state it honestly).
 - Client `Slots.listSubTree` root `plugins.bundle.config` → occupant with our key (the
   page must be refreshed for client changes; ask the user or note it).
-- Filesystem: `$HOME/.dsh/obsidian-mem/{markdown,metadata}` + `.INTENTS.md` seeded;
-  `$HOME/.dsh/obsidian-mem-db/memory.db` created; collection exists (count via a small
-  node script using the plugin's own client factory if convenient).
+- Filesystem: before any memory access nothing exists (post-install check); after the
+  first memory access: `$HOME/.dsh/obsidian-mem/{markdown,metadata}` + `.INTENTS.md`
+  seeded, `$HOME/.dsh/obsidian-mem-db/memory.db` created, collection exists, and the tool
+  result carried the one-time default-vault notice with the full path (Decision log).
 - Behavior spot checks: run `memory_search` with a fixture note written via
   `memory_write` (write→search→read→audit cycle as the agent itself); confirm wrapper text,
   read-stats updated, audit report sane, read-only rejection with a temp read-only vault.

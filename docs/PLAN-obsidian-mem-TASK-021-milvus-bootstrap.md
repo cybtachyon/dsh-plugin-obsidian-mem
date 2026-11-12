@@ -7,6 +7,9 @@ verified spawn command, db-file semantics, and Node SDK connection shape BEFORE 
 
 - Config: `{ mode: 'spawn'|'external', address?, port?, dbPath? }` (default spawn;
   external skips spawn and uses address).
+- Start is LAZY: the service calls the launcher only from `ensureMemoryAccess()`
+  (Decision log in PLAN), never at activation, so an unconfigured install spawns no
+  child process.
 - spawn mode lifecycle inside the plugin's own `ctx.effect`:
   1. ensure `uv`/`uvx` binary (probe PATH + `~/.local/bin`; when absent, auto-install uv via
      the official installer script; surface a friendly error if that fails).

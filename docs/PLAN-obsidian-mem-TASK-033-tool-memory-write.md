@@ -17,6 +17,9 @@ Depends: TASK-030, TASK-012. `packages/tools/src/write.ts`.
      colon), description one-sentence-ish (soft warn), valid type slug.
   4. soft warn (result note, not rejection) when contents lack `Why:` and `How to apply:`
      lines.
+- Route through `service.ensureMemoryAccess()` before the guards; when it provisions the
+  default vault, the write proceeds there and the one-time notice (full path) is prepended
+  to the result (Decision log).
 - Write: serialize frontmatter + contents (created preserved, updated=now), atomic write,
   then synchronous single-file reindex (indexer.writeThrough) so later searches see it;
   archived=true → note excluded from index (chunks deleted) but file kept.

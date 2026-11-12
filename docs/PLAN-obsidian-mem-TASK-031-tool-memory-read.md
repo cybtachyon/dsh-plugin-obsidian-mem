@@ -8,6 +8,8 @@ JSON Schema, output{schema, render}, execute(args, exec)) — re-verify current 
 ## Scope
 
 - Params: `{ path: string (absolute), offset?: int, limit?: int (lines) }`.
+- Route through `service.ensureMemoryAccess()`; when it reports the one-time default-vault
+  notice, prepend it to the tool result (Decision log: lazy default vault).
 - Path must resolve inside a known vault's `markdown/` dir (classifyPath) → else clear
   error listing configured vaults. Reading from read-only vaults is ALLOWED.
 - Effects: update frontmatter `last_read_at` (date) and `read_count += 1` (file write;

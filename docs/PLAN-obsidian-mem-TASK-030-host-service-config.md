@@ -11,9 +11,18 @@ This is the `export function apply(ctx, config)` + `export const Config` row.
   `budgets: { turnStartRecallTokens, globalMemoryTokens, readSections, readSectionTokens,
   searchTopK, thinkShotsPerTurn }`, `llm: { enabled, baseUrl, model, apiKeyEnv }`,
   `dreaming: { schedules: [{ id, label, expression|everySeconds }] }` (card-managed).
-- Activation order: resolve vaults → ensureDefaultVault → seed .INTENTS.md in first shared
-  vault → mkdir dbDir → start milvus launcher (spawn) → ensureCollection → start indexer
-  (background) → publish `ctx.obsidianMem` service object (plain object on ctx via
+- Activation stays side-effect free: resolve config/vaults and publish the service object.
+  NO vault/db creation, NO Milvus child when nothing is configured.
+- `ensureMemoryAccess()` (idempotent async, Decision log): first call only, in this order:
+  zero shared vaults → `provisionDefaultVault` + seed `.INTENTS.md` → mkdir dbDir →
+  milvus launcher start (spawn) → ensureCollection → indexer background start → set the
+  one-time `notice` = "Obsidian Mem is using the default memory vault at <full path>.
+  Add your own vaults in the Obsidian Mem settings card to override." The notice is
+  returned to, and must be included by, whichever tool/injection triggered it (tools
+  031-034 prepend it to the result; turn-start recall prepends it to the injected context;
+  audit restates it while the default vault is in use).
+  All memory-access service methods route through it first.
+- Publish `ctx.obsidianMem` service object (plain object on ctx via
   ctx.provide? follow the Cordis service-declaration convention found via
   `cordis_inspect_query Service listService` + local-infer's `ctx.localInfer` pattern — the
   service class as default export OR ctx service declaration, whichever this harness build
@@ -29,5 +38,7 @@ This is the `export function apply(ctx, config)` + `export const Config` row.
 
 ## DoD
 
-Schema snapshot test; apply() lifecycle test with all externals injected/faked (startup,
-degraded start, disposal cleans watchers+child); commit.
+Schema snapshot test; apply() lifecycle test: activation with empty vaults creates NOTHING
+on disk (stat assertions); ensureMemoryAccess creates default vault exactly once (two
+concurrent calls) and yields the notice exactly once; degraded start; disposal cleans
+watchers+child; commit.

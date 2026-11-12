@@ -1,0 +1,35 @@
+# TASK-044 Turn-end reminder
+
+Depends: TASK-040. `packages/events/src/turnEnd.ts`. Study how
+dsh-longterm-memory subscribes to durable `turn/end` (`session/event` filtered on
+`event.type === 'turn/end'`; there is NO Cordis `turn/start|end` event) and what
+engramory-ext used to wake agents (followup vs inject).
+
+## Scope
+
+- Detect turn end on the durable session event; skip subagent sessions (Task-040
+  `isSubagent`).
+- Deliver the reminder to the agent using `agent.followup()` (wakes the agent to act) —
+  confirm followup exists on the Agent API via inspection; if absent in this build, fall
+  back to inject + document the limitation. One reminder per turn end, max one per
+  turn number per session.
+- Reminder body: the VERBATIM block from the project spec (see PLAN task body below) with
+  `/absolute/path/to/first/shared/vault/.INTENTS.md` replaced by the real path.
+
+  ```
+  1. When you have learned something durable worth knowing in a future session: confirm it isn't already in the repo / git / AGENTS.md and isn't a secret value. Don't duplicate the source of truth.
+  2. Use the `memory_search` tool and update an existing note rather than duplicate; otherwise write one atomic markdown file (one fact) with the `memory_write` tool.
+  3. New memories go in the most related shared vault.
+  4. The memory must carry a Why: line and a How to apply: line in the body.
+  5. Archive memories that turn out wrong with the `memory_write` tool.
+  6. Never store secret values, only where they live.
+  7. Evaluate your turn and find instances where existing memories would have assisted you.
+  Check if there were any significant patterns in your language that would indicate a use for the memory,
+  then update <FIRST_SHARED_VAULT>/.INTENTS.md with those intent(s).
+  8. Run the `memory_audit` tool.
+  ```
+
+## DoD
+
+turn/end fixture triggers exactly one followup with the verbatim text + real path;
+subagent sessions skipped; duplicate turn events deduped; commit.

@@ -49,3 +49,10 @@ Scope:
 Definition of Done: plan file carries the dated iteration row
 (values | POS recalled | NEG recalled | noise sources | verdict).
 The test memories' disposition (kept/archived) is recorded.
+
+- [x] Complete 2026-11-13 (three iterations, probes 0ccf7c59 / 826b1e03
+  / e760a6a1): iteration rows live in PLAN-milvus-tuning.md "Live
+  test-loop log" with per-channel source lists and verdicts. Test
+  memories: 4 planted notes kept in place across iterations, archived
+  in TASK-013. Budget enabler (globalMemoryTokens 50000) active for
+  the whole window; reverted in TASK-013.

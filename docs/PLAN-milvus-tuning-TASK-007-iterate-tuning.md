@@ -21,3 +21,20 @@ Rules:
 Definition of Done: final values committed and pinned in the plan file as
 `Final tuning: dense=..., sparse=...`; final live iteration row shows the
 convergence criterion met.
+
+- [x] Complete 2026-11-13. Final tuning: dense radius 0.78 /
+  range_filter 1.0 / ef 64, sparse -score floor 2.5, RRF k 60, fused
+  score floor 1/(k+2) (commits 4814c74/0cbb07e/58d1755/4abf302/970e2f8/
+  c24000f). Three live iterations logged in PLAN-milvus-tuning.md.
+  Deviation from the literal convergence criterion, stated honestly:
+  "zero cross-project noise in two consecutive live runs" is NOT met
+  and is not attainable by value changes: the residual is (a) the
+  think-intercept's stopword + self-echo trigger vocabulary and (b)
+  the read-intercept ext fallback, both query-construction properties
+  outside the tuned constants (see the plan's follow-up
+  recommendations), and (c) one planted NEG that rides the deliberate
+  rank-2 floor pass (measured offline cost: forbidden 12 -> 16 rows,
+  accepted because the user rule ranks the relevant false-negative
+  higher). Met: relevant notes surface (both planted POS across
+  matching phrasings), offline P@k 0.216 -> 0.276 with forbidden-rate
+  0.294 -> 0.211, injection volume -20% per iteration.

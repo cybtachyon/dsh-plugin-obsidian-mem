@@ -202,6 +202,37 @@ describe('chunkMarkdown: long-chunk split and ids', () => {
     ])
   })
 
+  it('hard-cuts a run-on sentence no boundary can split', () => {
+    // Budget arithmetic: 'Big\n' (4 chars) plus 36 chars is 40 chars, the
+    // largest body forceSplit's binary search accepts at maxTokens 10.
+    const chunks = chunkMarkdown(
+      { source_path: 'run.md', text: ['# Big', '', 'x'.repeat(120)].join('\n') },
+      { maxTokens: 10 },
+    )
+    expect(chunks.map((chunk) => chunk.part)).toEqual([0, 1, 2, 3])
+    expect(chunks.map((chunk) => chunk.chunk_text)).toEqual([
+      `Big\n${'x'.repeat(36)}`,
+      `Big\n${'x'.repeat(36)}`,
+      `Big\n${'x'.repeat(36)}`,
+      `Big\n${'x'.repeat(12)}`,
+    ])
+    for (const chunk of chunks) {
+      expect(chunk.approxTokens).toBeLessThanOrEqual(10)
+    }
+  })
+
+  it('emits one whole oversized part when the header path alone exhausts the budget', () => {
+    // Documented forceSplit tradeoff: 'Big\n' alone spends maxTokens 1,
+    // no prefix fits, so the body is emitted over budget, never dropped.
+    const chunks = chunkMarkdown(
+      { source_path: 'h.md', text: ['# Big', '', 'hello there'].join('\n') },
+      { maxTokens: 1 },
+    )
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]?.chunk_text).toBe('Big\nhello there')
+    expect(chunks[0]?.approxTokens).toBeGreaterThan(1)
+  })
+
   it('keeps (source_path, header_hash, part) tuples unique', () => {
     const chunks = chunkMarkdown(
       {

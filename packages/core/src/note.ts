@@ -52,6 +52,15 @@ const HOW_LINE = /^\s*(?:[-*>]\s*)?(?:\*\*)?How to apply(?:\*\*)?\s*[:：]/im
 // validity is checked separately by a Date.UTC round-trip.
 const ISO_STAMP = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/
 
+// The YYYY-MM-DD calendar prefix every ISO date and timestamp starts
+// with; stampOf and isIsoStamp slice and split at this length.
+const ISO_DATE_CHARS = 10
+
+// A YAML date-only scalar arrives as a UTC-midnight Date; toISOString
+// always spells that instant with this suffix, which identifies the bare
+// dates whose time part should be dropped again.
+const UTC_MIDNIGHT_SUFFIX = 'T00:00:00.000Z'
+
 /** The outcome of validating note meta; empty arrays mean valid. */
 export interface MetaValidation {
   errors: string[]
@@ -230,7 +239,7 @@ function textOf(value: unknown): string {
 function stampOf(value: unknown): string {
   if (value instanceof Date) {
     const iso = value.toISOString()
-    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso
+    return iso.endsWith(UTC_MIDNIGHT_SUFFIX) ? iso.slice(0, ISO_DATE_CHARS) : iso
   }
   return textOf(value)
 }
@@ -268,7 +277,7 @@ function isIsoStamp(value: string): boolean {
   if (!ISO_STAMP.test(value)) {
     return false
   }
-  const parts = value.slice(0, 10).split('-').map(Number)
+  const parts = value.slice(0, ISO_DATE_CHARS).split('-').map(Number)
   const year = parts[0] ?? 0
   const month = parts[1] ?? 0
   const day = parts[2] ?? 0

@@ -8,8 +8,9 @@ import {
   provisionDefaultVault,
   resolveVaults,
   seedIntentsFile,
-  VAULT_MODE_READ_ONLY,
   VAULT_MODE_SHARED,
+  VAULT_MODES,
+  VAULT_MODE_READ_ONLY,
 } from '../src/vaults.ts'
 import type { VaultConfig, VaultFs } from '../src/vaults.ts'
 
@@ -132,6 +133,18 @@ describe('resolveVaults', () => {
     expect(result.rejected).toHaveLength(1)
     expect(result.rejected[0]?.kind).toBe('duplicate')
   })
+
+  it('accepts exactly the two declared VAULT_MODES values', () => {
+    expect(VAULT_MODES).toEqual([VAULT_MODE_SHARED, VAULT_MODE_READ_ONLY])
+    const fs = new MemoryFs(['/vaults/a', '/vaults/b'])
+    const result = resolveVaults([
+      { path: '/vaults/a', mode: VAULT_MODES[0] },
+      { path: '/vaults/b', mode: VAULT_MODES[1] },
+    ], fs)
+
+    expect(result.rejected).toEqual([])
+    expect(result.vaults).toHaveLength(2)
+  })
 })
 
 describe('vault dir accessors', () => {
@@ -245,6 +258,19 @@ describe('seedIntentsFile', () => {
       expect(contents).toContain(`## ${marker}\n`)
     }
     expect(fs.writeCalls).toBe(1)
+  })
+
+  it('renders a non-empty hint paragraph under every intent marker', () => {
+    const fs = new MemoryFs()
+    seedIntentsFile(fs, DEFAULT_VAULT)
+    const contents = fs.readFile(`${DEFAULT_VAULT}/${INTENTS_FILE}`) ?? ''
+
+    for (const marker of INTENT_MARKERS) {
+      // Section body: what stands between this marker's line and the
+      // next '## ' header.
+      const body = (contents.split(`## ${marker}\n`)[1] ?? '').split('##')[0] ?? ''
+      expect(body.trim(), `section ${marker}`).not.toBe('')
+    }
   })
 
   it('is idempotent: an existing file is never rewritten', () => {

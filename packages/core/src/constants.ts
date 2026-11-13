@@ -127,6 +127,11 @@ export function stateDir(homedir: string): string {
 /** Tag name that fences injected recalled memory in agent context. */
 export const RECALLED_TAG = 'recalled_memory'
 
+// The open tag's attribute carrying the source path. RECALLED_OPEN and
+// the RECALLED_SEGMENT regex both interpolate it, so the tag shape has
+// one definition.
+const RECALLED_SOURCE_ATTR = 'source'
+
 /**
  * RECALLED_OPEN builds the opening `<recalled_memory source="...">` tag
  * for an absolute source path, escaping the attribute so a path containing
@@ -134,7 +139,7 @@ export const RECALLED_TAG = 'recalled_memory'
  * with the RECALLED_CLOSE constant it wraps.
  */
 export function RECALLED_OPEN(source: string): string {
-  return `<${RECALLED_TAG} source="${escapeAttribute(source)}">`
+  return `<${RECALLED_TAG} ${RECALLED_SOURCE_ATTR}="${escapeAttribute(source)}">`
 }
 
 /** Closing counterpart of RECALLED_OPEN. */
@@ -154,7 +159,7 @@ export interface RecalledSegment {
 // Anchored at both ends: the wrapper is a whole message/section, never an
 // interior fragment, so recall budget accounting can strip it exactly.
 const RECALLED_SEGMENT = new RegExp(
-  `^<${RECALLED_TAG} source="([^"]*)">\\n([\\s\\S]*)\\n</${RECALLED_TAG}>$`,
+  `^<${RECALLED_TAG} ${RECALLED_SOURCE_ATTR}="([^"]*)">\\n([\\s\\S]*)\\n</${RECALLED_TAG}>$`,
 )
 
 /** Unwraps a whole recalled-memory segment back to source and body. */

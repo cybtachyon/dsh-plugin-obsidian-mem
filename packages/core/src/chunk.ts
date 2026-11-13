@@ -67,6 +67,13 @@ const DEFAULT_HEADERS: readonly HeaderSpec[] = [
 // same-metadata runs with; the original blank line is lost by design.
 const HARD_BREAK = '  \n'
 
+// Long-chunk split boundaries. Paragraphs break on blank lines or the
+// HARD_BREAK join (state machine lines are trimmed, so trailing "  "
+// before "\n" is always a join, never original spacing); sentences
+// break on whitespace after a terminal .!?.
+const PARAGRAPH_BOUNDARY = / {2}\n|\n[ \t]*\n/
+const SENTENCE_BOUNDARY = /(?<=[.!?])\s+/
+
 // Normalized section text folded into header_hash so two sections that
 // share a header path (a repeated "## Notes" heading) still get distinct
 // ids. 200 chars distinguishes real content drift without hashing whole
@@ -117,6 +124,13 @@ export function chunkMarkdown(
   return chunks
 }
 
+// The context every long-chunk fit check consults: the header line each
+// part re-carries, plus the per-part token ceiling it must share with it.
+interface PartBudget {
+  prefix: string
+  maxTokens: number
+}
+
 /**
  * splitLongChunk splits one oversized chunk at paragraph boundaries
  * first, then sentence boundaries, then hard character cuts, packing
@@ -130,20 +144,20 @@ export function splitLongChunk(chunk: Chunk, maxTokens: number = CHUNK_MAX_TOKEN
   }
 
   const prefix = headerPrefix(chunk.section_header)
+  const budget: PartBudget = { prefix, maxTokens }
   const body = chunk.chunk_text.slice(prefix.length)
 
   const atoms: string[] = []
-  for (const paragraph of splitParagraphs(body)) {
-    if (fitsWithinBudget(paragraph, prefix, maxTokens)) {
+  for (const paragraph of splitUnits(body, PARAGRAPH_BOUNDARY)) {
+    if (fitsWithinBudget(paragraph, budget)) {
       atoms.push(paragraph)
       continue
     }
-    const sentences = splitSentences(paragraph)
-    for (const sentence of sentences) {
-      if (fitsWithinBudget(sentence, prefix, maxTokens)) {
+    for (const sentence of splitUnits(paragraph, SENTENCE_BOUNDARY)) {
+      if (fitsWithinBudget(sentence, budget)) {
         atoms.push(sentence)
       } else {
-        atoms.push(...forceSplit(sentence, prefix, maxTokens))
+        atoms.push(...forceSplit(sentence, budget))
       }
     }
   }
@@ -151,7 +165,7 @@ export function splitLongChunk(chunk: Chunk, maxTokens: number = CHUNK_MAX_TOKEN
   const bodies: string[] = []
   let current = ''
   for (const atom of atoms) {
-    if (current !== '' && fitsWithinBudget(current + HARD_BREAK + atom, prefix, maxTokens)) {
+    if (current !== '' && fitsWithinBudget(current + HARD_BREAK + atom, budget)) {
       current += HARD_BREAK + atom
     } else {
       if (current !== '') {
@@ -164,9 +178,7 @@ export function splitLongChunk(chunk: Chunk, maxTokens: number = CHUNK_MAX_TOKEN
     bodies.push(current)
   }
 
-  return bodies.map((partBody, index) => (
-    finalizeChunk(chunk.source_path, chunk.section_header, chunk.header_hash, index, partBody)
-  ))
+  return bodies.map((partBody, index) => finalizeChunk(chunk, index, partBody))
 }
 
 /**
@@ -273,17 +285,12 @@ function splitEntries(text: string, specs: readonly HeaderSpec[]): Entry[] {
   return entries
 }
 
-interface AggregatedEntry {
-  content: string
-  metadata: Record<string, string>
-}
-
 // Same-metadata runs join with the hard break. LangChain's second branch
 // (adopt a deeper metadata when the last line is a bare "#") applies
 // only with strip_headers false, which this port fixes to true, so the
 // branch is intentionally absent.
-function aggregateEntries(entries: readonly Entry[]): AggregatedEntry[] {
-  const aggregated: AggregatedEntry[] = []
+function aggregateEntries(entries: readonly Entry[]): Entry[] {
+  const aggregated: Entry[] = []
   for (const entry of entries) {
     const last = aggregated.at(-1)
     if (last !== undefined && metadataEqual(last.metadata, entry.metadata)) {
@@ -330,21 +337,27 @@ function buildChunk(
 ): Chunk {
   const fragment = content.replace(/\s+/g, ' ').trim().slice(0, HEADER_FRAGMENT_CHARS)
   const hash = headerHash(`${headerPath}\n${fragment}`)
-  return finalizeChunk(sourcePath, headerPath, hash, 0, content)
+  return finalizeChunk(
+    { source_path: sourcePath, section_header: headerPath, header_hash: hash },
+    0,
+    content,
+  )
 }
 
-function finalizeChunk(
-  sourcePath: string,
-  headerPath: string,
-  hash: string,
-  part: number,
-  body: string,
-): Chunk {
-  const chunkText = `${headerPrefix(headerPath)}${body}`
+// The section fields every part of one section re-carries; Chunk itself
+// satisfies it, so splitLongChunk hands the whole chunk as the base.
+interface PartBase {
+  source_path: string
+  section_header: string
+  header_hash: string
+}
+
+function finalizeChunk(base: PartBase, part: number, body: string): Chunk {
+  const chunkText = `${headerPrefix(base.section_header)}${body}`
   return {
-    source_path: sourcePath,
-    section_header: headerPath,
-    header_hash: hash,
+    source_path: base.source_path,
+    section_header: base.section_header,
+    header_hash: base.header_hash,
     part,
     chunk_text: chunkText,
     approxTokens: approxTokens(chunkText),
@@ -366,38 +379,26 @@ function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1
 }
 
-function splitParagraphs(body: string): string[] {
-  // Paragraph boundaries are blank lines or the HARD_BREAK join; state
-  // machine lines are trimmed, so trailing "  " before "\n" is always a
-  // join, never original spacing.
-  return body
-    .split(/ {2}\n|\n[ \t]*\n/)
-    .map((unit) => unit.trim())
-    .filter((unit) => unit !== '')
+// Split on a boundary pattern and drop the empty or whitespace-only
+// units a split always leaves behind.
+function splitUnits(text: string, boundary: RegExp): string[] {
+  return text.split(boundary).map((unit) => unit.trim()).filter((unit) => unit !== '')
 }
 
-function splitSentences(unit: string): string[] {
-  const sentences = unit
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence !== '')
-  return sentences.length > 0 ? sentences : [unit]
-}
-
-function fitsWithinBudget(body: string, prefix: string, maxTokens: number): boolean {
-  return approxTokens(prefix + body) <= maxTokens
+function fitsWithinBudget(body: string, budget: PartBudget): boolean {
+  return approxTokens(budget.prefix + body) <= budget.maxTokens
 }
 
 // Hard cut at the largest prefix that still fits. Binary search keeps
 // approxTokens the single definition of the budget; a slice that cannot
 // fit at all (the header path alone exhausts maxTokens) emits whole to
 // avoid an infinite loop, documented tradeoff.
-function forceSplit(unit: string, prefix: string, maxTokens: number): string[] {
+function forceSplit(unit: string, budget: PartBudget): string[] {
   const pieces: string[] = []
   let rest = unit
   while (rest !== '') {
     const cut = maxPrefixWithinBudget(rest, (length) => (
-      approxTokens(prefix + rest.slice(0, length)) <= maxTokens
+      approxTokens(budget.prefix + rest.slice(0, length)) <= budget.maxTokens
     ))
     if (cut === 0) {
       pieces.push(rest)

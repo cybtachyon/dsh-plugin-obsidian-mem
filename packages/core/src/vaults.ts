@@ -25,8 +25,16 @@ export const VAULT_MODE_SHARED = 'shared'
 /** Mode with recall only: the plugin reads and never writes the vault. */
 export const VAULT_MODE_READ_ONLY = 'read-only'
 
+/** The two access modes; resolveVaults validation and the type share it. */
+export const VAULT_MODES = [VAULT_MODE_SHARED, VAULT_MODE_READ_ONLY] as const
+
 /** One of the two vault access modes. */
-export type VaultMode = typeof VAULT_MODE_SHARED | typeof VAULT_MODE_READ_ONLY
+export type VaultMode = typeof VAULT_MODES[number]
+
+/** Tests whether value names one of the two vault modes. */
+export function isVaultMode(value: string): value is VaultMode {
+  return (VAULT_MODES as readonly string[]).includes(value)
+}
 
 /** A registered vault: an absolute path plus its access mode. */
 export interface VaultConfig {
@@ -118,7 +126,7 @@ export function resolveVaults(
       rejected.push({ config, kind: 'path-not-absolute' })
       continue
     }
-    if (config.mode !== VAULT_MODE_SHARED && config.mode !== VAULT_MODE_READ_ONLY) {
+    if (!isVaultMode(config.mode)) {
       rejected.push({ config, kind: 'mode-invalid' })
       continue
     }

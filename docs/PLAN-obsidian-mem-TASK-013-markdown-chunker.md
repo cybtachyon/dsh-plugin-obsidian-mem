@@ -1,5 +1,7 @@
 # TASK-013 Markdown header-aware chunker + noise stripping
 
+Status: done
+
 Depends: TASK-010. `packages/core/src/chunk.ts`.
 
 ## Scope

@@ -45,13 +45,11 @@ export interface MemoryPromptScope {
  */
 export const MEMORY_PROMPT_SECTION_TEXT = `# Obsidian Mem
 
-Shared Markdown memory sits behind five memory_* tools (read, search,
-write, audit, dream). The tool descriptions own parameter rules and error
-shapes; this section only sets workflow timing across them.
+Five memory_* tools (read, search, write, audit, dream) provide access to shared
+markdown memory.
 
 - Before starting real work on a project or task, memory_search the vault
   for prior decisions, gotchas, and settings tied to the project name.
-  Recall of stored memory is not automatic; searching is.
 - Before writing a new note, memory_search for a note that already covers
   the fact. Settled facts accumulate by update, not by accumulation:
   memory_read the existing note and memory_write the same path with the
@@ -69,7 +67,7 @@ shapes; this section only sets workflow timing across them.
 - memory_audit is read-only and safe to run any time: when memory feels
   disorganized or before large vault cleanups. Its over-budget line names
   the compaction run to do next.
-- Vaults are shared across agents or read-only, managed in the Obsidian
+- Vaults are shared across agents or read-only; managed in the Obsidian
   Mem settings card. Reads answer from every registered vault; writes go
   to shared vaults only.`
 

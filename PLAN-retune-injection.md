@@ -82,8 +82,8 @@ decoy memories, machinae-game subagents reporting every recall they see.
  - [x] [TASK-011-seed-test-memories](docs/PLAN-retune-injection-TASK-011-seed-test-memories.md)
  - [x] [TASK-012-restart-verify-host](docs/PLAN-retune-injection-TASK-012-restart-verify-host.md)
  - [x] [TASK-013-live-loop-iteration](docs/PLAN-retune-injection-TASK-013-live-loop-iteration.md)
- - [ ] [TASK-014-converge-final-values](docs/PLAN-retune-injection-TASK-014-converge-final-values.md)
- - [ ] [TASK-015-refactor-phase-3](docs/PLAN-retune-injection-TASK-015-refactor-phase-3.md)
+ - [x] [TASK-014-converge-final-values](docs/PLAN-retune-injection-TASK-014-converge-final-values.md)
+ - [x] [TASK-015-refactor-phase-3](docs/PLAN-retune-injection-TASK-015-refactor-phase-3.md)
 
 ### Phase 4 - Finalization
 

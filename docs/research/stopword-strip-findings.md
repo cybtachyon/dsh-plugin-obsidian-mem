@@ -1,5 +1,22 @@
 # BM25 stop-word strip offline A/B (TASK-005 findings)
 
+## FINAL TUNING VALUES (mirror of the TASK-014 convergence record, 2026-11-13)
+
+Shipped and frozen at best-observed values: sparse stop-word strip ON
+(`sparseQueryText`, eng+zho flat list, maximal Han runs, fail-open);
+`DENSE_SEARCH_RADIUS` 0.78; `DENSE_RANGE_MAX` 1.0; `SPARSE_SEARCH_RADIUS`
+5.0; `FUSED_SCORE_FLOOR` 1/(k+2) = 0.016129; `RRF_RANKER_K` 60;
+`GLOBAL_MEMORY_TOKENS` 1500 (loop discipline: probe-first after restart).
+Clean live evidence: iteration 3 (task-only turn-start query) delivered
+3/3 valid search rows + pinned GLOBAL + guidance, 0 forbidden, seed note
+R1 applied before its warned-about trap; decoys never fired in any
+iteration. Documented imperfection: the bitECS query-order seed ranks 16
+for an order-agnostic brief (passes the floor; dual-route-agreement rows
+dominate for every k; no knob lifts it without doubling forbidden rate,
+full-page forbRate 0.317 vs 0.136). Details and the before/after table:
+`docs/PLAN-retune-injection-TASK-014-converge-final-values.md` until the
+plan artifacts are finalized away.
+
 Stack under test: the LIVE production collection `obsidian_mem`
 (`milvus_lite-3.2.2`, 206 rows at run time 2026-11-13; `dense_vector`
 FloatVector dim 384 HNSW/COSINE, `sparse` SparseFloatVector filled by the

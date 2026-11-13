@@ -16,6 +16,21 @@ calls for), then verify the running host carries the Phase-1 build:
 Record here: user confirmation timestamp, how the running code was
 verified, budget state.
 
+VERIFIED 2026-11-13 (user restarted DSH ~14:54 PT):
+- `~/.dsh/profiles/web/node_modules/dsh-plugin-obsidian-mem/packages/
+  service/lib/search.js` contains `sparseQueryText` AND
+  `SPARSE_SEARCH_RADIUS = 5.0` (shipped Phase-1 code in the live profile
+  bundle).
+- milvus-lite relaunched fresh under the restarted host: `.memlite.json`
+  pid 1066975 (27 s elapsed at check), port 36745 (previous session:
+  pid 629156, port 36077).
+- Budget counter reset by the restart; `memory_audit` shortly after read
+  1120 of 1500 (this parent session re-injected its turn-start package
+  plus think-intercept blocks). Headroom is thin: probe subagents must
+  launch promptly; a suppressed probe turn-start is a budget artifact
+  (TASK-010 clause (e)), handled by an immediate restart + relaunch.
+- Turn-start-recall probe confirmation rides TASK-013 iteration 1.
+
 Definition of Done: running host verified to include the strip change;
 budget freshly reset.
 

@@ -31,6 +31,19 @@ Seeding log (append per iteration):
 
 | iteration | path | kind |
 | --- | --- | --- |
+| 1 | /home/derek/.dsh/obsidian-mem/machinae-game/machinae-ecs-adding-a-new-fixed-step-system-file.md | RELEVANT R1 |
+| 1 | /home/derek/.dsh/obsidian-mem/machinae-game/bitecs-0-4-query-order-swap-remove-ids-and-any-typed-components.md | RELEVANT R2 |
+| 1 | /home/derek/.dsh/obsidian-mem/dsh-client-card-guarded-primitives-require-and-fallback-rendering.md | DECOY D1 |
+| 1 | /home/derek/.dsh/obsidian-mem/turn-start-recall-once-per-session-claim-before-async-work.md | DECOY D2 |
+
+Seeded 2026-11-13 ~15:05 PT via memory_write (write-through indexed; a
+direct memory_search probe ranks R1 and R2 first for ECS/system/query
+vocabulary). Amendment vs the sketch below: decoys D1/D2 shipped as
+REAL settled facts from this plugin (client-card guards; turn-start
+waterfall claim) instead of invented fixtures, sharing component/step/
+flow vocabulary honestly while irrelevant to machinae work. R notes
+deliberately omit the probe's `beaconPulse` identifier; they must win
+on working vocabulary, not prompt echoes.
 
 ## Iteration 1 design (2026-11-13)
 
@@ -73,5 +86,6 @@ the TypeScript/simulation-style machinae note (eval label R family).
 
 Definition of Done: table complete; notes visible via a direct
 `memory_search` probe before the live run (indexer caught up).
+SATISFIED 2026-11-13 (iteration 1 seeded and probe-verified).
 
 Depends on: none (re-runnable per iteration).

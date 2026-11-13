@@ -1,12 +1,13 @@
 /**
  * `memory_write`: creates or updates one memory note in a shared vault's
- * markdown/ directory. The guard ladder is the contract: target inside a
- * shared vault's note dir (read-only vaults refuse explicitly), reserved
- * protocol file names refuse, and a rewrite of an existing file requires a
- * prior memory_read whose read-registry hash still matches the on-disk
- * bytes (changed-since-read refuses with a re-read instruction; a path
- * absent from disk is the only exemption). Frontmatter goes through core
- * validateMeta (errors are values, discipline nudges come back as
+ * indexed note tree (the vault root itself). The guard ladder is the
+ * contract, in order: target inside a registered vault, reserved protocol
+ * file names refuse, read-only vaults refuse explicitly, plugin-internal
+ * and other non-note paths refuse, and a rewrite of an existing file
+ * requires a prior memory_read whose read-registry hash still matches the
+ * on-disk bytes (changed-since-read refuses with a re-read instruction; a
+ * path absent from disk is the only exemption). Frontmatter goes through
+ * core validateMeta (errors are values, discipline nudges come back as
  * warnings); a new file's name is slugged from index_title with collision
  * suffixes, so the response reports the FINAL absolute path. The service's
  * applyWrite does the raw-merging atomic write plus write-through reindex.
@@ -21,8 +22,10 @@ import {
   contentHash,
   ensureWhyAndHow,
   formatLocalDate,
+  isPluginInternalPath,
   isReservedNonIndexed,
   parseNote,
+  PLUGIN_VAULT_DIR,
   titleToFilename,
   TOOL_MEMORY_WRITE,
   validateMeta,
@@ -38,7 +41,7 @@ export const WRITE_TIMEOUT_MS = 10_000
 
 /** The description the model sees for `memory_write`. */
 export const WRITE_DESCRIPTION
-  = 'Create or update one memory note in a shared vault\'s markdown/ directory. Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and queued for immediate indexing; the result reports the final absolute path and any discipline warnings.'
+  = 'Create or update one memory note in a shared vault (the vault root is the note root). Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and queued for immediate indexing; the result reports the final absolute path and any discipline warnings.'
 
 /** Parameter schema; every pairing and naming rule lives on its parameter. */
 export const WRITE_PARAMETERS: JsonSchemaNode = {
@@ -48,7 +51,7 @@ export const WRITE_PARAMETERS: JsonSchemaNode = {
   properties: {
     path: {
       type: 'string',
-      description: 'Absolute .md path inside a shared vault\'s markdown/ directory. An existing file is updated at this exact path; for a new note only the directory is used and the filename is slugged from index_title.',
+      description: 'Absolute .md path inside a shared vault (the vault root is the note root). An existing file is updated at this exact path; for a new note only the directory is used and the filename is slugged from index_title.',
     },
     index_title: {
       type: 'string',
@@ -127,12 +130,12 @@ export const WRITE_OUTPUT: JsonSchemaNode = {
     {
       type: 'object',
       additionalProperties: false,
-      required: ['kind', 'path', 'message', 'shared_note_dirs'],
+      required: ['kind', 'path', 'message', 'shared_vault_roots'],
       properties: {
-        kind: { type: 'string', const: 'outside_markdown' },
+        kind: { type: 'string', const: 'outside_notes' },
         path: { type: 'string' },
         message: { type: 'string' },
-        shared_note_dirs: { type: 'array', items: { type: 'string' } },
+        shared_vault_roots: { type: 'array', items: { type: 'string' } },
         notice: { type: 'string' },
       },
     },
@@ -175,7 +178,7 @@ export type WriteValue
   | { kind: 'read_required', path: string, message: string, notice?: string }
   | { kind: 'stale', path: string, message: string, notice?: string }
   | { kind: 'read_only_vault', path: string, vault: string, message: string, notice?: string }
-  | { kind: 'outside_markdown', path: string, message: string, shared_note_dirs: string[], notice?: string }
+  | { kind: 'outside_notes', path: string, message: string, shared_vault_roots: string[], notice?: string }
   | { kind: 'reserved_file', path: string, message: string, notice?: string }
   | { kind: 'invalid_meta', path: string, errors: string[], notice?: string }
 
@@ -193,22 +196,36 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
 
   const target = expandHomePath(path, homedir())
 
-  // TASK-008: mechanical insideNotes swap; the guard wording and kind name
-  // get their full pass in that task.
   const vaults = service.listVaults()
+  const sharedRoots = vaults
+    .filter((vault) => vault.mode === 'shared')
+    .map((vault) => vault.path)
+  // The shared outside_notes refusal: one construction point so every
+  // non-note answer carries the same shared-vault-root echo.
+  const outsideNotes = (message: string): WriteValue => withNotice({
+    kind: 'outside_notes' as const,
+    path: target,
+    message,
+    shared_vault_roots: sharedRoots,
+  }, notice)
+
+  // Guard 1: containment. Everything after this line knows its vault.
   const classified = classifyPath(vaults, target)
-  if (classified === null || !classified.insideNotes) {
+  if (classified === null) {
+    return outsideNotes(`${target} is not inside any registered vault. memory_write targets the note tree of a shared vault.`)
+  }
+
+  // Guard 2: reserved protocol files are never authored notes. The note
+  // tree excludes them from indexing, so this guard is what names them.
+  if (isReservedNonIndexed(basename(target))) {
     return withNotice({
-      kind: 'outside_markdown' as const,
+      kind: 'reserved_file' as const,
       path: target,
-      message: classified === null
-        ? `${target} is not inside any registered vault. memory_write targets the note tree of a shared vault.`
-        : `${target} is inside vault ${classified.vault.path} but outside its note tree, so it would never be indexed.`,
-      shared_note_dirs: vaults
-        .filter((vault) => vault.mode === 'shared')
-        .map((vault) => vault.path),
+      message: `${basename(target)} is a reserved vault file (.INTENTS.md, DREAMS.md, *_history.md); those are owned by the plugin. Write memory as a regular .md note.`,
     }, notice)
   }
+
+  // Guard 3: writes only go to shared vaults.
   if (classified.mode !== 'shared') {
     return withNotice({
       kind: 'read_only_vault' as const,
@@ -218,19 +235,19 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
     }, notice)
   }
 
-  // Guard 2: reserved protocol files are never authored notes.
-  if (isReservedNonIndexed(basename(target))) {
-    return withNotice({
-      kind: 'reserved_file' as const,
-      path: target,
-      message: `${basename(target)} is a reserved vault file (.INTENTS.md, DREAMS.md, *_history.md); those are owned by the plugin. Write memory as a regular .md note.`,
-    }, notice)
+  // Guard 4: in-vault paths the note tree excludes. The plugin-internal
+  // dir names itself (the plugin's own sidecars); dot paths and the bare
+  // vault root take the generic never-indexed answer.
+  if (!classified.insideNotes) {
+    return isPluginInternalPath(classified.vault.path, target)
+      ? outsideNotes(`${target} lies in vault ${classified.vault.path}'s plugin-internal ${PLUGIN_VAULT_DIR}/ directory: the plugin's own sidecar files live there and are never indexed notes. Write inside the vault's note tree instead.`)
+      : outsideNotes(`${target} is inside vault ${classified.vault.path} but outside its indexed note tree, so it would never be indexed.`)
   }
 
-  // Guard 3: read-before-write staleness. The on-disk re-hash is the whole
+  // Guard 5: read-before-write staleness. The on-disk re-hash is the whole
   // point: the registry proves a read happened, the hash proves the bytes
   // under this edit are the bytes that read saw. A directory target is a
-  // NEW note (the documented contract: pass the markdown/ dir); only an
+  // NEW note (the documented contract: pass the directory itself); only an
   // existing FILE triggers the read-before-write ladder.
   const targetStat = statSync(target, { throwIfNoEntry: false })
   const exists = targetStat?.isFile() ?? false
@@ -255,7 +272,7 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
     existingMeta = parseNote(current).meta
   }
 
-  // Guard 4: frontmatter contract. Errors refuse; discipline nudges ride
+  // Guard 6: frontmatter contract. Errors refuse; discipline nudges ride
   // along on the success value.
   const today = formatLocalDate(new Date())
   const meta: NoteMeta = {

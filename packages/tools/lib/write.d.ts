@@ -1,12 +1,13 @@
 /**
  * `memory_write`: creates or updates one memory note in a shared vault's
- * markdown/ directory. The guard ladder is the contract: target inside a
- * shared vault's note dir (read-only vaults refuse explicitly), reserved
- * protocol file names refuse, and a rewrite of an existing file requires a
- * prior memory_read whose read-registry hash still matches the on-disk
- * bytes (changed-since-read refuses with a re-read instruction; a path
- * absent from disk is the only exemption). Frontmatter goes through core
- * validateMeta (errors are values, discipline nudges come back as
+ * indexed note tree (the vault root itself). The guard ladder is the
+ * contract, in order: target inside a registered vault, reserved protocol
+ * file names refuse, read-only vaults refuse explicitly, plugin-internal
+ * and other non-note paths refuse, and a rewrite of an existing file
+ * requires a prior memory_read whose read-registry hash still matches the
+ * on-disk bytes (changed-since-read refuses with a re-read instruction; a
+ * path absent from disk is the only exemption). Frontmatter goes through
+ * core validateMeta (errors are values, discipline nudges come back as
  * warnings); a new file's name is slugged from index_title with collision
  * suffixes, so the response reports the FINAL absolute path. The service's
  * applyWrite does the raw-merging atomic write plus write-through reindex.
@@ -16,7 +17,7 @@ import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js';
 /** Fast file write plus one single-file reindex. */
 export declare const WRITE_TIMEOUT_MS = 10000;
 /** The description the model sees for `memory_write`. */
-export declare const WRITE_DESCRIPTION = "Create or update one memory note in a shared vault's markdown/ directory. Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and queued for immediate indexing; the result reports the final absolute path and any discipline warnings.";
+export declare const WRITE_DESCRIPTION = "Create or update one memory note in a shared vault (the vault root is the note root). Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and queued for immediate indexing; the result reports the final absolute path and any discipline warnings.";
 /** Parameter schema; every pairing and naming rule lives on its parameter. */
 export declare const WRITE_PARAMETERS: JsonSchemaNode;
 /** Closed output union keyed on kind. */
@@ -47,10 +48,10 @@ export type WriteValue = {
     message: string;
     notice?: string;
 } | {
-    kind: 'outside_markdown';
+    kind: 'outside_notes';
     path: string;
     message: string;
-    shared_note_dirs: string[];
+    shared_vault_roots: string[];
     notice?: string;
 } | {
     kind: 'reserved_file';

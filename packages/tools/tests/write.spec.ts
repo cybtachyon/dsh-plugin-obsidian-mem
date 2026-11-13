@@ -1,7 +1,8 @@
 /**
  * memory_write behavior spec over a real temp vault tree plus a fake
- * seam: the guard ladder (shared-markdown target, reserved files,
- * read-before-write staleness with the on-disk content-hash re-check, the
+ * seam: the guard ladder (in-vault containment, reserved files,
+ * read-only refusal, non-note paths, read-before-write staleness with
+ * the on-disk content-hash re-check, the
  * brand-new path exemption, read-only refusal), core validateMeta as a
  * refusal value with discipline warnings on success, title-slugged naming
  * with collision suffixes for new notes, and the frontmatter round-trip
@@ -49,12 +50,14 @@ let service: FakeMemoryService
 
 beforeEach(() => {
   tree = makeTempTree({
-    'vaults/shared/markdown/legacy-host.md': existingText,
-    'vaults/ro/markdown/quiet.md': existingText,
+    'vaults/shared/legacy-host.md': existingText,
+    // Keeps the plain notes/ subdirectory on disk for the dir-target test.
+    'vaults/shared/notes/seed.md': existingText,
+    'vaults/ro/quiet.md': existingText,
   })
   sharedRoot = join(tree.root, 'vaults', 'shared')
   readOnlyRoot = join(tree.root, 'vaults', 'ro')
-  existingPath = join(sharedRoot, 'markdown', 'legacy-host.md')
+  existingPath = join(sharedRoot, 'legacy-host.md')
   service = createFakeService({
     vaults: vaultEntries(
       { path: sharedRoot, mode: 'shared' },
@@ -94,22 +97,29 @@ function onDisk(path: string): ReturnType<typeof parseNote> {
 describe('memory_write guards', () => {
   it('refuses paths outside the note tree, listing shared vault roots', async () => {
     const outside = await write({ path: join(tree.root, 'notes', 'a.md') })
-    expect(outside.kind).toBe('outside_markdown')
-    if (outside.kind !== 'outside_markdown') return
-    expect(outside.shared_note_dirs).toEqual([sharedRoot])
+    expect(outside.kind).toBe('outside_notes')
+    if (outside.kind !== 'outside_notes') return
+    expect(outside.shared_vault_roots).toEqual([sharedRoot])
     expect(matchesOutput(createWriteTool(service), outside)).toEqual([])
 
-    // TASK-008 adaptation: root .md files ARE notes now; the refused
-    // in-vault shape is plugin-internal.
+    // Root .md files ARE notes; the bare vault root (a directory target
+    // equal to the root) stays outside the note tree and is refused.
+    const atRoot = await write({ path: sharedRoot })
+    expect(atRoot.kind).toBe('outside_notes')
+  })
+
+  it('refuses plugin-internal paths naming why', async () => {
     const inPluginDir = await write({ path: join(sharedRoot, '.obsidian-mem', 'stray.md') })
-    expect(inPluginDir.kind).toBe('outside_markdown')
-    if (inPluginDir.kind === 'outside_markdown') {
-      expect(inPluginDir.message).toContain('outside its note tree')
-    }
+    expect(inPluginDir.kind).toBe('outside_notes')
+    if (inPluginDir.kind !== 'outside_notes') return
+    expect(inPluginDir.message).toContain('plugin-internal .obsidian-mem/ directory')
+    expect(inPluginDir.shared_vault_roots).toEqual([sharedRoot])
+    expect(matchesOutput(createWriteTool(service), inPluginDir)).toEqual([])
+    expect(service.writeRequests).toEqual([])
   })
 
   it('refuses read-only vault targets by name', async () => {
-    const value = await write({ path: join(readOnlyRoot, 'markdown', 'new-note.md') })
+    const value = await write({ path: join(readOnlyRoot, 'new-note.md') })
     expect(value.kind).toBe('read_only_vault')
     if (value.kind !== 'read_only_vault') return
     expect(value.vault).toBe(readOnlyRoot)
@@ -117,14 +127,14 @@ describe('memory_write guards', () => {
     expect(service.writeRequests).toEqual([])
   })
 
-  it('refuses reserved protocol files anywhere in the tree', async () => {
-    // TASK-008 adaptation: with root notes, reserved names are outside the
-    // note tree everywhere, so the note-tree guard answers first; the
-    // reserved_file ladder moves with that task's guard reshuffle.
-    const dreams = await write({ path: join(sharedRoot, 'markdown', 'DREAMS.md') })
-    expect(dreams.kind).toBe('outside_markdown')
-    const history = await write({ path: join(sharedRoot, 'markdown', 'topic_history.md') })
-    expect(history.kind).toBe('outside_markdown')
+  it('answers reserved_file for reserved protocol files in the vault', async () => {
+    const dreams = await write({ path: join(sharedRoot, 'DREAMS.md') })
+    expect(dreams.kind).toBe('reserved_file')
+    if (dreams.kind !== 'reserved_file') return
+    expect(dreams.message).toContain('reserved vault file')
+    expect(matchesOutput(createWriteTool(service), dreams)).toEqual([])
+    const history = await write({ path: join(sharedRoot, 'topic_history.md') })
+    expect(history.kind).toBe('reserved_file')
     expect(service.writeRequests).toEqual([])
   })
 
@@ -152,14 +162,14 @@ describe('memory_write guards', () => {
   })
 
   it('exempts brand-new paths from read-before-write', async () => {
-    const value = await write({ path: join(sharedRoot, 'markdown', 'fresh', 'whatever.md') })
+    const value = await write({ path: join(sharedRoot, 'fresh', 'whatever.md') })
     expect(value.kind).toBe('written')
     expect(service.writeRequests).toHaveLength(1)
   })
 
   it('refuses frontmatter contract violations with core validateMeta errors', async () => {
     const value = await write({
-      path: join(sharedRoot, 'markdown', 'a.md'),
+      path: join(sharedRoot, 'a.md'),
       index_title: 'Same text',
       index_description: 'Same text',
       type: 'Not A Slug!',
@@ -175,10 +185,10 @@ describe('memory_write guards', () => {
 
 describe('memory_write success paths', () => {
   it('names a new note from its title and returns the final path', async () => {
-    const value = await write({ path: join(sharedRoot, 'markdown', 'draft-scratch.md') })
+    const value = await write({ path: join(sharedRoot, 'draft-scratch.md') })
     expect(value.kind).toBe('written')
     if (value.kind !== 'written') return
-    expect(value.path).toBe(join(sharedRoot, 'markdown', 'deploys-friday-releases.md'))
+    expect(value.path).toBe(join(sharedRoot, 'deploys-friday-releases.md'))
     expect(value.created).toBe(true)
     expect(value.vault).toBe(sharedRoot)
     expect(value.write_through).toBe('attempted')
@@ -197,25 +207,26 @@ describe('memory_write success paths', () => {
   })
 
   it('treats a directory target as a new note slugged INTO that directory', async () => {
-    // The documented new-note contract: path may be the markdown/ dir
-    // itself. The dir exists on disk yet must not trip read-before-write.
-    const value = await write({ path: join(sharedRoot, 'markdown') + '/' })
+    // The documented new-note contract: path may be a plain note
+    // subdirectory itself. The dir exists on disk yet must not trip
+    // read-before-write.
+    const value = await write({ path: join(sharedRoot, 'notes') + '/' })
     expect(value.kind).toBe('written')
     if (value.kind !== 'written') return
-    expect(value.path).toBe(join(sharedRoot, 'markdown', 'deploys-friday-releases.md'))
+    expect(value.path).toBe(join(sharedRoot, 'notes', 'deploys-friday-releases.md'))
     expect(value.created).toBe(true)
     expect(matchesOutput(createWriteTool(service), value)).toEqual([])
   })
 
   it('collision-suffixes a new note whose slug is already taken', async () => {
     // The slug exists as a different note; the write must not clobber it.
-    const takenPath = join(sharedRoot, 'markdown', 'deploys-friday-releases.md')
+    const takenPath = join(sharedRoot, 'deploys-friday-releases.md')
     writeFileSync(takenPath, '# occupied\n')
 
-    const value = await write({ path: join(sharedRoot, 'markdown', 'untitled.md') })
+    const value = await write({ path: join(sharedRoot, 'untitled.md') })
     expect(value.kind).toBe('written')
     if (value.kind !== 'written') return
-    expect(value.path).toBe(join(sharedRoot, 'markdown', 'deploys-friday-releases-2.md'))
+    expect(value.path).toBe(join(sharedRoot, 'deploys-friday-releases-2.md'))
     expect(onDisk(takenPath).body).toContain('occupied')
   })
 
@@ -259,7 +270,7 @@ describe('memory_write success paths', () => {
 
   it('returns discipline warnings without rejecting the note', async () => {
     const value = await write({
-      path: join(sharedRoot, 'markdown', 'loose.md'),
+      path: join(sharedRoot, 'loose.md'),
       index_title: 'Deploys: Friday releases',
       index_description: 'Deploys: Friday releases notes collected over time about checklists and steps.',
       contents: 'Just some loose prose with no discipline lines.',
@@ -275,7 +286,7 @@ describe('memory_write success paths', () => {
 describe('memory_write rendering', () => {
   it('renders the written line plus warnings', async () => {
     const value = await write({
-      path: join(sharedRoot, 'markdown', 'loose.md'),
+      path: join(sharedRoot, 'loose.md'),
       index_title: 'Deploys: Friday releases',
       index_description: 'Deploys: Friday releases collected over the whole quarter for checklists.',
       contents: 'Loose prose.',
@@ -289,14 +300,14 @@ describe('memory_write rendering', () => {
   it('renders refusals from their messages and errors', async () => {
     const staleText = renderTool({
       kind: 'stale',
-      path: '/v/markdown/a.md',
-      message: '/v/markdown/a.md changed on disk after your last memory_read.',
+      path: '/v/notes/a.md',
+      message: '/v/notes/a.md changed on disk after your last memory_read.',
     })
     expect(staleText).toContain('changed on disk')
 
     const invalidText = renderTool({
       kind: 'invalid_meta',
-      path: '/v/markdown/a.md',
+      path: '/v/notes/a.md',
       errors: ['index_title is required'],
     })
     expect(invalidText).toContain('the frontmatter needs fixing')
@@ -304,9 +315,9 @@ describe('memory_write rendering', () => {
   })
 
   it('prepends the provisioning notice once', async () => {
-    const first = await write({ path: join(sharedRoot, 'markdown', 'a.md') })
+    const first = await write({ path: join(sharedRoot, 'a.md') })
     expect(renderTool(first).startsWith(`${NOTICE}\n\n`)).toBe(true)
-    const second = await write({ path: join(sharedRoot, 'markdown', 'b.md') })
+    const second = await write({ path: join(sharedRoot, 'b.md') })
     expect(renderTool(second).includes(NOTICE)).toBe(false)
   })
 

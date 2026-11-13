@@ -102,7 +102,7 @@ Ordered list; every task is defined in its own file.
  - [x] [TASK-016-cordis-mount-isolation](docs/PLAN-VAULT-LAYOUT-TASK-016-cordis-mount-isolation.md)
 
 ### Phase 3 — Surfaces (tools, injection, routes, card)
- - [ ] [TASK-008-tools-wording-guards](docs/PLAN-VAULT-LAYOUT-TASK-008-tools-wording-guards.md)
+ - [x] [TASK-008-tools-wording-guards](docs/PLAN-VAULT-LAYOUT-TASK-008-tools-wording-guards.md)
  - [ ] [TASK-014-global-memory-injection](docs/PLAN-VAULT-LAYOUT-TASK-014-global-memory-injection.md)
  - [ ] [TASK-015-global-file-compaction-protect](docs/PLAN-VAULT-LAYOUT-TASK-015-global-file-compaction-protect.md)
  - [ ] [TASK-009-ui-route-global-file](docs/PLAN-VAULT-LAYOUT-TASK-009-ui-route-global-file.md)

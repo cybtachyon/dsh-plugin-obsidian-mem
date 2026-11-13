@@ -56,13 +56,13 @@ beforeEach(() => {
   sharedRoot = '/tmp/unused-shared'
   readOnlyRoot = '/tmp/unused-ro'
   tree = makeTempTree({
-    'vaults/shared/markdown/topic.md': noteText,
-    'vaults/shared/markdown/hostile.md': hostileText,
-    'vaults/ro/markdown/quiet.md': noteText,
+    'vaults/shared/topic.md': noteText,
+    'vaults/shared/hostile.md': hostileText,
+    'vaults/ro/quiet.md': noteText,
   })
   sharedRoot = join(tree.root, 'vaults', 'shared')
   readOnlyRoot = join(tree.root, 'vaults', 'ro')
-  notePath = join(sharedRoot, 'markdown', 'topic.md')
+  notePath = join(sharedRoot, 'topic.md')
   service = createFakeService({
     vaults: vaultEntries(
       { path: sharedRoot, mode: 'shared' },
@@ -102,12 +102,12 @@ describe('memory_read execution', () => {
   })
 
   it('defangs a hostile closing tag inside the envelope', async () => {
-    const value = await read({ path: join(sharedRoot, 'markdown', 'hostile.md') })
+    const value = await read({ path: join(sharedRoot, 'hostile.md') })
     if (value.kind !== 'read') throw new Error(`unexpected kind ${value.kind}`)
     expect(value.content.match(new RegExp(RECALLED_CLOSE, 'g'))).toHaveLength(1)
     expect(value.content).toContain('[close-tag defanged]')
     // The bytes on disk stay untouched; only the envelope is defanged.
-    expect(readFileSync(join(sharedRoot, 'markdown', 'hostile.md'), 'utf8'))
+    expect(readFileSync(join(sharedRoot, 'hostile.md'), 'utf8'))
       .toContain('</recalled_memory>')
   })
 
@@ -122,7 +122,7 @@ describe('memory_read execution', () => {
     expect(service.readCalls[0]?.options).toEqual({ offset: 2, limit: 2 })
   })
 
-  it('answers outside_vault with the configured note dirs for escaping paths', async () => {
+  it('answers outside_vault with the configured vault roots for escaping paths', async () => {
     const value = await read({ path: join(tree.root, 'elsewhere', 'a.md') })
     expect(value.kind).toBe('outside_vault')
     if (value.kind !== 'outside_vault') return
@@ -132,16 +132,16 @@ describe('memory_read execution', () => {
   })
 
   it('answers outside_vault for in-vault plugin-internal paths', async () => {
-    // TASK-008 adaptation: the vault root is the note tree now; the
-    // `.obsidian-mem` dir is the refused shape that stays refused.
+    // The vault root is the note tree; the `.obsidian-mem` dir is the
+    // refused shape that stays refused, naming itself in the message.
     const value = await read({ path: join(sharedRoot, '.obsidian-mem', 'a.md') })
     expect(value.kind).toBe('outside_vault')
     if (value.kind !== 'outside_vault') return
-    expect(value.message).toContain('outside its note tree')
+    expect(value.message).toContain('plugin-internal .obsidian-mem/ directory')
   })
 
-  it('answers not_found for a missing note under markdown/', async () => {
-    const value = await read({ path: join(sharedRoot, 'markdown', 'gone.md') })
+  it('answers not_found for a missing note under the vault root', async () => {
+    const value = await read({ path: join(sharedRoot, 'gone.md') })
     expect(value.kind).toBe('not_found')
     if (value.kind !== 'not_found') return
     expect(value.message).toContain('does not exist')
@@ -149,7 +149,7 @@ describe('memory_read execution', () => {
   })
 
   it('reads read-only vault notes without claiming a stats update', async () => {
-    const value = await read({ path: join(readOnlyRoot, 'markdown', 'quiet.md') })
+    const value = await read({ path: join(readOnlyRoot, 'quiet.md') })
     if (value.kind !== 'read') throw new Error(`unexpected kind ${value.kind}`)
     expect(value.mode).toBe('read-only')
     expect(value.stats_updated).toBe(false)
@@ -174,7 +174,7 @@ describe('memory_read rendering', () => {
   })
 
   it('renders the read-only stats note', async () => {
-    const value = await read({ path: join(readOnlyRoot, 'markdown', 'quiet.md') })
+    const value = await read({ path: join(readOnlyRoot, 'quiet.md') })
     const text = renderRead(value)
     expect(text).toContain('read-only vault: read stats unchanged')
   })
@@ -183,6 +183,7 @@ describe('memory_read rendering', () => {
     const value = await read({ path: join(tree.root, 'elsewhere', 'a.md') })
     const text = renderRead(value)
     expect(text).toContain('not inside any registered vault')
+    expect(text).toContain('Configured vault roots:')
     expect(text).toContain(`- ${sharedRoot}`)
   })
 })

@@ -63,6 +63,9 @@ describe('memory_read definition shape', () => {
     for (const spec of Object.values(definition.parameters.properties ?? {})) {
       expect(spec.description).toBeTruthy()
     }
+    // TASK-008: resolution is the vault-rooted note tree; no markdown/ dir.
+    expect(definition.description).toContain('indexed note tree')
+    expect(definition.description).not.toContain('markdown/')
   })
 
   it('declares a closed oneOf output keyed on kind', () => {
@@ -72,12 +75,12 @@ describe('memory_read definition shape', () => {
   })
 
   it('presents a generic read card', () => {
-    const view = definition.presentCall?.({ path: '/v/markdown/a.md' })
+    const view = definition.presentCall?.({ path: '/v/notes/a.md' })
     expect(view).toEqual({
       card: 'generic',
       kind: 'read',
-      title: `${TOOL_MEMORY_READ} /v/markdown/a.md`,
-      rawInput: { path: '/v/markdown/a.md' },
+      title: `${TOOL_MEMORY_READ} /v/notes/a.md`,
+      rawInput: { path: '/v/notes/a.md' },
     })
   })
 })
@@ -125,6 +128,9 @@ describe('memory_write definition shape', () => {
   it('states the critical constraints in the description once', () => {
     expect(definition.description).toContain('prior memory_read')
     expect(definition.description).toContain('read-only vaults are refused')
+    // TASK-008: the note tree is the vault root; no wording steers to a
+    // markdown/ directory.
+    expect(definition.description).not.toContain('markdown/')
   })
 
   it('declares a closed oneOf output keyed on kind', () => {
@@ -135,16 +141,22 @@ describe('memory_write definition shape', () => {
       'read_required',
       'stale',
       'read_only_vault',
-      'outside_markdown',
+      'outside_notes',
       'reserved_file',
       'invalid_meta',
     ])
+    // The outside_notes branch echoes the shared vault ROOTS, and no
+    // schema wording names a markdown/ note directory (TASK-008).
+    const outside = (definition.output.schema.oneOf ?? [])
+      .find((member) => member.properties?.kind?.const === 'outside_notes')
+    expect(outside?.required).toContain('shared_vault_roots')
+    expect(JSON.stringify(definition.output.schema)).not.toContain('markdown')
   })
 
   it('presents a generic edit card', () => {
-    const view = definition.presentCall?.({ path: '/v/markdown/a.md' })
+    const view = definition.presentCall?.({ path: '/v/notes/a.md' })
     expect(view?.card).toBe('generic')
     expect(view?.kind).toBe('edit')
-    expect(view?.title).toBe(`${TOOL_MEMORY_WRITE} /v/markdown/a.md`)
+    expect(view?.title).toBe(`${TOOL_MEMORY_WRITE} /v/notes/a.md`)
   })
 })

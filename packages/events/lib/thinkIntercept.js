@@ -207,9 +207,10 @@ async function runThinkRecall(watcher, sessionId, blockText, matched) {
     // and spent-shot returns below, so none of them swallows it.
     retainProvisionNotice(registry, await memory.ensureMemoryAccess());
     let results;
+    const queryString = intentSentencesOf(blockText, matched);
     try {
         results = await memory.search({
-            query: intentSentencesOf(blockText, matched),
+            query: queryString,
             wakeKeywords: matched,
             topK: THINK_SEARCH_TOP_K,
         });
@@ -229,7 +230,7 @@ async function runThinkRecall(watcher, sessionId, blockText, matched) {
     }
     const newId = messageIdFactory(deps);
     let injectedTokens = deliverProvisionNotice(deps.agent, newId, registry);
-    const header = `Obsidian Mem: memories matched by your thinking, terms: ${matched.join(', ')}.`;
+    const header = `Memory related to: ${queryString}.`;
     injectedTokens += injectNotice(deps.agent, newId(), boundSummary(`think recall: ${matched.join(', ')}`), [header, ...fresh.map((item) => item.block)]);
     for (const item of fresh) {
         markSourceInjected(registry, sessionId, item);

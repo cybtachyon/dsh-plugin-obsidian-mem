@@ -6,9 +6,13 @@
  * `globalMemoryIndex()` echo (audit/dream/card read the identical
  * numbers). A session reaching turn-start recall while the summed recall
  * injections sit past `budgets.globalMemoryTokens` gets no fresh recall
- * sections: turnStart injects the compaction pointer naming `memory_dream`
- * instead (the same remedy the audit's `budget.over` line carries, so both
- * channels tell one story) until dreaming compacts the store.
+ * sections: that suppression gate stays (PLAN-budget-reminder
+ * Q-SUPPRESSION), so the turn-start branch only returns early. The
+ * over-budget reminder itself rides the turn-end steer next to the
+ * save/audit reminder (TASK-003) and carries the two-part remedy: the
+ * agent may compact just the global-scope notes by hand with the ordinary
+ * memory tools once the user approves, and should suggest the user run
+ * the much heavier `memory_dream` for a more complete optimization.
  * @module dsh-plugin-obsidian-mem/events/budget
  */
 import type { SessionRegistry } from './sessions.js';
@@ -20,13 +24,15 @@ import type { SessionRegistry } from './sessions.js';
  */
 export declare function isGlobalBudgetSpent(registry: SessionRegistry, budgetTokens: number): boolean;
 /**
- * CompactionInstruction returns the turn-start injection that replaces the
- * recall sections while the budget is spent: a short pointer naming
- * `memory_dream` (the compactor) and `memory_audit` (the report naming the
- * least-read global notes), mirroring the audit budget.over remediation.
- * The sentence names the window the number is summed over: a successful
- * dream resets the counters (service dream wiring), so usage counts from
- * the last successful dream or host restart.
+ * CompactionInstruction returns the over-budget reminder text carried by
+ * the turn-end steer (TASK-003). The framing sentence names the window
+ * the number is summed over: a successful dream resets the counters
+ * (service dream wiring), so usage counts from the last successful dream
+ * or host restart. The remedy is two-part: manual compaction of just the
+ * global-scope memory notes with the ordinary memory tools, which the
+ * agent must not start until the user approves, plus the instruction to
+ * suggest the much heavier `memory_dream` to the user for a more complete
+ * optimization of the whole store.
  */
 export declare function compactionInstruction(usedTokens: number, budgetTokens: number): string;
 //# sourceMappingURL=budget.d.ts.map

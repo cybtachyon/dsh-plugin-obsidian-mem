@@ -193,6 +193,14 @@ declare module '@deepseek-ai/cordis' {
     }
 }
 /**
+ * ToolResultEvents is the plugin-ctx slice every `tools/result` observer
+ * declares (Read intercept, memory-tool watch, write ledger): mount passes
+ * the real ctx, tests inject a fake of the same shape.
+ */
+export interface ToolResultEvents {
+    on(name: 'tools/result', listener: (exec: ToolExecutionMirror, result: ToolResultMirror) => undefined): () => boolean;
+}
+/**
  * MemoryEventsService is the ctx.obsidianMem slice the lifecycle hooks
  * consume. The real ObsidianMemService satisfies it structurally; tests
  * inject a fake of the same shape.

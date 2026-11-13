@@ -14,13 +14,11 @@
  * matches the identity the recall flows derive from search results.
  * @module dsh-plugin-obsidian-mem/events/writeLedger
  */
-import type { HookLogger, ToolExecutionMirror, ToolResultMirror } from './host.js';
+import type { HookLogger, ToolResultEvents } from './host.js';
 import { type SessionRegistry } from './sessions.js';
 /** Dependencies of the plugin-ctx write observer (mount-owned). */
 export interface WriteLedgerDeps {
-    ctx: {
-        on(name: 'tools/result', listener: (exec: ToolExecutionMirror, result: ToolResultMirror) => undefined): () => boolean;
-    };
+    ctx: ToolResultEvents;
     registry: SessionRegistry;
     logger: HookLogger;
 }

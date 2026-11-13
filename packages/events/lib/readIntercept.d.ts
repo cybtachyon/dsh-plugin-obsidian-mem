@@ -19,15 +19,13 @@
  * ensureMemoryAccess returns it.
  * @module dsh-plugin-obsidian-mem/events/readIntercept
  */
-import type { HookLogger, MemoryEventsService, ToolExecutionMirror, ToolResultMirror } from './host.js';
+import type { HookLogger, MemoryEventsService, ToolResultEvents } from './host.js';
 import type { SessionRegistry } from './sessions.js';
 /** The harness Read tool's registry name (verified live: `read`). */
 export declare const HARNESS_READ_TOOL_NAME = "read";
 /** Registration dependencies; the plugin ctx only needs `on`. */
 export interface ReadInterceptDeps {
-    ctx: {
-        on(name: 'tools/result', listener: (exec: ToolExecutionMirror, result: ToolResultMirror) => undefined): () => boolean;
-    };
+    ctx: ToolResultEvents;
     memory: MemoryEventsService;
     registry: SessionRegistry;
     logger: HookLogger;

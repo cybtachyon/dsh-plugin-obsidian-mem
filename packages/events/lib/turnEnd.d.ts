@@ -28,7 +28,7 @@
  * ensureMemoryAccess — it is a static text, no provisioning side effect.
  * @module dsh-plugin-obsidian-mem/events/turnEnd
  */
-import type { HookLogger, LiveAgent, MemoryEventsService, ToolExecutionMirror, ToolResultMirror } from './host.js';
+import type { HookLogger, LiveAgent, MemoryEventsService, ToolResultEvents } from './host.js';
 import type { SessionRegistry } from './sessions.js';
 /** First user text this long or shorter is trivial unless it carries a work marker. */
 export declare const TRIVIAL_TURN_MAX_CHARS = 24;
@@ -73,9 +73,7 @@ export declare function installTurnEnd(deps: TurnEndDeps): () => void;
 export declare function isTrivialTurn(firstUserText: string): boolean;
 /** Dependencies of the plugin-ctx memory-tool watcher (mount-owned). */
 export interface MemoryToolWatchDeps {
-    ctx: {
-        on(name: 'tools/result', listener: (exec: ToolExecutionMirror, result: ToolResultMirror) => undefined): () => boolean;
-    };
+    ctx: ToolResultEvents;
     registry: SessionRegistry;
     logger: HookLogger;
 }

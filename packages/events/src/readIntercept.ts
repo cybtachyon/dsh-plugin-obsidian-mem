@@ -31,6 +31,7 @@ import type {
   LiveAgent,
   MemoryEventsService,
   ToolExecutionMirror,
+  ToolResultEvents,
   ToolResultMirror,
 } from './host.js'
 import { boundSummary } from './host.js'
@@ -64,9 +65,7 @@ const DIR_SIGNAL_MAX_SEGMENTS = 6
 
 /** Registration dependencies; the plugin ctx only needs `on`. */
 export interface ReadInterceptDeps {
-  ctx: {
-    on(name: 'tools/result', listener: (exec: ToolExecutionMirror, result: ToolResultMirror) => undefined): () => boolean
-  }
+  ctx: ToolResultEvents
   memory: MemoryEventsService
   registry: SessionRegistry
   logger: HookLogger

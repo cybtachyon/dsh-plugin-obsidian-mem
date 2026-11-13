@@ -187,6 +187,7 @@ export type {
   LiveAgent,
   MemoryEventsScope,
   MemoryEventsService,
+  ToolResultEvents,
 } from './host.js'
 export { guidanceLine, installTurnStart, nodeManifestFs } from './turnStart.js'
 export type { TurnStartDeps } from './turnStart.js'

@@ -16,22 +16,13 @@
  */
 
 import { TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
-import type {
-  HookLogger,
-  ToolExecutionMirror,
-  ToolResultMirror,
-} from './host.js'
+import type { HookLogger, ToolResultEvents } from './host.js'
 import { sourceKeyFor, type SessionRegistry } from './sessions.js'
 import { runGuarded } from './toolkit.js'
 
 /** Dependencies of the plugin-ctx write observer (mount-owned). */
 export interface WriteLedgerDeps {
-  ctx: {
-    on(
-      name: 'tools/result',
-      listener: (exec: ToolExecutionMirror, result: ToolResultMirror) => undefined,
-    ): () => boolean
-  }
+  ctx: ToolResultEvents
   registry: SessionRegistry
   logger: HookLogger
 }

@@ -36,8 +36,7 @@ import type {
   HookLogger,
   LiveAgent,
   MemoryEventsService,
-  ToolExecutionMirror,
-  ToolResultMirror,
+  ToolResultEvents,
   TurnStoppingPayload,
 } from './host.js'
 import { makeNoticeMessage } from './host.js'
@@ -168,12 +167,7 @@ export function isTrivialTurn(firstUserText: string): boolean {
 
 /** Dependencies of the plugin-ctx memory-tool watcher (mount-owned). */
 export interface MemoryToolWatchDeps {
-  ctx: {
-    on(
-      name: 'tools/result',
-      listener: (exec: ToolExecutionMirror, result: ToolResultMirror) => undefined,
-    ): () => boolean
-  }
+  ctx: ToolResultEvents
   registry: SessionRegistry
   logger: HookLogger
 }

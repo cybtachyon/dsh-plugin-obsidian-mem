@@ -65,7 +65,7 @@ declare const plugin: {
 export default plugin;
 export { READ_INJECTION_CAP_PER_SESSION, READ_INJECTION_THROTTLE_MS, SESSION_TTL_MS, SESSIONS_FILE_NAME, SESSIONS_LRU_MAX, SESSIONS_PERSIST_DEBOUNCE_MS, SessionRegistry, sourceKeyFor, wakeTermsForSource, } from './sessions.js';
 export type { InjectedSourceRecord, SessionRecord, SessionRegistryOptions, } from './sessions.js';
-export type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope, MemoryEventsService, } from './host.js';
+export type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope, MemoryEventsService, ToolResultEvents, } from './host.js';
 export { guidanceLine, installTurnStart, nodeManifestFs } from './turnStart.js';
 export type { TurnStartDeps } from './turnStart.js';
 export { dirSignalsOf, HARNESS_READ_TOOL_NAME, importSnippetFrom, installReadIntercept, } from './readIntercept.js';

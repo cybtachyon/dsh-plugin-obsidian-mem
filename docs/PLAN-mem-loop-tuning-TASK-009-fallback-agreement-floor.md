@@ -29,3 +29,12 @@ completion note (row counts under the chosen floor match the replay);
 src+lib+spec same commit; gates green.
 
 Depends on: TASK-008; Q3 answer.
+
+## Completion note (probe, 2026-11-13)
+
+Replay of `docs/research/eval-split-d078-s25-k60.json` (k=60, 17 queries,
+102 returned rows with `score`/`routes` fields): the inclusive floor
+`2/(k+1)` = 0.032787 passes 7 rows, and all 7 sit at fused exactly
+`2/(k+1)`, i.e. the joint rank-1 shape; 54 rows are both-route-present
+(the sweep's looser presence count). The shipped
+`READ_FALLBACK_AGREEMENT_FLOOR` note carries the same numbers.

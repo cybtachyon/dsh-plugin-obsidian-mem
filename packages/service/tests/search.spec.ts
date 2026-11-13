@@ -635,8 +635,8 @@ describe('searchExactSections', () => {
   // One page feeds both routes of a dispatch pair (stubSequenced), so a
   // score-0.85 row dies on the sparse -score cutoff and fuses as a
   // single-route dense hit at its positional rank: the production shape
-  // for sub-floor candidates. Chunk 4 at dense rank 4 is the drop case
-  // the TASK-007 floor leaves behind.
+  // for sub-floor candidates. Under the TASK-009 agreement floor only
+  // chunk 1 (rank 1 on both routes) survives.
   const floorPage = [
     row({ [MILVUS_FIELDS.chunkId]: 1, [MILVUS_FIELDS.sectionHeader]: 'A' }),
     row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: 0.85 }),
@@ -644,7 +644,7 @@ describe('searchExactSections', () => {
     row({ [MILVUS_FIELDS.chunkId]: 4, [MILVUS_FIELDS.sectionHeader]: 'D', score: 0.85 }),
   ]
 
-  it('floors the fallback page: keeps rank-1 and rank-2-only rows, drops rank 4 (TASK-014)', async () => {
+  it('agreement-floors the fallback page: only the joint rank-1 survives (TASK-009)', async () => {
     const { client } = stubSequenced([[], floorPage])
 
     const results = await searchExactSections(deps(client), {
@@ -655,11 +655,11 @@ describe('searchExactSections', () => {
       k: 4,
     })
 
-    // chunk 2 sits at dense rank 2 alone: 1/62 is the inclusive default
-    // floor. chunk 1 is both-route rank 1; chunk 3 is dense rank 3 +
-    // sparse rank 2, and every both-route hit clears the floor. chunk
-    // 4's 1/64 is the drop the floor still makes.
-    expect(results.map((result) => result.chunk_id)).toEqual([1, 3, 2])
+    // chunk 1 is rank 1 on both routes: exactly 2/61, the inclusive
+    // agreement floor. chunk 2 is a single-route dense hit (tops out at
+    // 1/61). chunk 3 is dense rank 3 + sparse rank 2: 1/63 + 1/62 < 2/61.
+    // chunk 4's 1/64 is the furthest down. Agreement means agreement.
+    expect(results.map((result) => result.chunk_id)).toEqual([1])
     expect(results[0]!.score).toBe(1 / 61 + 1 / 61)
   })
 

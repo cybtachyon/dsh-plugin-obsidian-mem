@@ -211,8 +211,13 @@ function stubClient(options: { existingDim?: number | null } = {}) {
     async dropCollection() { calls.push('dropCollection'); dim = null; return ok },
     async delete(request: Record<string, unknown>) { calls.push('delete'); deletes.push(request); return ok },
     async count() { calls.push('count'); return { ...ok, data: 1 } },
-    async search() {
+    async search(request: Record<string, unknown>) {
       calls.push('search')
+      // Route-aware row: the dense route gets a within-radius score, the
+      // sparse route a negated-relevance score past the client-side floor.
+      // One row surviving BOTH routes at rank 1 fuses to 2/61, the shape
+      // the TASK-009 fallback agreement floor keeps.
+      const dense = request['anns_field'] === 'content_vector'
       return {
         ...ok,
         results: [{
@@ -223,7 +228,7 @@ function stubClient(options: { existingDim?: number | null } = {}) {
           scope: 'global',
           vault: '/home/test/.dsh/obsidian-mem',
           updated_at: 1700000000000,
-          score: 0.91,
+          score: dense ? 0.91 : -3.0,
         }],
       }
     },

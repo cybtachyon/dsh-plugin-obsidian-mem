@@ -99,16 +99,17 @@ export const DENSE_RANGE_MAX = 1.0;
  */
 export const SPARSE_SEARCH_RADIUS = 2.5;
 /**
- * FUSED_SCORE_FLOOR is the default FUSED-score floor hybridSearch and
- * searchExactSections' fallback leg apply when the request carries no
- * minScore (TASK-009 rule, TASK-014 reach, TASK-007 value). THE
- * authoritative statement of the floor rule: other docs here
- * cross-reference this constant by name. A single-route hit scores
- * 1/(k + rank), so the inclusive floor at 1/(k+2) keeps its rank 1 and
- * rank 2 and drops rank >= 3. Every both-route hit inside the fetched
- * window clears it: the worst case takes the window's last rank on
- * both routes (limit topK 20 * oversample 2 = 40) and fuses to
- * 2/(60+40) = 0.02 > 1/62. An explicit minScore (including 0) fully
+ * FUSED_SCORE_FLOOR is the default FUSED-score floor hybridSearch applies
+ * when the request carries no minScore (TASK-009 rule, TASK-014 reach,
+ * TASK-007 value). THE authoritative statement of the hybridSearch floor
+ * rule: other docs here cross-reference this constant by name. The
+ * searchExactSections fallback leg's omitted-minScore default is the
+ * separate {@link READ_FALLBACK_AGREEMENT_FLOOR} (TASK-009). A
+ * single-route hit scores 1/(k + rank), so the inclusive floor at 1/(k+2)
+ * keeps its rank 1 and rank 2 and drops rank >= 3. Every both-route hit
+ * inside the fetched window clears it: the worst case takes the window's
+ * last rank on both routes (limit topK 20 * oversample 2 = 40) and fuses
+ * to 2/(60+40) = 0.02 > 1/62. An explicit minScore (including 0) fully
  * overrides the default.
  *
  * TASK-007 live-loop iteration 2 (machinae-game probe 2026-11-13)
@@ -119,6 +120,28 @@ export const SPARSE_SEARCH_RADIUS = 2.5;
  * step looser, 1/(k+3), adds zero recall and +8 forbidden rows.
  */
 export const FUSED_SCORE_FLOOR = 1 / (RRF_RANKER_K + 2);
+/**
+ * READ_FALLBACK_AGREEMENT_FLOOR is the omitted-minScore default the
+ * searchExactSections fallback leg applies (TASK-009, plan Q3: the
+ * literal floor of the offline sweep's "floor > 2/(k+1)
+ * (both-routes-only)" row). The math under RRF(k), stated explicitly:
+ * a hit fuses to 1/(k + its rank on each route that surfaced it), so a
+ * hit ranked 1 on BOTH routes scores exactly 2/(k+1) and passes this
+ * inclusive floor, while every other shape falls short: a single-route
+ * hit tops out at 1/(k+1) (half the floor), and a both-route hit one
+ * rank down anywhere scores at most 1/(k+1) + 1/(k+2). Relevance here
+ * therefore means agreement: only the two routes' joint rank-1 hits
+ * answer the fallback. fuseRrf stays route-agnostic (no presence
+ * tagging); the shape falls out of the score alone.
+ *
+ * Probe (2026-11-13 replay of docs/research/eval-split-
+ * d078-s25-k60.json, 102 returned rows over 17 queries): 7 rows pass
+ * the inclusive floor and all 7 sit at fused exactly 2/(k+1), the
+ * joint-rank-1 shape; the sweep's looser both-route-presence reading
+ * counted 54 rows, which is why the floor value, not a presence flag,
+ * encodes the agreement rule.
+ */
+export const READ_FALLBACK_AGREEMENT_FLOOR = 2 / (RRF_RANKER_K + 1);
 /**
  * CANDIDATE_OVERSAMPLE: each route asks for this many times the
  * caller's limit, so dedupe and the minScore floor still leave a full
@@ -188,13 +211,14 @@ export async function hybridSearch(deps, request) {
  * filePath, chunks of that exact file (source_path == filter) come first,
  * unfloored; otherwise (absolute path, or no indexed chunks) a fallback
  * neighborhood search by trigger_extensions (ext), frameworks, and the
- * query text takes the same fused-score floor as hybridSearch (TASK-014)
- * and REQUIRES the stored wake_keywords to intersect the request's
- * fileTokens (TASK-008): a chunk with no keyword overlap with the file
- * the agent is reading never answers the fallback, and without tokens the
- * leg is skipped and answers empty. Same section budget per result as the
- * main search; offline degrades to IndexOfflineError. Output source_paths
- * are absolute (see toResults).
+ * query text applies the both-route agreement floor
+ * ({@link READ_FALLBACK_AGREEMENT_FLOOR}, TASK-009) and REQUIRES the
+ * stored wake_keywords to intersect the request's fileTokens (TASK-008):
+ * a chunk with no keyword overlap with the file the agent is reading
+ * never answers the fallback, and without tokens the leg is skipped and
+ * answers empty. Same section budget per result as the main search;
+ * offline degrades to IndexOfflineError. Output source_paths are absolute
+ * (see toResults).
  */
 export async function searchExactSections(deps, request) {
     const k = clampTopK(request.k ?? RECALL_READ_MAX_SECTIONS);
@@ -224,18 +248,19 @@ export async function searchExactSections(deps, request) {
         }
     }
     // Fallback: a general neighborhood search by ext/framework filters on
-    // the query text, so it takes the same fused-score floor as
-    // hybridSearch (TASK-009 rule, TASK-014 reach). The wake-keyword
-    // intersection is REQUIRED (TASK-008): without fileTokens nothing can
-    // intersect, so the leg is skipped and answers empty instead of
-    // widening to a token-free neighborhood search.
+    // the query text. Its omitted-minScore default is the both-route
+    // agreement floor (TASK-009): only the joint rank-1 of the two routes
+    // answers the neighborhood. The wake-keyword intersection is REQUIRED
+    // (TASK-008): without fileTokens nothing can intersect, so the leg is
+    // skipped and answers empty instead of widening to a token-free
+    // neighborhood search.
     const wakeKeywords = fileWakeKeywordsOf(request);
     if (wakeKeywords.length === 0) {
         return [];
     }
     const fallbackExpr = fallbackFilterExpr(request, ext, wakeKeywords);
     const fallbackRows = await dispatchRoutes(deps, queryText, dense, fallbackExpr, candidatesFor(k));
-    return flooredSections(deps, fallbackRows, sectionTokens, k, request.minScore);
+    return flooredSections(deps, fallbackRows, sectionTokens, k, request.minScore ?? READ_FALLBACK_AGREEMENT_FLOOR);
 }
 // FileWakeKeywordsOf normalizes the request's fileTokens into
 // wake_keywords filter values: trailing separators trimmed, blanks

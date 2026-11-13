@@ -129,9 +129,9 @@ export interface FilterCriteria {
   vaults?: readonly string[]
   /** Single trigger extension (".ts"); normalized defensively. */
   ext?: string
-  /** Framework labels for ARRAY_CONTAINSAny. */
+  /** Framework labels for ARRAY_CONTAINS_ANY. */
   frameworks?: readonly string[]
-  /** Wake keywords for ARRAY_CONTAINSAny. */
+  /** Wake keywords for ARRAY_CONTAINS_ANY. */
   wakeKeywords?: readonly string[]
   /** Exact source_path equality (the Read intercept's file). */
   sourcePath?: string
@@ -198,8 +198,11 @@ const CANDIDATE_OVERSAMPLE = 2
  * wake_keywords, vault, source_path) joined by ` and `, or undefined
  * when no clause applies. Values are double-quoted with backslash and
  * quote escaping. Golden-tested against literal expressions
- * (tests/search.spec.ts); verified filter forms per findings §3:
- * `scope IN [...]`, ARRAY_CONTAINS, ARRAY_CONTAINSAny, `==`, `IN`.
+ * (tests/search.spec.ts); verified filter forms per findings §3 (plus the
+ * TASK-061 live correction: the lite 3.2.2 parser accepts ARRAY_CONTAINS
+ * and ARRAY_CONTAINS_ANY but NOT the camel-case ARRAY_CONTAINSAny
+ * spelling, which fails as `unknown function`):
+ * `scope IN [...]`, ARRAY_CONTAINS, ARRAY_CONTAINS_ANY, `==`, `IN`.
  */
 export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
   const clauses: string[] = []
@@ -212,10 +215,10 @@ export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
     clauses.push(`ARRAY_CONTAINS(${MILVUS_FIELDS.triggerExtensions}, ${quoteExpr(ext)})`)
   }
   if (criteria.frameworks !== undefined && criteria.frameworks.length > 0) {
-    clauses.push(`ARRAY_CONTAINSAny(${MILVUS_FIELDS.triggerFrameworks}, ${listLiteral(criteria.frameworks)})`)
+    clauses.push(`ARRAY_CONTAINS_ANY(${MILVUS_FIELDS.triggerFrameworks}, ${listLiteral(criteria.frameworks)})`)
   }
   if (criteria.wakeKeywords !== undefined && criteria.wakeKeywords.length > 0) {
-    clauses.push(`ARRAY_CONTAINSAny(${MILVUS_FIELDS.wakeKeywords}, ${listLiteral(criteria.wakeKeywords)})`)
+    clauses.push(`ARRAY_CONTAINS_ANY(${MILVUS_FIELDS.wakeKeywords}, ${listLiteral(criteria.wakeKeywords)})`)
   }
   if (criteria.vaults !== undefined && criteria.vaults.length > 0) {
     clauses.push(`${MILVUS_FIELDS.vault} IN [${criteria.vaults.map(quoteExpr).join(', ')}]`)

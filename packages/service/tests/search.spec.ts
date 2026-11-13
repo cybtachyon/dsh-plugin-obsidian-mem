@@ -122,8 +122,8 @@ describe('buildFilterExpr golden expressions', () => {
 
     expect(expr).toBe('scope IN ["global", "proj-x"]'
       + ' and ARRAY_CONTAINS(trigger_extensions, ".ts")'
-      + ' and ARRAY_CONTAINSAny(trigger_frameworks, ["react", "vue"])'
-      + ' and ARRAY_CONTAINSAny(wake_keywords, ["debug"])'
+      + ' and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react", "vue"])'
+      + ' and ARRAY_CONTAINS_ANY(wake_keywords, ["debug"])'
       + ' and vault IN ["/vaults/shared"]'
       + ' and source_path == "notes/a.md"')
   })
@@ -321,7 +321,7 @@ describe('searchExactSections', () => {
     expect(hybrids).toHaveLength(2)
     expect(hybrids[0]!.data[0]!.expr).toBe('source_path == "src/widget.tsx"')
     expect(hybrids[1]!.data[0]!.expr)
-      .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINSAny(trigger_frameworks, ["react"])')
+      .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"])')
   })
 
   it('uses directory signals as wake keywords only when nothing else narrows', async () => {
@@ -334,7 +334,7 @@ describe('searchExactSections', () => {
     })
 
     const hybrids = hybridCalls(calls)
-    expect(hybrids[1]!.data[0]!.expr).toBe('ARRAY_CONTAINSAny(wake_keywords, ["src", "app"])')
+    expect(hybrids[1]!.data[0]!.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"])')
   })
 
   it('returns empty when both exact and fallback dispatches find nothing', async () => {

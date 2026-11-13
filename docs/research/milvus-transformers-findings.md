@@ -242,6 +242,7 @@ Server: `milvus-lite 3.2.2` (`getVersion()` → `"milvus_lite-3.2.2"`), gRPC on
 | `loadCollectionSync` / `loadCollection` / `getLoadState` / `releaseCollection` | worked |
 | `insert`, `upsert`, `delete({ids})`, `delete({filter})`, `get`, `query`, `count` | counts correct after deletes |
 | `search` + filter `ARRAY_CONTAINS(field, ".ts")` and lowercase `array_contains` | correct subset returned |
+| `ARRAY_CONTAINS_ANY(field, [...])` (TASK-061 live re-probe, 3.2.2) | correct subset returned. CORRECTION: the camel-case `ARRAY_CONTAINSAny` spelling first wired in TASK-024 is NOT accepted by the lite parser (`unknown function`; supported set lists snake-case `array_contains_any`). Uppercase snake-case `ARRAY_CONTAINS_ANY` is what ships. |
 | `ARRAY_LENGTH(field) >= 2` | correct |
 | `TEXT_MATCH(chunk_text, "milvus")` in `query` **and** in `search.filter` | correct |
 | `TEXT_MATCH` on a field with `enable_analyzer: true` **without** `enable_match` | worked (lite does not require `enable_match`) |

@@ -274,7 +274,7 @@ describe('ensureCollection', () => {
   })
 
   it('treats a matching existing collection as ready', async () => {
-    const { client } = stubClient({ exists: true, denseDim: VECTOR_DIM_DEFAULT })
+    const { client, calls } = stubClient({ exists: true, denseDim: VECTOR_DIM_DEFAULT })
 
     const result = await ensureCollection(client, { dim: VECTOR_DIM_DEFAULT })
 
@@ -283,6 +283,13 @@ describe('ensureCollection', () => {
       needsRebuild: false,
       storedDim: VECTOR_DIM_DEFAULT,
     })
+    // A persisted collection restarts 'released' in a new server process,
+    // so ensure re-loads it (idempotent no-op when already loaded).
+    expect(calls.map((call) => call.method)).toEqual([
+      'hasCollection',
+      'describeCollection',
+      'loadCollectionSync',
+    ])
   })
 
   it('throws through assertOk when the server resolves an error status', async () => {

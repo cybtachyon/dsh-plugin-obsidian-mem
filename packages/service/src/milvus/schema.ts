@@ -218,8 +218,9 @@ export function indexParams(collectionName: string = MILVUS_COLLECTION): CreateI
  * EnsureCollection creates the collection idempotently: create + all
  * indexes + loadCollectionSync when absent (getLoadState reports Loaded
  * for never-loaded collections, so never gate on it, findings G5); when it
- * exists, describe it and report dim drift as needsRebuild without
- * touching data.
+ * exists, describe it, report dim drift as needsRebuild without touching
+ * data, and re-run loadCollectionSync so a server restart (which persists
+ * the collection in state 'released') is search-ready after ensure.
  */
 export async function ensureCollection(
   client: MilvusClient,
@@ -256,6 +257,16 @@ export async function ensureCollection(
     (field) => field.name === MILVUS_FIELDS.sparseVector,
   )
   const needsRebuild = storedDim !== dim || sparseMissing
+  if (!needsRebuild) {
+    // A persisted lite 3.x collection comes back in state 'released' in a
+    // new server process; search/get fail until load. getLoadState lies
+    // (findings G5), so re-load unconditionally: loadCollectionSync on an
+    // already-loaded collection is a no-op success (live-verified).
+    assertOk(
+      await client.loadCollectionSync({ collection_name: collectionName }),
+      'loadCollectionSync',
+    )
+  }
   return { created: false, needsRebuild, storedDim }
 }
 

@@ -12,6 +12,10 @@ dsh/.build/
 # Test output
 coverage/
 
+# Eval harness result blobs (scripts/eval/recall-eval.mjs); commit a
+# specific baseline deliberately with --out, not the whole directory
+scripts/eval/results/
+
 # Editor / OS noise
 .idea/
 .DS_Store

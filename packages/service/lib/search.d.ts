@@ -1,20 +1,30 @@
 /**
- * Hybrid search over the `obsidian_mem` collection (TASK-024):
- * embedQuery → hybridSearch (dense COSINE + BM25, RRFRanker(60), filter
- * expression builder) → dedupe/truncate/registry-resolved results, plus
- * searchExactSections for the Read intercept and the typed
- * IndexOfflineError callers degrade quietly on.
+ * Hybrid search over the `obsidian_mem` collection (TASK-024, two-route
+ * dispatch per TASK-004): embedQuery → two standalone `search` calls
+ * (dense COSINE with a server-side radius, BM25 with a client-side
+ * floor) → client RRF(60) fusion → dedupe/truncate/registry-resolved
+ * results, plus searchExactSections for the Read intercept and the
+ * typed IndexOfflineError callers degrade quietly on.
  *
- * Invariants from docs/research/milvus-transformers-findings.md §3/§4 and
- * the G10 addendum: sub-requests go under `data[]` (never `requests`)
- * with metric_type on EACH item (lite rejects sparse without it, G3);
- * the shared filter expression goes into each route's `expr` (that is
- * the §4.2 verified shape; HybridSearchReq omits a top-level filter);
- * RRFRanker only (BM25 scores can be negative, G7, so never threshold
- * BM25 raw scores; minScore applies to fused scores only); output_fields
- * ALWAYS include the primary key chunk_id (G10) plus the columns the
- * result rows are built from; a Strong-consistency count(*) guards the
- * empty collection before BM25 dispatch.
+ * One `hybridSearch` cannot carry the per-route cutoffs on this stack:
+ * milvus-lite 3.2.2 PARSES route-level `params.radius` but does not
+ * honor it (docs/research/radius-tuning-findings.md §4), so each route
+ * dispatches its own standalone search. Invariants from
+ * docs/research/milvus-transformers-findings.md §3/§4 with the G10
+ * addendum plus radius-tuning-findings: metric_type rides EVERY search
+ * (lite rejects sparse without it, G3); the shared filter expression
+ * repeats in both searches' `expr` (the §4.2 per-route filter shape);
+ * COSINE survivors satisfy `radius < score <= range_filter` with the
+ * radius EXCLUSIVE, so the 0.78 floor keeps scores strictly above 0.78
+ * (radius-tuning-findings §2); BM25 returns NEGATED relevance scores
+ * best-first (G7, radius-tuning-findings §3), so its floor applies
+ * client-side on `-score` and a raw BM25 score is never thresholded
+ * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
+ * the exact formula lite's own fused scores show (radius-tuning-
+ * findings §4), and minScore applies to those fused scores only;
+ * output_fields ALWAYS include the primary key chunk_id (G10) plus the
+ * columns the result rows are built from; a Strong-consistency count(*)
+ * guards the empty collection before BM25 dispatch.
  *
  * Assumes the collection is loaded: lite searches fail in the 'released'
  * state and getLoadState lies (G5/G6), so the service/indexer ensures
@@ -30,22 +40,19 @@ import type { Embedder } from './embedder.js';
  * ui/audit display read. Never trimmed per call.
  */
 export declare const SEARCH_OUTPUT_FIELDS: readonly string[];
-/** One sub-request inside hybridSearch `data[]`. */
-export interface HybridRoute {
+/**
+ * SearchRouteDispatch is one standalone route `search` this module
+ * dispatches: dense (vector data) or sparse (raw query text data).
+ */
+export interface SearchRouteDispatch {
+    collection_name: string;
     anns_field: string;
     data: unknown[];
     limit: number;
     metric_type: string;
-    /** Per-route scalar filter; the verified lite shape (§4.2). */
+    /** Per-route scalar filter; the same expr rides both searches. */
     expr?: string;
-    params?: Record<string, unknown>;
-}
-/** The hybridSearch request this module dispatches. */
-export interface HybridSearchDispatch {
-    collection_name: string;
-    data: HybridRoute[];
-    rerank: unknown;
-    limit: number;
+    params: Record<string, unknown>;
     output_fields: string[];
     consistency_level?: string;
 }
@@ -59,7 +66,7 @@ export interface SearchMilvus {
         data?: number;
         status?: unknown;
     }>;
-    hybridSearch(request: HybridSearchDispatch): Promise<{
+    search(request: SearchRouteDispatch): Promise<{
         results?: RawSearchRow[];
         status?: unknown;
     }>;
@@ -81,7 +88,7 @@ export interface MemorySearchResult {
     /** Vault access mode from the injected registry lookup; null when unknown. */
     mode: VaultMode | null;
     updated_at: number;
-    /** RRF-fused score (never a raw BM25 score; G7). */
+    /** Client-fused RRF score (never a raw BM25 score; G7). */
     score: number;
 }
 /** Search-side dependencies; everything external is injected. */
@@ -162,10 +169,10 @@ export interface ExactSectionRequest {
  */
 export declare function buildFilterExpr(criteria: FilterCriteria): string | undefined;
 /**
- * HybridSearch runs the dense + BM25 hybrid dispatch and returns
- * deduped, budget-cut, registry-resolved results. Offline or error
- * statuses become IndexOfflineError; embedder failures propagate as-is
- * (that is not an index-offline condition).
+ * HybridSearch runs the dense + BM25 two-search dispatch with client-side
+ * RRF fusion and returns deduped, budget-cut, registry-resolved results.
+ * Offline or error statuses become IndexOfflineError; embedder failures
+ * propagate as-is (that is not an index-offline condition).
  */
 export declare function hybridSearch(deps: SearchDependencies, request: SearchRequest): Promise<MemorySearchResult[]>;
 /**

@@ -9,15 +9,17 @@ import {
   hybridSearch,
   searchExactSections,
 } from '../src/search.ts'
-import type { HybridSearchDispatch, SearchMilvus } from '../src/search.ts'
+import type { SearchMilvus, SearchRouteDispatch } from '../src/search.ts'
 import type { SearchDependencies } from '../src/search.ts'
 
 /**
- * Hybrid-search spec for TASK-024 with fakes only: golden filter
- * expressions (the shared builder), the hybridSearch dispatch shape
- * (data[] sub-requests, per-item metric_type and expr, RRFRanker(60),
- * G10 output_fields), the count(*) empty guard, dedupe/token budgets/
- * mode resolution, the exact-section fallback, and the typed
+ * Hybrid-search spec for TASK-024 with the TASK-004 two-route split,
+ * fakes only: golden filter expressions (the shared builder), the two
+ * standalone search dispatches (per-route params goldens: dense ef +
+ * radius + range_filter, sparse empty; expr, candidate limit, Strong
+ * consistency, G10 output_fields), the count(*) empty guard, the
+ * client-side RRF fusion math and the sparse -score cutoff, dedupe/token
+ * budgets/mode resolution, the exact-section fallback, and the typed
  * offline degradation.
  */
 
@@ -28,9 +30,12 @@ interface Recorded {
 
 interface StubOptions {
   countValue?: number
+  /** Page for both routes; the per-route options win when present. */
   results?: Array<Record<string, unknown>>
-  errorStatusOn?: string
-  throwOn?: string
+  denseResults?: Array<Record<string, unknown>>
+  sparseResults?: Array<Record<string, unknown>>
+  errorStatusOn?: 'count' | 'search'
+  throwOn?: 'count' | 'search'
 }
 
 function stubMilvus(options: StubOptions = {}) {
@@ -47,15 +52,18 @@ function stubMilvus(options: StubOptions = {}) {
       }
       return { status: ok, data: options.countValue ?? 12 }
     },
-    async hybridSearch(request: Record<string, unknown>) {
-      calls.push({ method: 'hybridSearch', request })
-      if (options.throwOn === 'hybridSearch') {
+    async search(request: Record<string, unknown>) {
+      calls.push({ method: 'search', request })
+      if (options.throwOn === 'search') {
         throw new Error('2 UNKNOWN: channel shutdown')
       }
-      if (options.errorStatusOn === 'hybridSearch') {
+      if (options.errorStatusOn === 'search') {
         return { status: { error_code: 'ServerError', reason: 'released' } }
       }
-      return { status: ok, results: options.results ?? [] }
+      const scripted = request.anns_field === MILVUS_FIELDS.denseVector
+        ? options.denseResults ?? options.results
+        : options.sparseResults ?? options.results
+      return { status: ok, results: scripted ?? [] }
     },
   }
   return { client: client as unknown as SearchMilvus, calls }
@@ -70,31 +78,38 @@ function deps(client: SearchMilvus, overrides: Partial<SearchDependencies> = {})
   }
 }
 
-function hybridCalls(calls: readonly Recorded[]): HybridSearchDispatch[] {
-  return calls.filter((call) => call.method === 'hybridSearch')
-    .map((call) => call.request as unknown as HybridSearchDispatch)
+function searchDispatches(calls: readonly Recorded[]): SearchRouteDispatch[] {
+  return calls.filter((call) => call.method === 'search')
+    .map((call) => call.request as unknown as SearchRouteDispatch)
 }
 
-/** Stub whose hybridSearch returns one scripted page per call. */
+/** Stub whose search consumes one scripted page per dispatch (both routes). */
 function stubSequenced(pages: Array<Array<Record<string, unknown>>>) {
   const calls: Recorded[] = []
   const ok = { error_code: 'Success', code: 0, reason: '' }
   let page = 0
+  let secondRoute = false
   const client = {
     async count(request: Record<string, unknown>) {
       calls.push({ method: 'count', request })
       return { status: ok, data: 5 }
     },
-    async hybridSearch(request: Record<string, unknown>) {
-      calls.push({ method: 'hybridSearch', request })
+    async search(request: Record<string, unknown>) {
+      calls.push({ method: 'search', request })
       const results = pages[page] ?? []
-      page += 1
+      if (secondRoute) {
+        page += 1
+      }
+      secondRoute = !secondRoute
       return { status: ok, results }
     },
   }
   return { client: client as unknown as SearchMilvus, calls }
 }
 
+// Default score -9 reads as BM25 relevancy 9 against the negated-score
+// shape (radius-tuning-findings §3), so a default row survives both the
+// sparse client cutoff and the dense route (whose score fusion ignores).
 function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     [MILVUS_FIELDS.chunkId]: 1000,
@@ -104,7 +119,7 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     [MILVUS_FIELDS.vault]: '/vaults/shared',
     [MILVUS_FIELDS.updatedAt]: 1700000000000,
     [MILVUS_FIELDS.chunkText]: 'chunk body text',
-    score: 0.03,
+    score: -9,
     ...overrides,
   }
 }
@@ -152,8 +167,8 @@ describe('buildFilterExpr golden expressions', () => {
   })
 })
 
-describe('hybridSearch dispatch', () => {
-  it('sends dense + BM25 sub-requests with per-item metric_type, expr, and RRF fusion', async () => {
+describe('two-route search dispatch', () => {
+  it('dispatches standalone dense + BM25 searches with the verified shapes', async () => {
     const { client, calls } = stubMilvus({ results: [row()] })
 
     await hybridSearch(deps(client), {
@@ -162,66 +177,75 @@ describe('hybridSearch dispatch', () => {
       topK: 4,
     })
 
-    const [hybrid] = hybridCalls(calls)
-    expect(hybrid).toBeDefined()
-    expect(hybrid!.collection_name).toBe('obsidian_mem')
-    expect(hybrid!.data).toHaveLength(2)
-    expect(hybrid!.data[0]).toMatchObject({
-      anns_field: MILVUS_FIELDS.denseVector,
-      limit: 8,
-      metric_type: 'COSINE',
-      expr: 'ARRAY_CONTAINS(trigger_extensions, ".ts")',
-    })
-    expect(Array.isArray(hybrid!.data[0]!.data[0])).toBe(true)
-    expect(hybrid!.data[1]).toMatchObject({
-      anns_field: MILVUS_FIELDS.sparseVector,
-      limit: 8,
-      metric_type: 'BM25',
-      expr: 'ARRAY_CONTAINS(trigger_extensions, ".ts")',
-    })
-    // The BM25 route carries the raw query text, not a vector.
-    expect(hybrid!.data[1]!.data).toEqual(['how do i rate limit'])
-    expect(hybrid!.rerank).toEqual({ strategy: 'rrf', params: { k: 60 } })
-    expect(hybrid!.limit).toBe(8)
-    expect(hybrid!.consistency_level).toBe('Strong')
+    const [dense, sparse] = searchDispatches(calls)
+    expect(dense).toBeDefined()
+    expect(sparse).toBeDefined()
+    for (const dispatch of [dense!, sparse!]) {
+      expect(dispatch.collection_name).toBe('obsidian_mem')
+      expect(dispatch.limit).toBe(8)
+      expect(dispatch.expr).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
+      expect(dispatch.output_fields).toEqual([...SEARCH_OUTPUT_FIELDS])
+      expect(dispatch.consistency_level).toBe('Strong')
+    }
+    expect(dense!.anns_field).toBe(MILVUS_FIELDS.denseVector)
+    expect(dense!.metric_type).toBe('COSINE')
+    expect(Array.isArray(dense!.data[0])).toBe(true)
+    expect(dense!.params).toEqual({ ef: 64, radius: 0.78, range_filter: 1 })
+    // Radius regression pin: lite also float-converts numeric STRINGS
+    // (radius-tuning-findings §1), so only the emitted JSON type keeps
+    // the pinned production value a number.
+    expect(typeof dense!.params.radius).toBe('number')
+    expect(typeof dense!.params.range_filter).toBe('number')
+    expect(sparse!.anns_field).toBe(MILVUS_FIELDS.sparseVector)
+    expect(sparse!.metric_type).toBe('BM25')
+    // The BM25 route carries the raw query text, not a vector, and no
+    // server params: its floor is the client-side -score cutoff.
+    expect(sparse!.data).toEqual(['how do i rate limit'])
+    expect(sparse!.params).toEqual({})
   })
 
-  it('always projects the primary key and result columns (G10)', async () => {
+  it('always projects the primary key and result columns on both routes (G10)', async () => {
     const { client, calls } = stubMilvus()
 
     await hybridSearch(deps(client), { query: 'x' })
 
-    const [hybrid] = hybridCalls(calls)
-    expect(hybrid!.output_fields).toContain(MILVUS_FIELDS.chunkId)
-    expect(hybrid!.output_fields).toEqual([...SEARCH_OUTPUT_FIELDS])
-    for (const field of ['source_path', 'section_header', 'scope', 'vault', 'updated_at', 'chunk_text']) {
-      expect(hybrid!.output_fields).toContain(field)
+    const dispatches = searchDispatches(calls)
+    expect(dispatches).toHaveLength(2)
+    for (const dispatch of dispatches) {
+      expect(dispatch.output_fields).toContain(MILVUS_FIELDS.chunkId)
+      expect(dispatch.output_fields).toEqual([...SEARCH_OUTPUT_FIELDS])
+      for (const field of ['source_path', 'section_header', 'scope', 'vault', 'updated_at', 'chunk_text']) {
+        expect(dispatch.output_fields).toContain(field)
+      }
     }
   })
 
-  it('omits expr on both routes when no filters are given', async () => {
+  it('omits expr on both searches when no filters are given', async () => {
     const { client, calls } = stubMilvus()
 
     await hybridSearch(deps(client), { query: 'x' })
 
-    const [hybrid] = hybridCalls(calls)
-    for (const route of hybrid!.data) {
-      expect(route.expr).toBeUndefined()
+    for (const dispatch of searchDispatches(calls)) {
+      expect(dispatch.expr).toBeUndefined()
     }
   })
 
-  it('clamps topK to the search maximum and defaults the candidate limit', async () => {
+  it('clamps topK to the search maximum and defaults the candidate limit on both routes', async () => {
     const { client, calls } = stubMilvus()
 
     await hybridSearch(deps(client), { query: 'x', topK: 100 })
     await hybridSearch(deps(client), { query: 'x' })
 
-    const [capped, defaulted] = hybridCalls(calls)
-    expect(capped!.limit).toBe(40)
-    expect(defaulted!.limit).toBe(12)
+    const [cappedA, cappedB, defaultedA, defaultedB] = searchDispatches(calls)
+    for (const dispatch of [cappedA!, cappedB!]) {
+      expect(dispatch.limit).toBe(40)
+    }
+    for (const dispatch of [defaultedA!, defaultedB!]) {
+      expect(dispatch.limit).toBe(12)
+    }
   })
 
-  it('skips the hybrid dispatch entirely when count says the collection is empty', async () => {
+  it('skips both searches entirely when count says the collection is empty', async () => {
     const { client, calls } = stubMilvus({ countValue: 0 })
 
     const results = await hybridSearch(deps(client), { query: 'x' })
@@ -231,21 +255,124 @@ describe('hybridSearch dispatch', () => {
   })
 })
 
-describe('hybridSearch results', () => {
-  it('dedupes source_path + section_header keeping the best score and truncates text', async () => {
+describe('client RRF fusion', () => {
+  it('fuses a chunk found by both routes at 1/(60+1) + 1/(60+1)', async () => {
+    const { client } = stubMilvus({
+      denseResults: [
+        row({ [MILVUS_FIELDS.chunkId]: 1 }),
+        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B' }),
+      ],
+      sparseResults: [
+        row({ [MILVUS_FIELDS.chunkId]: 1 }),
+        row({ [MILVUS_FIELDS.chunkId]: 3, [MILVUS_FIELDS.sectionHeader]: 'C' }),
+      ],
+    })
+
+    const results = await hybridSearch(deps(client), { query: 'x' })
+
+    // Chunks 2 and 3 fuse to the same 1/62 (each route's rank 2), so the
+    // tie-break orders them by ascending chunk_id.
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 2, 3])
+    expect(results[0]!.score).toBe(1 / 61 + 1 / 61)
+    expect(results[1]!.score).toBe(1 / 62)
+    expect(results[2]!.score).toBe(1 / 62)
+  })
+
+  it('scores a single-route hit at rank r as 1/(60 + r)', async () => {
+    const { client } = stubMilvus({
+      denseResults: [
+        row({ [MILVUS_FIELDS.chunkId]: 10 }),
+        row({ [MILVUS_FIELDS.chunkId]: 11, [MILVUS_FIELDS.sectionHeader]: 'B' }),
+        row({ [MILVUS_FIELDS.chunkId]: 12, [MILVUS_FIELDS.sectionHeader]: 'C' }),
+      ],
+      sparseResults: [],
+    })
+
+    const results = await hybridSearch(deps(client), { query: 'x' })
+
+    expect(results.map((result) => result.chunk_id)).toEqual([10, 11, 12])
+    expect(results[0]!.score).toBe(1 / 61)
+    expect(results[1]!.score).toBe(1 / 62)
+    expect(results[2]!.score).toBe(1 / 63)
+  })
+
+  it('breaks fused-score ties by ascending chunk_id', async () => {
+    const { client } = stubMilvus({
+      // Chunk 7 takes dense rank 1, chunk 3 BM25 rank 1: identical fused
+      // scores, and the later-first-seen chunk 3 must still come first.
+      denseResults: [row({ [MILVUS_FIELDS.chunkId]: 7, [MILVUS_FIELDS.sectionHeader]: 'G' })],
+      sparseResults: [row({ [MILVUS_FIELDS.chunkId]: 3, [MILVUS_FIELDS.sectionHeader]: 'C' })],
+    })
+
+    const results = await hybridSearch(deps(client), { query: 'x' })
+
+    expect(results.map((result) => result.chunk_id)).toEqual([3, 7])
+    expect(results[0]!.score).toBe(1 / 61)
+    expect(results[1]!.score).toBe(1 / 61)
+  })
+
+  it('keeps the first-seen row fields when both routes hit the same chunk', async () => {
+    const { client } = stubMilvus({
+      denseResults: [row({ [MILVUS_FIELDS.chunkId]: 1, [MILVUS_FIELDS.chunkText]: 'from dense' })],
+      sparseResults: [row({ [MILVUS_FIELDS.chunkId]: 1, [MILVUS_FIELDS.chunkText]: 'from sparse' })],
+    })
+
+    const results = await hybridSearch(deps(client), { query: 'x' })
+
+    expect(results).toHaveLength(1)
+    expect(results[0]!.chunk_text).toBe('from dense')
+    expect(results[0]!.score).toBe(1 / 61 + 1 / 61)
+  })
+})
+
+describe('sparse BM25 client cutoff on -score', () => {
+  it('keeps a hit whose -score equals the 2.5 floor and drops one below it', async () => {
+    const { client } = stubMilvus({
+      denseResults: [],
+      sparseResults: [
+        row({ [MILVUS_FIELDS.chunkId]: 1, score: -2.5 }),
+        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: -2.4999 }),
+      ],
+    })
+
+    const results = await hybridSearch(deps(client), { query: 'x' })
+
+    // -(-2.5) == 2.5 survives; -(-2.4999) < 2.5 drops.
+    expect(results.map((result) => result.chunk_id)).toEqual([1])
+    expect(results[0]!.score).toBe(1 / 61)
+  })
+
+  it('leaves the dense route untouched: its cutoff is the server-side radius', async () => {
+    const { client } = stubMilvus({
+      // The server already cut the COSINE route by radius; a plain
+      // COSINE-band score must not face the BM25 relevancy floor here.
+      denseResults: [row({ [MILVUS_FIELDS.chunkId]: 1, score: 0.81 })],
+      sparseResults: [],
+    })
+
+    const results = await hybridSearch(deps(client), { query: 'x' })
+
+    expect(results.map((result) => result.chunk_id)).toEqual([1])
+  })
+})
+
+describe('result shaping', () => {
+  it('dedupes source_path + section_header keeping the best fused score and truncates text', async () => {
     const long = 'x'.repeat(1000)
     const { client } = stubMilvus({
-      results: [
-        row({ [MILVUS_FIELDS.chunkId]: 1, score: 0.016 }),
-        row({ [MILVUS_FIELDS.chunkId]: 2, score: 0.032 }),
+      // Chunks 2 and 1 share one section; chunk 2 holds dense rank 1, so
+      // the section keeps chunk 2's higher fused score.
+      denseResults: [
+        row({ [MILVUS_FIELDS.chunkId]: 2 }),
+        row({ [MILVUS_FIELDS.chunkId]: 1 }),
         row({
           [MILVUS_FIELDS.chunkId]: 3,
           [MILVUS_FIELDS.sourcePath]: 'notes/b.md',
           [MILVUS_FIELDS.sectionHeader]: 'Other',
           [MILVUS_FIELDS.chunkText]: long,
-          score: 0.02,
         }),
       ],
+      sparseResults: [],
     })
 
     const results = await hybridSearch(deps(client), { query: 'x', topK: 5, tokenCap: 50 })
@@ -259,13 +386,16 @@ describe('hybridSearch results', () => {
 
   it('applies minScore to fused scores only', async () => {
     const { client } = stubMilvus({
-      results: [
-        row({ [MILVUS_FIELDS.chunkId]: 1, score: 0.03 }),
-        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: 0.005 }),
+      denseResults: [
+        row({ [MILVUS_FIELDS.chunkId]: 1 }),
+        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B' }),
       ],
+      sparseResults: [],
     })
 
-    const results = await hybridSearch(deps(client), { query: 'x', minScore: 0.01 })
+    // Fused scores: chunk 1 = 1/61 (0.016393), chunk 2 = 1/62 (0.016129).
+    // The floor cuts rank 2; raw route scores never reach the comparison.
+    const results = await hybridSearch(deps(client), { query: 'x', minScore: 0.0162 })
 
     expect(results.map((result) => result.chunk_id)).toEqual([1])
   })
@@ -279,16 +409,23 @@ describe('offline degradation', () => {
       .rejects.toThrowError(IndexOfflineError)
   })
 
-  it('wraps resolved-but-failed statuses too (the SDK does not throw)', async () => {
-    const { client } = stubMilvus({ errorStatusOn: 'hybridSearch' })
+  it('wraps route search transport failures too', async () => {
+    const { client } = stubMilvus({ throwOn: 'search' })
 
     await expect(hybridSearch(deps(client), { query: 'x' }))
-      .rejects.toThrow(/hybridSearch: ServerError/)
+      .rejects.toThrowError(IndexOfflineError)
+  })
+
+  it('wraps resolved-but-failed statuses (the SDK does not throw)', async () => {
+    const { client } = stubMilvus({ errorStatusOn: 'search' })
+
+    await expect(hybridSearch(deps(client), { query: 'x' }))
+      .rejects.toThrow(/search: ServerError/)
   })
 })
 
 describe('searchExactSections', () => {
-  it('filters on the exact source_path first', async () => {
+  it('filters on the exact source_path on both routes first', async () => {
     const { client, calls } = stubMilvus({ results: [row({ [MILVUS_FIELDS.sourcePath]: 'src/app.tsx' })] })
 
     const results = await searchExactSections(deps(client), {
@@ -297,14 +434,14 @@ describe('searchExactSections', () => {
       snippet: 'export function App',
     })
 
-    const hybrids = hybridCalls(calls)
-    expect(hybrids).toHaveLength(1)
+    const dispatches = searchDispatches(calls)
+    expect(dispatches).toHaveLength(2)
     expect(results).toHaveLength(1)
-    for (const route of hybrids[0]!.data) {
-      expect(route.expr).toBe('source_path == "src/app.tsx"')
+    for (const dispatch of dispatches) {
+      expect(dispatch.expr).toBe('source_path == "src/app.tsx"')
+      // k defaults to RECALL_READ_MAX_SECTIONS (2), candidates are k*2.
+      expect(dispatch.limit).toBe(4)
     }
-    // k defaults to RECALL_READ_MAX_SECTIONS (2), candidates are k*2.
-    expect(hybrids[0]!.limit).toBe(4)
   })
 
   it('falls back to ext + framework filters when the exact file has no chunks', async () => {
@@ -317,11 +454,15 @@ describe('searchExactSections', () => {
     })
 
     expect(results).toHaveLength(1)
-    const hybrids = hybridCalls(calls)
-    expect(hybrids).toHaveLength(2)
-    expect(hybrids[0]!.data[0]!.expr).toBe('source_path == "src/widget.tsx"')
-    expect(hybrids[1]!.data[0]!.expr)
-      .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"])')
+    const dispatches = searchDispatches(calls)
+    expect(dispatches).toHaveLength(4)
+    for (const dispatch of dispatches.slice(0, 2)) {
+      expect(dispatch.expr).toBe('source_path == "src/widget.tsx"')
+    }
+    for (const dispatch of dispatches.slice(2)) {
+      expect(dispatch.expr)
+        .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"])')
+    }
   })
 
   it('uses directory signals as wake keywords only when nothing else narrows', async () => {
@@ -333,8 +474,11 @@ describe('searchExactSections', () => {
       snippet: 'deployment notes',
     })
 
-    const hybrids = hybridCalls(calls)
-    expect(hybrids[1]!.data[0]!.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"])')
+    const dispatches = searchDispatches(calls)
+    expect(dispatches).toHaveLength(4)
+    for (const dispatch of dispatches.slice(2)) {
+      expect(dispatch.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"])')
+    }
   })
 
   it('returns empty when both exact and fallback dispatches find nothing', async () => {

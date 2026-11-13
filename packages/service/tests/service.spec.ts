@@ -211,8 +211,8 @@ function stubClient(options: { existingDim?: number | null } = {}) {
     async dropCollection() { calls.push('dropCollection'); dim = null; return ok },
     async delete(request: Record<string, unknown>) { calls.push('delete'); deletes.push(request); return ok },
     async count() { calls.push('count'); return { ...ok, data: 1 } },
-    async hybridSearch() {
-      calls.push('hybridSearch')
+    async search() {
+      calls.push('search')
       return {
         ...ok,
         results: [{
@@ -928,14 +928,14 @@ old body
 })
 
 describe('search', () => {
-  it('passes through hybridSearch once provisioned, resolving vault modes', async () => {
+  it('passes through the two-route search dispatch once provisioned, resolving vault modes', async () => {
     const h = harness()
     await h.service.ensureMemoryAccess()
     const results = await h.service.search({ query: 'anything' })
     expect(results).toHaveLength(1)
     expect(results[0]!.mode).toBe('shared')
     expect(results[0]!.chunk_id).toBe(7)
-    expect(h.client.calls).toContain('hybridSearch')
+    expect(h.client.calls).toContain('search')
   })
 
   it('throws IndexOfflineError when the index degraded, never crashes', async () => {
@@ -961,7 +961,7 @@ describe('search', () => {
       snippet: 'import { App } from "./App"',
     })
     expect(results[0]?.chunk_id).toBe(7)
-    expect(h.client.calls).toContain('hybridSearch')
+    expect(h.client.calls).toContain('search')
 
     h.launcher.setDegraded(true)
     await expect(h.service.searchExactSections({ filePath: 'src/App.tsx' }))

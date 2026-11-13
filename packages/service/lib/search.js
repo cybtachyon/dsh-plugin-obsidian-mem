@@ -1,20 +1,30 @@
 /**
- * Hybrid search over the `obsidian_mem` collection (TASK-024):
- * embedQuery → hybridSearch (dense COSINE + BM25, RRFRanker(60), filter
- * expression builder) → dedupe/truncate/registry-resolved results, plus
- * searchExactSections for the Read intercept and the typed
- * IndexOfflineError callers degrade quietly on.
+ * Hybrid search over the `obsidian_mem` collection (TASK-024, two-route
+ * dispatch per TASK-004): embedQuery → two standalone `search` calls
+ * (dense COSINE with a server-side radius, BM25 with a client-side
+ * floor) → client RRF(60) fusion → dedupe/truncate/registry-resolved
+ * results, plus searchExactSections for the Read intercept and the
+ * typed IndexOfflineError callers degrade quietly on.
  *
- * Invariants from docs/research/milvus-transformers-findings.md §3/§4 and
- * the G10 addendum: sub-requests go under `data[]` (never `requests`)
- * with metric_type on EACH item (lite rejects sparse without it, G3);
- * the shared filter expression goes into each route's `expr` (that is
- * the §4.2 verified shape; HybridSearchReq omits a top-level filter);
- * RRFRanker only (BM25 scores can be negative, G7, so never threshold
- * BM25 raw scores; minScore applies to fused scores only); output_fields
- * ALWAYS include the primary key chunk_id (G10) plus the columns the
- * result rows are built from; a Strong-consistency count(*) guards the
- * empty collection before BM25 dispatch.
+ * One `hybridSearch` cannot carry the per-route cutoffs on this stack:
+ * milvus-lite 3.2.2 PARSES route-level `params.radius` but does not
+ * honor it (docs/research/radius-tuning-findings.md §4), so each route
+ * dispatches its own standalone search. Invariants from
+ * docs/research/milvus-transformers-findings.md §3/§4 with the G10
+ * addendum plus radius-tuning-findings: metric_type rides EVERY search
+ * (lite rejects sparse without it, G3); the shared filter expression
+ * repeats in both searches' `expr` (the §4.2 per-route filter shape);
+ * COSINE survivors satisfy `radius < score <= range_filter` with the
+ * radius EXCLUSIVE, so the 0.78 floor keeps scores strictly above 0.78
+ * (radius-tuning-findings §2); BM25 returns NEGATED relevance scores
+ * best-first (G7, radius-tuning-findings §3), so its floor applies
+ * client-side on `-score` and a raw BM25 score is never thresholded
+ * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
+ * the exact formula lite's own fused scores show (radius-tuning-
+ * findings §4), and minScore applies to those fused scores only;
+ * output_fields ALWAYS include the primary key chunk_id (G10) plus the
+ * columns the result rows are built from; a Strong-consistency count(*)
+ * guards the empty collection before BM25 dispatch.
  *
  * Assumes the collection is loaded: lite searches fail in the 'released'
  * state and getLoadState lies (G5/G6), so the service/indexer ensures
@@ -23,7 +33,7 @@
  * @module dsh-plugin-obsidian-mem/service/search
  */
 import { isAbsolute, join } from 'node:path';
-import { MetricType, RRFRanker } from '@zilliz/milvus2-sdk-node';
+import { MetricType } from '@zilliz/milvus2-sdk-node';
 import { approxCharsForTokens, clampInt, MILVUS_COLLECTION, MILVUS_CONSISTENCY_LEVEL, MILVUS_FIELDS, normalizeExtension, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, SEARCH_DEFAULT_TOP_K, SEARCH_MAX_RESULTS, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { assertOk } from './milvus/ok.js';
@@ -56,11 +66,24 @@ const EXT_FRAMEWORK_HINTS = {
     '.vue': ['vue'],
     '.svelte': ['svelte'],
 };
-// The verified fusion and search-knob values from findings §4.2: RRFRanker
-// (k) fuses the two routes by rank only (so negative BM25 scores never leak
-// into a result, G7), and ef is the HNSW candidate width per dense route.
+// The verified fusion and search-knob values from findings §4.2 and
+// radius-tuning-findings §4: RRF fuses the two routes by rank only (so
+// negative BM25 scores never leak into a result, G7), and ef is the
+// HNSW candidate width per dense route.
 const RRF_RANKER_K = 60;
 const DENSE_SEARCH_EF = 64;
+// Server-side COSINE range cutoff on the standalone dense search:
+// survivors satisfy `radius < score <= range_filter`, radius EXCLUSIVE
+// (radius-tuning-findings §2), so DENSE_SEARCH_RADIUS keeps only scores
+// strictly above 0.78 and DENSE_RANGE_MAX is the metric ceiling.
+const DENSE_SEARCH_RADIUS = 0.78;
+const DENSE_RANGE_MAX = 1.0;
+// Client-side BM25 floor (radius-tuning-findings §3): lite 3.2.2 returns
+// NEGATED relevance scores best-first, so a positive server-side radius
+// would be an upper bound, not a floor. A hit survives when
+// `-score >= SPARSE_SEARCH_RADIUS`; raising it raises required
+// relevancy and has no ceiling.
+const SPARSE_SEARCH_RADIUS = 2.5;
 // Each route asks for this many times the caller's limit, so dedupe and the
 // minScore floor still leave a full page of results to return.
 const CANDIDATE_OVERSAMPLE = 2;
@@ -100,10 +123,10 @@ export function buildFilterExpr(criteria) {
     return clauses.length > 0 ? clauses.join(' and ') : undefined;
 }
 /**
- * HybridSearch runs the dense + BM25 hybrid dispatch and returns
- * deduped, budget-cut, registry-resolved results. Offline or error
- * statuses become IndexOfflineError; embedder failures propagate as-is
- * (that is not an index-offline condition).
+ * HybridSearch runs the dense + BM25 two-search dispatch with client-side
+ * RRF fusion and returns deduped, budget-cut, registry-resolved results.
+ * Offline or error statuses become IndexOfflineError; embedder failures
+ * propagate as-is (that is not an index-offline condition).
  */
 export async function hybridSearch(deps, request) {
     const topK = clampTopK(request.topK);
@@ -119,12 +142,13 @@ export async function hybridSearch(deps, request) {
         return [];
     }
     const dense = await deps.embedder.embedQuery(request.query);
-    const rows = await dispatchHybrid(deps, request.query, dense, expr, candidatesFor(topK));
+    const rows = await dispatchRoutes(deps, request.query, dense, expr, candidatesFor(topK));
     let results = toResults(deps, rows, tokenCap);
     if (request.minScore !== undefined) {
         const floor = request.minScore;
-        // Applies to RRF-fused scores only; BM25 raw scores can be negative
-        // (G7) and never reach this comparison.
+        // Applies to RRF-fused scores only; BM25 raw scores are negated
+        // relevancy (G7, radius-tuning-findings §3) and never reach this
+        // comparison.
         results = results.filter((row) => row.score >= floor);
     }
     return topSections(results, topK);
@@ -155,7 +179,7 @@ export async function searchExactSections(deps, request) {
             ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
         });
     if (exactFilter !== null) {
-        const exactRows = await dispatchHybrid(deps, queryText, dense, exactFilter, candidatesFor(k));
+        const exactRows = await dispatchRoutes(deps, queryText, dense, exactFilter, candidatesFor(k));
         const exact = topSections(toResults(deps, exactRows, sectionTokens), k);
         if (exact.length > 0) {
             return exact;
@@ -177,44 +201,73 @@ export async function searchExactSections(deps, request) {
             ? { wakeKeywords }
             : {}),
     });
-    const fallbackRows = await dispatchHybrid(deps, queryText, dense, fallbackExpr, candidatesFor(k));
+    const fallbackRows = await dispatchRoutes(deps, queryText, dense, fallbackExpr, candidatesFor(k));
     return topSections(toResults(deps, fallbackRows, sectionTokens), k);
 }
-// Shared dispatch: one hybridSearch carrying both routes with explicit
-// metric_types (G3), the filter expr per route (§4.2), RRFRanker(60)
-// fusion, and the full G10 projection.
-async function dispatchHybrid(deps, queryText, dense, expr, candidateLimit) {
-    const routes = [
-        {
-            anns_field: MILVUS_FIELDS.denseVector,
-            data: [dense],
-            limit: candidateLimit,
-            metric_type: MetricType.COSINE,
-            params: { ef: DENSE_SEARCH_EF },
-        },
-        {
-            anns_field: MILVUS_FIELDS.sparseVector,
-            data: [queryText],
-            limit: candidateLimit,
-            metric_type: MetricType.BM25,
-        },
-    ];
-    if (expr !== undefined) {
-        for (const route of routes) {
-            route.expr = expr;
-        }
-    }
-    const response = await callMilvus('hybridSearch', () => deps.client.hybridSearch({
+// Shared dispatch: two standalone `search` calls, one per route, carrying
+// the same candidate limit, filter expr, and G10 projection (one
+// hybridSearch cannot carry per-route radii: radius-tuning-findings §4).
+// The dense search carries its server-side radius/range_filter plus ef;
+// the BM25 search carries no server params and takes its floor
+// client-side in sparseSurvivors.
+async function dispatchRoutes(deps, queryText, denseVector, expr, candidateLimit) {
+    const shared = {
         collection_name: collectionOf(deps),
-        data: routes,
-        rerank: RRFRanker(RRF_RANKER_K),
         limit: candidateLimit,
+        ...(expr === undefined ? {} : { expr }),
         output_fields: [...SEARCH_OUTPUT_FIELDS],
         // The collection declares the same level at create (schema.ts) and lite
         // writes are read-back immediate; asking per read keeps it explicit.
         consistency_level: MILVUS_CONSISTENCY_LEVEL,
-    }));
-    return response.results ?? [];
+    };
+    const [denseHits, sparseHits] = await Promise.all([
+        callMilvus('search', () => deps.client.search({
+            ...shared,
+            anns_field: MILVUS_FIELDS.denseVector,
+            data: [denseVector],
+            metric_type: MetricType.COSINE,
+            params: {
+                ef: DENSE_SEARCH_EF,
+                radius: DENSE_SEARCH_RADIUS,
+                range_filter: DENSE_RANGE_MAX,
+            },
+        })),
+        callMilvus('search', () => deps.client.search({
+            ...shared,
+            anns_field: MILVUS_FIELDS.sparseVector,
+            data: [queryText],
+            metric_type: MetricType.BM25,
+            params: {},
+        })),
+    ]);
+    return fuseRrf(denseHits.results ?? [], sparseSurvivors(sparseHits.results ?? []));
+}
+// SparseSurvivors applies the BM25 floor CLIENT-side: lite's BM25 scores
+// are negated relevancy ordered best-first, and the server-side radius
+// cannot express a relevancy floor (radius-tuning-findings §3). A hit
+// survives when `-score >= SPARSE_SEARCH_RADIUS`; a row without a score
+// drops (fail closed).
+function sparseSurvivors(rows) {
+    return rows.filter((row) => -Number(row.score ?? Number.NaN) >= SPARSE_SEARCH_RADIUS);
+}
+// FuseRrf merges the cutoff-surviving route rows with the RRF formula
+// lite itself uses: 1/(k + rank) summed per route, rank from 1
+// (radius-tuning-findings §4). Fields come from the first-seen row
+// (dense route first); the order is deterministic: fused score desc,
+// then chunk_id asc.
+function fuseRrf(dense, sparse) {
+    const fused = new Map();
+    for (const route of [dense, sparse]) {
+        route.forEach((row, index) => {
+            const chunkId = Number(row[MILVUS_FIELDS.chunkId]);
+            const entry = fused.get(chunkId) ?? { chunkId, row, score: 0 };
+            entry.score += 1 / (RRF_RANKER_K + index + 1);
+            fused.set(chunkId, entry);
+        });
+    }
+    return [...fused.values()]
+        .sort((a, b) => b.score - a.score || a.chunkId - b.chunkId)
+        .map((entry) => ({ ...entry.row, score: entry.score }));
 }
 // count(*) guard: BM25 against an empty collection crashes lite (NaN),
 // so callers return [] before dispatch. Strong per request; the empty

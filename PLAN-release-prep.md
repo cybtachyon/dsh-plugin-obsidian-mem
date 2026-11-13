@@ -77,10 +77,10 @@ Facts heading) stays.
 
 ### Phase 4: GitHub Actions build workflow
 
-- [ ] [TASK-11-copy-publish-workflow](docs/PLAN-release-prep-TASK-11-copy-publish-workflow.md)
-- [ ] [TASK-12-copy-release-scripts](docs/PLAN-release-prep-TASK-12-copy-release-scripts.md)
-- [ ] [TASK-13-add-act-runnable-ci-workflow](docs/PLAN-release-prep-TASK-13-add-act-runnable-ci-workflow.md)
-- [ ] [TASK-14-commit-workflows-and-scripts](docs/PLAN-release-prep-TASK-14-commit-workflows-and-scripts.md)
+- [x] [TASK-11-copy-publish-workflow](docs/PLAN-release-prep-TASK-11-copy-publish-workflow.md)
+- [x] [TASK-12-copy-release-scripts](docs/PLAN-release-prep-TASK-12-copy-release-scripts.md)
+- [x] [TASK-13-add-act-runnable-ci-workflow](docs/PLAN-release-prep-TASK-13-add-act-runnable-ci-workflow.md)
+- [x] [TASK-14-commit-workflows-and-scripts](docs/PLAN-release-prep-TASK-14-commit-workflows-and-scripts.md)
 
 ### Phase 5: `act` framework setup
 

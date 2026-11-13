@@ -19,3 +19,17 @@ Pin every `uses:` to a commit SHA, matching publish.yml's style.
 
 - `mise x jactionlint@2.3.0 -- jactionlint` reports no findings.
 - `act push --list -W .github/workflows/ci.yml` prints the `verify` job.
+
+## Result (TASK-13 closeout)
+
+- `.github/workflows/ci.yml` authored with the specified trigger, job, and
+  step order. The three `uses:` pins are the same commit-SHA and comment
+  pairs carried over from publish.yml; they were not independently resolved.
+- Two additions beyond the task's step list were required to make
+  jactionlint 2.3.0 exit 0: a top-level `concurrency:` block
+  (`concurrency-limits`), and `persist-credentials: false` on the checkout
+  step (`artipacked`; no ci step pushes).
+- `mise x jactionlint@2.3.0 -- jactionlint` (bare, repo root) exits 0.
+- `mise x act@0.2.89 -- act push --list -W .github/workflows/ci.yml` exits 0
+  and prints the `verify` job for events `push,pull_request`. (Plain `act`
+  is not yet activated in this directory; activating it is TASK-16 scope.)

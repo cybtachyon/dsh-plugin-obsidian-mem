@@ -455,7 +455,15 @@ function defineRoute(ctx: Context, spec: {
         res.end(JSON.stringify(json))
       }
       try {
-        const connection = Reflect.get(ctx, 'connection') as ConnectionGateway | undefined
+        // Reading an undeclared key from the cordis proxy THROWS ("cannot
+        // get property without inject"), so the fence read is best-effort:
+        // no fence where connection is not injected (local-infer precedent).
+        let connection: ConnectionGateway | undefined
+        try {
+          connection = Reflect.get(ctx, 'connection') as ConnectionGateway | undefined
+        } catch {
+          connection = undefined
+        }
         if (connection !== undefined) {
           const rejection = connection.requestRejection(req)
           if (rejection !== undefined) {

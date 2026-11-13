@@ -135,6 +135,20 @@ describe('shared HTTP discipline', () => {
     expect(response.text).toBe('')
   })
 
+  it('proceeds fence-less when the connection key is not injectable', async () => {
+    // The cordis proxy throws on undeclared ctx reads; the fence must
+    // degrade to absent, not answer 500 (found live after install).
+    const context = new FakeCordisContext({ obsidianMem: makeRouteServiceWithCalls({}).service })
+    Object.defineProperty(context, 'connection', {
+      get() {
+        throw new TypeError('cannot get property "connection" without inject')
+      },
+    })
+    plugin.apply(context as unknown as Context)
+    const response = await send(context, 'GET', '/obsidian-mem/status')
+    expect(response.status).toBe(200)
+  })
+
   it('answers non-JSON bodies with 415 and malformed JSON with 400', async () => {
     const context = harness()
     const wrongType = await sendRaw(context, 'POST', '/obsidian-mem/vaults', {

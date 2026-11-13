@@ -201,19 +201,19 @@ function vault(path: string, mode: 'shared' | 'read-only' = 'shared'): VaultEntr
 function healthyVault(path = '/vault/notes'): { dirs: string[], files: Record<string, string> } {
   const files: Record<string, string> = {
     [`${path}/${INTENTS_FILE}`]: renderIntentsFile(),
-    [`${path}/markdown/alpha.md`]: noteFixture({ index_title: 'Alpha: one', read_count: 5, last_read_at: '2026-11-05' }),
-    [`${path}/markdown/beta.md`]: noteFixture({ index_title: 'Beta: two', type: 'domain', read_count: 1, last_read_at: '2026-10-01' }),
+    [`${path}/alpha.md`]: noteFixture({ index_title: 'Alpha: one', read_count: 5, last_read_at: '2026-11-05' }),
+    [`${path}/beta.md`]: noteFixture({ index_title: 'Beta: two', type: 'domain', read_count: 1, last_read_at: '2026-10-01' }),
     [`${path}/.obsidian-mem/metadata/${STATE_FILE_NAME}`]: JSON.stringify({
-      version: 1,
+      version: 2,
       modelId: 'Xenova/multilingual-e5-small',
       vectorDim: 384,
       files: {
-        'markdown/alpha.md': { contentHash: 'a', mtimeMs: 1, chunkIds: [1, 2] },
-        'markdown/beta.md': { contentHash: 'b', mtimeMs: 1, chunkIds: [3] },
+        'alpha.md': { contentHash: 'a', mtimeMs: 1, chunkIds: [1, 2] },
+        'beta.md': { contentHash: 'b', mtimeMs: 1, chunkIds: [3] },
       },
     }),
   }
-  return { dirs: [path, `${path}/markdown`, `${path}/.obsidian-mem/metadata`], files }
+  return { dirs: [path, `${path}/.obsidian-mem/metadata`], files }
 }
 
 function seedHealthy(): MemAuditFs {
@@ -275,7 +275,7 @@ describe('runStoreAudit: healthy store', () => {
     expect(report.stats.sharedVaultCount).toBe(1)
     expect(report.stats.expectedChunks).toBe(3)
     expect(report.rows.map((row) => row.path))
-      .toEqual(['/vault/notes/markdown/alpha.md', '/vault/notes/markdown/beta.md'])
+      .toEqual(['/vault/notes/alpha.md', '/vault/notes/beta.md'])
     expect(report.rows[0]?.indexed).toBe(true)
     expect(report.rows[0]?.readCount).toBe(5)
   })
@@ -318,13 +318,13 @@ describe('runStoreAudit: vault problems', () => {
     expect(findIssue(report, 'vault.missing')?.remediation).toContain('restart')
   })
 
-  it('reports a vault root that is not a directory as ISSUE and missing metadata/ as INFO', async () => {
-    // TASK-007 fixture adaptation: the vault root IS the note root, so the
-    // markdownPresent failure shape is a root that is a plain file.
+  it('reports a vault root that is not a directory as ISSUE and a missing sidecar dir as INFO', async () => {
+    // In the new layout the vault root IS the note root, so the
+    // rootIsDirectory failure shape is a root that is a plain file.
     const fs = new MemAuditFs({ files: { '/vault/notes': 'not a directory' } })
     const report = await run({ fs })
-    expect(findIssue(report, 'vault.markdown')?.severity).toBe('ISSUE')
-    expect(findIssue(report, 'vault.metadata')?.severity).toBe('INFO')
+    expect(findIssue(report, 'vault.root-not-directory')?.severity).toBe('ISSUE')
+    expect(findIssue(report, 'vault.sidecar-missing')?.severity).toBe('INFO')
     expect(findIssue(report, 'intents.missing')?.severity).toBe('ISSUE')
   })
 
@@ -426,25 +426,25 @@ describe('runStoreAudit: index pipeline', () => {
 
   it('reads the per-vault state file: missing, corrupt, and stale builds', async () => {
     const noState = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
-      files: { '/v/markdown/a.md': noteFixture() },
+      dirs: ['/v', '/v/.obsidian-mem/metadata'],
+      files: { '/v/a.md': noteFixture() },
     })
     expect(findIssue(await run({ fs: noState, vaults: [vault('/v')] }), 'state.missing')?.severity).toBe('INFO')
 
     const corrupt = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
+      dirs: ['/v', '/v/.obsidian-mem/metadata'],
       files: {
-        '/v/markdown/a.md': noteFixture(),
+        '/v/a.md': noteFixture(),
         [`/v/.obsidian-mem/metadata/${STATE_FILE_NAME}`]: '{ broken',
       },
     })
     expect(findIssue(await run({ fs: corrupt, vaults: [vault('/v')] }), 'state.unreadable')?.severity).toBe('ISSUE')
 
     const stale = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
+      dirs: ['/v', '/v/.obsidian-mem/metadata'],
       files: {
-        '/v/markdown/a.md': noteFixture(),
-        [`/v/.obsidian-mem/metadata/${STATE_FILE_NAME}`]: JSON.stringify({ version: 1, modelId: 'other/model', vectorDim: 256, files: {} }),
+        '/v/a.md': noteFixture(),
+        [`/v/.obsidian-mem/metadata/${STATE_FILE_NAME}`]: JSON.stringify({ version: 2, modelId: 'other/model', vectorDim: 256, files: {} }),
       },
     })
     const report = await run({ fs: stale, vaults: [vault('/v')] })
@@ -452,18 +452,24 @@ describe('runStoreAudit: index pipeline', () => {
     expect(findIssue(report, 'state.stale-dim')?.severity).toBe('ISSUE')
   })
 
-  it('flags reserved protocol files misplaced inside markdown/', async () => {
+  it('flags misplaced reserved protocol files, a root DREAMS.md included', async () => {
+    // The sidecar home of DREAMS.md is dot-hidden, so any reachable copy is
+    // misplaced, the pre-migration root copy included; other reserved names
+    // are only misplaced below the root.
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
+      dirs: ['/v', '/v/deep', '/v/.obsidian-mem/metadata'],
       files: {
-        '/v/markdown/DREAMS.md': '# diary in the wrong place',
-        '/v/markdown/a.md': noteFixture(),
+        '/v/DREAMS.md': '# diary at the wrong place',
+        '/v/deep/a_history.md': '# history in the wrong place',
+        '/v/a.md': noteFixture(),
       },
     })
     const report = await run({ fs, vaults: [vault('/v')] })
     const misplaced = findIssue(report, 'reserved.placement')
     expect(misplaced?.severity).toBe('ISSUE')
-    expect(misplaced?.detail).toContain('DREAMS.md')
+    expect(misplaced?.detail).toContain('/v/DREAMS.md')
+    expect(misplaced?.detail).toContain('/v/deep/a_history.md')
+    expect(misplaced?.remediation).toContain('move it to <vault>/.obsidian-mem/metadata/')
   })
 })
 
@@ -471,16 +477,16 @@ describe('runStoreAudit: note bloat classes', () => {
   it('flags a huge note WITHOUT reading it', async () => {
     const huge = `${'x'.repeat(4 * 1024 * 1024 + 16)}`
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
-      files: { '/v/markdown/planted.md': huge, '/v/markdown/a.md': noteFixture() },
+      dirs: ['/v', '/v/.obsidian-mem/metadata'],
+      files: { '/v/planted.md': huge, '/v/a.md': noteFixture() },
     })
     const report = await run({ fs, vaults: [vault('/v')] })
     const flagged = findIssue(report, 'notes.huge-not-read')
     expect(flagged?.severity).toBe('INFO')
     expect(flagged?.detail).toContain('planted.md')
-    expect(fs.reads).not.toContain('/v/markdown/planted.md')
-    expect(report.stats.hugeNotReadNotes).toEqual(['/v/markdown/planted.md'])
-    const row = report.rows.find((entry) => entry.path === '/v/markdown/planted.md')
+    expect(fs.reads).not.toContain('/v/planted.md')
+    expect(report.stats.hugeNotReadNotes).toEqual(['/v/planted.md'])
+    const row = report.rows.find((entry) => entry.path === '/v/planted.md')
     expect(row?.flaggedNotRead).toBe(true)
     expect(row?.sizeBytes).toBeGreaterThan(4 * 1024 * 1024)
   })
@@ -488,8 +494,8 @@ describe('runStoreAudit: note bloat classes', () => {
   it('reports oversized notes as the timeline INFO with the _history remediation', async () => {
     const fat = noteFixture({ index_title: 'Timeline: pr by pr' }) + 'y'.repeat(12 * 1024)
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
-      files: { '/v/markdown/timeline.md': fat },
+      dirs: ['/v', '/v/.obsidian-mem/metadata'],
+      files: { '/v/timeline.md': fat },
     })
     const report = await run({ fs, vaults: [vault('/v')] })
     const oversized = findIssue(report, 'notes.oversized')
@@ -500,8 +506,8 @@ describe('runStoreAudit: note bloat classes', () => {
 
   it('reports malformed frontmatter as an ISSUE with the parse error echoed quoted', async () => {
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
-      files: { '/v/markdown/bad.md': '---\nfoo: [unclosed\nbar: "unterminated\n---\nbody\n' },
+      dirs: ['/v', '/v/.obsidian-mem/metadata'],
+      files: { '/v/bad.md': '---\nfoo: [unclosed\nbar: "unterminated\n---\nbody\n' },
     })
     const report = await run({ fs, vaults: [vault('/v')] })
     const malformed = findIssue(report, 'notes.malformed')
@@ -542,13 +548,13 @@ describe('runStoreAudit: model cache and dreaming lines', () => {
 describe('runStoreAudit: global budget section', () => {
   function budgetFs(): MemAuditFs {
     return new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata', modelCacheDir(HOME)],
+      dirs: ['/v', '/v/.obsidian-mem/metadata', modelCacheDir(HOME)],
       files: {
-        '/v/markdown/unread.md': noteFixture({ index_title: 'Unread: global', type: 'global' }),
-        '/v/markdown/read-once.md': noteFixture({ index_title: 'Once: global', type: 'global', read_count: 1, last_read_at: '2026-10-01' }),
-        '/v/markdown/popular.md': noteFixture({ index_title: 'Popular: global', type: 'global', read_count: 9, last_read_at: '2026-11-10' }),
-        '/v/markdown/domain-note.md': noteFixture({ index_title: 'Domain: not global', type: 'domain' }),
-        '/v/markdown/archived-global.md': noteFixture({ index_title: 'Archived: global', type: 'global', archive: true }),
+        '/v/unread.md': noteFixture({ index_title: 'Unread: global', type: 'global' }),
+        '/v/read-once.md': noteFixture({ index_title: 'Once: global', type: 'global', read_count: 1, last_read_at: '2026-10-01' }),
+        '/v/popular.md': noteFixture({ index_title: 'Popular: global', type: 'global', read_count: 9, last_read_at: '2026-11-10' }),
+        '/v/domain-note.md': noteFixture({ index_title: 'Domain: not global', type: 'domain' }),
+        '/v/archived-global.md': noteFixture({ index_title: 'Archived: global', type: 'global', archive: true }),
       },
     })
   }
@@ -556,9 +562,9 @@ describe('runStoreAudit: global budget section', () => {
   it('lists live global notes least-read first, excluding archived and non-global', async () => {
     const report = await run({ fs: budgetFs(), collection: null, vaults: [vault('/v')] })
     expect(report.budget.globalNotePaths).toEqual([
-      '/v/markdown/unread.md',
-      '/v/markdown/read-once.md',
-      '/v/markdown/popular.md',
+      '/v/unread.md',
+      '/v/read-once.md',
+      '/v/popular.md',
     ])
     expect(report.budget.globalNoteCount).toBe(3)
   })
@@ -592,24 +598,24 @@ describe('runStoreAudit: bounded views', () => {
       return noteFixture(over)
     }
     const files: Record<string, string> = {
-      '/v/markdown/never.md': old(0, undefined, 'Never: read'),
-      '/v/markdown/stale.md': old(1, '2026-01-01', 'Stale: read'),
-      '/v/markdown/fresh.md': old(7, '2026-11-09', 'Fresh: read'),
-      '/v/markdown/archived.md': old(0, undefined, 'Archived: note'),
-      '/v/markdown/old-unread.md': old(0, undefined, 'Old: unread'),
+      '/v/never.md': old(0, undefined, 'Never: read'),
+      '/v/stale.md': old(1, '2026-01-01', 'Stale: read'),
+      '/v/fresh.md': old(7, '2026-11-09', 'Fresh: read'),
+      '/v/archived.md': old(0, undefined, 'Archived: note'),
+      '/v/old-unread.md': old(0, undefined, 'Old: unread'),
     }
-    files['/v/markdown/archived.md'] = serializeNoteWithRaw({
+    files['/v/archived.md'] = serializeNoteWithRaw({
       meta: meta({ index_title: 'Archived: note', type: 'domain', archive: true }),
       body: 'gone',
     })
-    return new MemAuditFs({ dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'], files })
+    return new MemAuditFs({ dirs: ['/v', '/v/.obsidian-mem/metadata'], files })
   }
 
   it('full lists every note by path and bounds rows by limit', async () => {
     const report = await run({ fs: viewFs(), collection: null, vaults: [vault('/v')] }, { limit: 2 })
     expect(report.rows.length).toBe(2)
     expect(report.totalRows).toBe(5)
-    expect(report.rows[0]?.path).toBe('/v/markdown/archived.md')
+    expect(report.rows[0]?.path).toBe('/v/archived.md')
     expect(report.view).toBe('full')
     expect(report.limit).toBe(2)
   })
@@ -617,10 +623,10 @@ describe('runStoreAudit: bounded views', () => {
   it('topStale ranks never-read before stale before fresh and drops archived', async () => {
     const report = await run({ fs: viewFs(), collection: null, vaults: [vault('/v')] }, { view: 'topStale' })
     expect(report.rows.map((row) => row.path)).toEqual([
-      '/v/markdown/never.md',
-      '/v/markdown/old-unread.md',
-      '/v/markdown/stale.md',
-      '/v/markdown/fresh.md',
+      '/v/never.md',
+      '/v/old-unread.md',
+      '/v/stale.md',
+      '/v/fresh.md',
     ])
   })
 
@@ -628,17 +634,17 @@ describe('runStoreAudit: bounded views', () => {
     const fs = viewFs()
     // Give old-unread.md the older mtime by seeding it into an older dir map.
     const report = await run({ fs, collection: null, vaults: [vault('/v')] }, { view: 'oldestUnread' })
-    expect(report.rows.map((row) => row.path)).toEqual(['/v/markdown/never.md', '/v/markdown/old-unread.md'])
+    expect(report.rows.map((row) => row.path)).toEqual(['/v/never.md', '/v/old-unread.md'])
   })
 })
 
 describe('runStoreAudit: rollups and walk', () => {
-  it('counts usage bytes across the vault tree excluding metadata and models', async () => {
+  it('counts usage bytes across the vault tree excluding dot dirs', async () => {
     const seed = healthyVault()
     const fs = new MemAuditFs({ dirs: seed.dirs, files: seed.files })
     const report = await run({ fs, collection: null })
     const notesBytes = Object.entries(seed.files)
-      .filter(([path]) => !path.includes('/metadata/') && !path.includes(INTENTS_FILE))
+      .filter(([path]) => !path.includes('.obsidian-mem') && !path.includes(INTENTS_FILE))
       .reduce((sum, [, contents]) => sum + contents.length, 0)
     expect(report.stats.totalBytes).toBe(notesBytes)
     expect(report.stats.vaultUsage).toEqual([{ vault: '/vault/notes', notes: 2, bytes: notesBytes }])
@@ -654,7 +660,8 @@ describe('inventoryVault + seam shape', () => {
     const fs = new MemAuditFs({ files: { '/not-a-dir': 'x' } })
     const inventory = inventoryVault(vault('/not-a-dir'), fs)
     expect(inventory.facts.exists).toBe(true)
-    expect(inventory.facts.markdownPresent).toBe(false)
+    expect(inventory.facts.rootIsDirectory).toBe(false)
+    expect(inventory.facts.sidecarPresent).toBe(false)
     expect(inventory.notes).toEqual([])
   })
 })

@@ -97,7 +97,7 @@ Ordered list; every task is defined in its own file.
  - [x] [TASK-004-service-provisioning-registry](docs/PLAN-VAULT-LAYOUT-TASK-004-service-provisioning-registry.md)
  - [x] [TASK-005-indexer-vault-root-walk](docs/PLAN-VAULT-LAYOUT-TASK-005-indexer-vault-root-walk.md)
  - [x] [TASK-006-dream-diary-location](docs/PLAN-VAULT-LAYOUT-TASK-006-dream-diary-location.md)
- - [ ] [TASK-007-audit-inventory-layout](docs/PLAN-VAULT-LAYOUT-TASK-007-audit-inventory-layout.md)
+ - [x] [TASK-007-audit-inventory-layout](docs/PLAN-VAULT-LAYOUT-TASK-007-audit-inventory-layout.md)
  - [ ] [Refactor: Phase 2 review](docs/PLAN-VAULT-LAYOUT-TASK-R2-refactor-phase-2.md)
  - [ ] [TASK-016-cordis-mount-isolation](docs/PLAN-VAULT-LAYOUT-TASK-016-cordis-mount-isolation.md)
 

@@ -58,8 +58,10 @@ export interface AuditedNote {
 /** One vault's stat facts. */
 export interface VaultFsFacts {
     exists: boolean;
-    markdownPresent: boolean;
-    metadataPresent: boolean;
+    /** The vault root exists as a directory; it IS the indexed note root. */
+    rootIsDirectory: boolean;
+    /** The <vault>/.obsidian-mem/metadata/ sidecar directory exists. */
+    sidecarPresent: boolean;
     writable: boolean;
 }
 /** What the audit could read of one vault's indexer state file. */
@@ -79,11 +81,15 @@ export interface VaultInventory {
     vault: VaultEntry;
     facts: VaultFsFacts;
     notes: AuditedNote[];
-    /** Reserved protocol names found inside markdown/ (they belong at the root). */
+    /**
+     * Reserved protocol names at paths that are never skip-indexed: copies
+     * below the vault root, plus any reachable DREAMS.md (its home is the
+     * dot-hidden sidecar dir, so a visible copy is misplaced wherever it sits).
+     */
     reservedMisplaced: string[];
     /** True when the stat walk hit its entry cap. */
     walkTruncated: boolean;
-    /** Bytes under the vault root (excluding dot dirs, metadata/, and the model cache). */
+    /** Bytes under the vault root (dot dirs excluded; the model cache lives outside vaults). */
     usageBytes: number;
     state: VaultStateInfo;
 }
@@ -193,7 +199,7 @@ export interface AuditDeps {
 /**
  * InventoryVault walks one vault read-only: the root note tree (the vault
  * root IS the note root; size-before-read, read cap, reserved placement,
- * dot-dir skips), the whole-tree disk usage minus the model cache, and the
+ * dot-dir skips), the whole-tree disk usage (dot dirs excluded), and the
  * indexer state file. Shared by the audit report and the dream plan (single
  * source of truth).
  */

@@ -124,7 +124,7 @@ function brokenNote(vaultPath: string, name: string): AuditedNote {
 function inventory(vaultPath: string, mode: 'shared' | 'read-only', notes: AuditedNote[]): VaultInventory {
   return {
     vault: { path: vaultPath, mode, source: 'settings' },
-    facts: { exists: true, markdownPresent: true, metadataPresent: true, writable: mode === 'shared' },
+    facts: { exists: true, rootIsDirectory: true, sidecarPresent: true, writable: mode === 'shared' },
     notes,
     reservedMisplaced: [],
     walkTruncated: false,

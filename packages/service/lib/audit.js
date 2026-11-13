@@ -19,7 +19,7 @@
  */
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, clampInt, dbStateDir, DREAM_STATE_FILE, defaultVaultPath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isReservedNonIndexed, metadataDir, modelCacheDir, NOTE_TIMELINE_BYTES, parseNote, SCOPE_GLOBAL, } from '../../core/lib/index.js';
+import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, clampInt, dbStateDir, DREAM_STATE_FILE, DREAMS_FILE, defaultVaultPath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isReservedNonIndexed, metadataDir, modelCacheDir, NOTE_TIMELINE_BYTES, parseNote, SCOPE_GLOBAL, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { MAX_FILES_PER_VAULT, STATE_FILE_NAME } from './indexer.js';
 /** The bounded row list a `memory_audit` call shows. */
@@ -83,67 +83,73 @@ const ECHO_TEXT_CAP = 200;
 /**
  * InventoryVault walks one vault read-only: the root note tree (the vault
  * root IS the note root; size-before-read, read cap, reserved placement,
- * dot-dir skips), the whole-tree disk usage minus the model cache, and the
+ * dot-dir skips), the whole-tree disk usage (dot dirs excluded), and the
  * indexer state file. Shared by the audit report and the dream plan (single
  * source of truth).
  */
 export function inventoryVault(vault, fs) {
-    // TASK-007: the vault root is the note root; markdownPresent now means
-    // "the root exists as a directory" until the layout report is redone.
     const rootStat = fs.stat(vault.path);
-    const metadataStat = fs.stat(metadataDir(vault.path));
     const state = readVaultState(vault, fs);
-    const notes = [];
-    const reservedMisplaced = [];
-    let walkTruncated = false;
-    if (rootStat?.directory === true) {
-        let budget = MAX_FILES_PER_VAULT;
-        const stack = [vault.path];
-        while (stack.length > 0 && budget > 0) {
-            const dir = stack.pop();
-            for (const entry of fs.listDirectory(dir) ?? []) {
-                if (entry.name.startsWith('.')) {
-                    continue;
-                }
-                const abs = join(dir, entry.name);
-                if (entry.directory) {
-                    stack.push(abs);
-                    continue;
-                }
-                budget -= 1;
-                if (isReservedNonIndexed(entry.name)) {
-                    // Reserved files at the vault root are the documented placement;
-                    // only deeper copies are misplaced (TASK-007).
-                    if (dir !== vault.path) {
-                        reservedMisplaced.push(abs);
-                    }
-                    continue;
-                }
-                if (!entry.name.endsWith('.md')) {
-                    continue;
-                }
-                notes.push(readNote(vault, abs, state, fs));
-            }
-            if (budget <= 0 && stack.length > 0) {
-                walkTruncated = true;
-            }
-        }
-    }
+    const walk = rootStat?.directory === true
+        ? walkNoteTree(vault, state, fs)
+        : { notes: [], reservedMisplaced: [], walkTruncated: false };
     const usage = measureUsage(vault, fs);
     return {
         vault,
         facts: {
             exists: fs.exists(vault.path),
-            markdownPresent: rootStat?.directory === true,
-            metadataPresent: metadataStat?.directory === true,
-            writable: fs.stat(vault.path)?.writable ?? false,
+            rootIsDirectory: rootStat?.directory === true,
+            sidecarPresent: fs.stat(metadataDir(vault.path))?.directory === true,
+            writable: rootStat?.writable ?? false,
         },
-        notes,
-        reservedMisplaced,
-        walkTruncated: walkTruncated || usage.truncated,
+        notes: walk.notes,
+        reservedMisplaced: walk.reservedMisplaced,
+        walkTruncated: walk.walkTruncated || usage.truncated,
         usageBytes: usage.bytes,
         state,
     };
+}
+// Note walk: stat-only traversal of the vault root with the skip gates
+// (dot dirs, which covers the plugin-internal sidecar dir, and reserved
+// names). Budget is the per-vault entry cap shared with the indexer.
+function walkNoteTree(vault, state, fs) {
+    const notes = [];
+    const reservedMisplaced = [];
+    let walkTruncated = false;
+    let budget = MAX_FILES_PER_VAULT;
+    const stack = [vault.path];
+    while (stack.length > 0 && budget > 0) {
+        const dir = stack.pop();
+        for (const entry of fs.listDirectory(dir) ?? []) {
+            if (entry.name.startsWith('.')) {
+                continue;
+            }
+            const abs = join(dir, entry.name);
+            if (entry.directory) {
+                stack.push(abs);
+                continue;
+            }
+            budget -= 1;
+            if (isReservedNonIndexed(entry.name)) {
+                // The vault root is the documented home of .INTENTS.md and
+                // *_history.md. DREAMS.md belongs to the dot-hidden sidecar dir,
+                // so any copy this walk can reach, root copy included (an unmigrated
+                // vault), is misplaced.
+                if (dir !== vault.path || entry.name === DREAMS_FILE) {
+                    reservedMisplaced.push(abs);
+                }
+                continue;
+            }
+            if (!entry.name.endsWith('.md')) {
+                continue;
+            }
+            notes.push(readNote(vault, abs, state, fs));
+        }
+        if (budget <= 0 && stack.length > 0) {
+            walkTruncated = true;
+        }
+    }
+    return { notes, reservedMisplaced, walkTruncated };
 }
 // One note: stat first; past the read cap the file is flagged, never read.
 function readNote(vault, abs, state, fs) {
@@ -206,8 +212,9 @@ function readVaultState(vault, fs) {
         return { path, present: true, parseError: quoted(describeError(error)), modelId: null, vectorDim: null, fileCount: 0, expectedChunks: 0, fileKeys: [] };
     }
 }
-// Whole-tree disk usage: stat-only, dot dirs and the (huge, not memory
-// data) model cache dir and metadata/ sidecars excluded.
+// Whole-tree disk usage: stat-only, dot dirs excluded (covers the
+// .obsidian-mem sidecar dir). The model cache needs no skip here: core's
+// modelCacheDir keeps it under dbDir, outside every vault.
 function measureUsage(vault, fs) {
     let bytes = 0;
     let entries = 0;
@@ -216,7 +223,7 @@ function measureUsage(vault, fs) {
     while (stack.length > 0) {
         const dir = stack.pop();
         for (const entry of fs.listDirectory(dir) ?? []) {
-            if (entry.name.startsWith('.') || (dir === vault.path && (entry.name === 'models' || entry.name === 'metadata'))) {
+            if (entry.name.startsWith('.')) {
                 continue;
             }
             entries += 1;
@@ -386,12 +393,11 @@ export async function runStoreAudit(deps, request = {}) {
             issue('vault.missing', 'ISSUE', `registered ${vault.mode} vault ${quoted(vault.path, ECHO_PATH_CAP)} does not exist`, 'restore the directory or remove the entry (settings card for card vaults, the row config.vaults for settings vaults); the registry drops it on restart');
             continue;
         }
-        if (!facts.markdownPresent) {
-            // TASK-007: the note root is the vault root in the new layout.
-            issue('vault.markdown', 'ISSUE', `vault ${quoted(vault.path, ECHO_PATH_CAP)} is not a directory; nothing in it is indexed`, 're-register the vault at its real path (the vault root is the indexed note root)');
+        if (!facts.rootIsDirectory) {
+            issue('vault.root-not-directory', 'ISSUE', `vault ${quoted(vault.path, ECHO_PATH_CAP)} is not a directory; nothing in it is indexed`, 're-register the vault at its real path (the vault root is the indexed note root)');
         }
-        if (!facts.metadataPresent) {
-            issue('vault.metadata', 'INFO', `vault ${quoted(vault.path, ECHO_PATH_CAP)} has no .obsidian-mem/metadata/ directory yet`, 'nothing to do: the plugin creates it when it first writes index state for this vault');
+        if (!facts.sidecarPresent) {
+            issue('vault.sidecar-missing', 'INFO', `vault ${quoted(vault.path, ECHO_PATH_CAP)} has no .obsidian-mem/metadata/ directory yet`, 'nothing to do: the plugin creates it when it first writes index state for this vault');
         }
         if (vault.mode === 'shared' && !facts.writable) {
             issue('vault.writable', 'ISSUE', `shared vault ${quoted(vault.path, ECHO_PATH_CAP)} is not writable by this process`, 'make the directory writable, or switch the vault to read-only in the Obsidian Mem settings card');
@@ -400,7 +406,7 @@ export async function runStoreAudit(deps, request = {}) {
             issue('vault.readonly-writable', 'INFO', `read-only vault ${quoted(vault.path, ECHO_PATH_CAP)} is writable on disk`, 'the plugin still never writes it; tighten permissions if the read-only intent is enforcement');
         }
         if (inventory.reservedMisplaced.length > 0) {
-            issue('reserved.placement', 'ISSUE', `reserved protocol files sit below the note root of ${quoted(vault.path, ECHO_PATH_CAP)}: ${pathList(inventory.reservedMisplaced)}`, 'move them to the vault root; reserved files (.INTENTS.md, DREAMS.md, *_history.md) sit at the vault root and are never indexed');
+            issue('reserved.placement', 'ISSUE', `reserved protocol files sit outside their skip-indexed placement in ${quoted(vault.path, ECHO_PATH_CAP)}: ${pathList(inventory.reservedMisplaced)}`, 'move .INTENTS.md and *_history.md copies to the vault root; for DREAMS.md move it to <vault>/.obsidian-mem/metadata/. Reserved files are never indexed from any other placement');
         }
         if (inventory.walkTruncated) {
             issue('vault.walk-truncated', 'INFO', `the stat walk of ${quoted(vault.path, ECHO_PATH_CAP)} hit its entry cap`, 'the rollups under-count this vault; split the vault or prune its note tree');

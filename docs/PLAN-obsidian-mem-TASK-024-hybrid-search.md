@@ -20,10 +20,16 @@ Depends: TASK-022, TASK-023. `packages/service/src/search.ts`.
   exact file, fall back to ARRAY_CONTAINS(ext) + framework filters + query text.
 - Guard: Milvus unavailable → typed `IndexOfflineError` (callers degrade quietly).
 
-## Prior-art specifics (RESEARCH-FINDINGS.md §2)
+## Prior-art specifics (RESEARCH-FINDINGS.md §2 + VERIFIED API, milvus-transformers-findings §3/§4)
 
-- Hybrid: `hybridSearch` with dense + BM25 ann requests and `RRFRanker(k=60)` (memsearch);
-  normalize score by `num_retrievers/(k+1)`.
+- Hybrid: `client.hybridSearch` (camelCase; sub-requests under **`data: [...]`**, NOT
+  `requests:`; per-route filters in `expr`) with dense COSINE + BM25 and
+  `RRFRanker(60)`. BM25 scores can be NEGATIVE (segment-local IDF) — never threshold
+  BM25 at 0; rank fusion only. Sparse anns REQUIRE explicit `metric_type: BM25` in each
+  `data[]` item (lite does not infer; error 6 otherwise). `WeightedRanker` takes ONE
+  ARRAY `WeightedRanker([0.7,0.3])` (two args crashes the server). `searchIterator` is
+  broken against lite — use `queryIterator`/offset paging. Serialize ALL writes in TS
+  (lite allows concurrent readers, not writers).
 - ALWAYS `loadCollection` before search (lite 'released' trap) and count(*)-guard empty
   collections before dispatching BM25 (NaN crash).
 - `ensureMemoryAccess` first (lazy default vault; Decision log).

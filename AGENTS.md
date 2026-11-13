@@ -94,20 +94,34 @@
   in-memory modules until a restart or a bundle toggle off/on. Verify a
   host-side change by restarting the host, not by reloading the page.
 
-# DSH Event Facts (learned)
+# DSH Event Facts (verified against the live cordis 4.x Event catalog
+# + the events engramory-ext actually registers; see
+# docs/research/engramory-and-ext-findings.md §2.2)
 
-- There is **no `turn/start` event** on the agent bus. Turn-start recall is
-  injected through the per-agent channel described next, not a lifecycle event.
-- `turn/end` **is** a session-log event; subscribe there for the turn-end
-  save/audit reminder.
-- An event listener on `agent/request` **cannot mutate** the outgoing message
-  list; interception is read/observe only.
-- `agent.inject()` is the per-agent context channel: it is how recall gets
-  into the agent's context at turn start, on a Read call, or on a Think-stream
-  keyword hit.
-- `ToolRuntime.register` takes a definition object (name, description,
-  parameters schema, handler, timeout budget); tools register through it, not
-  by mutating context maps.
+- There is **no `turn/start` or `turn/end`** event on the agent bus;
+  `turn/end` exists only as a *session-log* event type under `session/event`.
+- Turn-start recall rides `agent/pre-step` (waterfall: a listener that does not
+  own the decision MUST return `next()`, spreading the decision object).
+- The turn-end save/audit reminder rides `agent/turn-stopping` (serial) and
+  delivers via `agent.steer(...)`; the steer keeps the turn open, so a
+  once-per-turn guard is mandatory or the turn loops forever.
+- Agent-scoped events (`this: Scoped<Agent>`: `agent/pre-step`,
+  `agent/assistant-stream`, `agent/turn-stopping`) fire on the AGENT's own
+  context: register from an `agent/created` handler on `agent.ctx` (wrap in
+  `agent.ctx.effect()` and keep the disposer in the plugin's own effect).
+  Plugin-ctx listeners for these never fire (dsh-longterm-memory lesson).
+- `agent.inject()` adds per-agent context without waking the agent (lands in
+  the next admitted step); `agent.followup()` wakes it; `agent.steer()` keeps
+  an open turn open.
+- `agent/request` cannot change request messages; it replaces the frozen call
+  configuration only.
+- Tool observation rides `tools/result` (emit, final outcome);
+  `tools/post-execute` only to transform a result; refusal is
+  `ctx.tools.guard()` (synchronous, monotonic) or `ask` from
+  `tools/pre-execute`.
+- Tool registration is `scope.tools.register({name, description, parameters,
+  output:{schema, render}, timeoutMs, execute, presentCall})` via the tools
+  seam; failures return values (closed `oneOf` by `kind`), not throws.
 
 # DSH UI Component Library
 

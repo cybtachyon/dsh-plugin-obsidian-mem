@@ -7,8 +7,9 @@ Depends: TASK-060. `tests/integration/*.live.test.ts` — vitest excludes `*.liv
 
 - Live tier (tmp HOME via env overrides the plugin honors: state/db/model dirs must all be
   env-injectable — enforce via a `paths.ts` override hook designed into service config):
-  1. transformers.js real model (download once into tmp cacheDir; cosine sanity:
-     related pair > unrelated; norms ~1; query/passage prefixes used).
+  1. transformers.js real model (download once into tmp cacheDir; assert output dim 384,
+     cosine sanity: related pair > unrelated; norms ~1.000 (catches the normalize-vs-
+     normalization v4 trap); query/passage prefixes used).
   2. milvus-lite real spawn (uvx) into tmp db dir: ensureCollection → insert 20 chunks
      (from fixture vault via real chunker+embedder) → hybrid search returns expected
      source_path → ARRAY_CONTAINS ext filter excludes non-matching → delete by chunk_id →

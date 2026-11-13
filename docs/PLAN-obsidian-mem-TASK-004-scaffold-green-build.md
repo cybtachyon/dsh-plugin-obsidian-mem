@@ -1,5 +1,7 @@
 # TASK-004 Scaffold green build gate
 
+Status: done
+
 Depends: TASK-001..003.
 
 ## Scope

@@ -5,8 +5,9 @@ turns Markdown vaults into shared agent memory. Tools: `memory_read`, `memory_se
 `memory_write`, `memory_dream`, `memory_audit`. Lifecycle hooks inject automatic recall at turn
 start, on Read tool calls, and on Think-stream keyword hits; turn end sends the save/audit
 reminder. Backend: Milvus-Lite (via @zilliz/milvus2-sdk-node) + @huggingface/transformers
-(Xenova/multilingual-e5-small, ONNX int8, passage:/query: prefixes; full 768-d vectors by
-default, optional truncation via vectorDim). Settings
+(Xenova/multilingual-e5-small, ONNX q8, passage:/query: prefixes; full 384-d vectors —
+e5-small IS 384-d; 768 belongs to e5-base — optional lossy truncation via
+vectorDim). Settings
 card manages multiple Vaults as "Adopt and Share" or "Read-only".
 
 ## Verification guidelines
@@ -53,7 +54,7 @@ task file lists explicit cross-phase prerequisites.
 - [x] [TASK-001-pnpm-workspace-scaffold](docs/PLAN-obsidian-mem-TASK-001-pnpm-workspace-scaffold.md)
 - [x] [TASK-002-branding-docs](docs/PLAN-obsidian-mem-TASK-002-branding-docs.md)
 - [x] [TASK-003-cordis-patch-carrier](docs/PLAN-obsidian-mem-TASK-003-cordis-patch-carrier.md)
-- [ ] [TASK-004-scaffold-green-build](docs/PLAN-obsidian-mem-TASK-004-scaffold-green-build.md)
+- [x] [TASK-004-scaffold-green-build](docs/PLAN-obsidian-mem-TASK-004-scaffold-green-build.md)
 
 ### Phase 2: Core domain (packages/core)
 
@@ -114,9 +115,13 @@ task file lists explicit cross-phase prerequisites.
   (auto-install uv on first run if absent), then spawns `milvus-lite server` bound to a
   localhost port with data under `$HOME/.dsh/obsidian-mem-db/`. Node SDK connects over
   localhost. No user-facing Python install step.
-- Q2 Vector dimension: **768 full** (user override of the spec's MRL truncation). Keep a
-  `vectorDim` config knob (256/384/768) for future re-index, default 768. No slicing of
-  embeddings by default.
+- Q2 Vector dimension: user chose **"768 full"** to avoid lossy MRL truncation, but
+  research PROVED multilingual-e5-small is 384-d (768 is e5-base; the original spec's
+  "768-dimension output" was wrong). Intent honored: **store the model's full vectors,
+  default 384, no truncation**. `vectorDim` knob {128,192,256,320} documented as LOSSY
+  truncation (measured ~14% recall@10 loss at 256; model is not MRL-trained), each value
+  forces a full re-index. True-768 remains available by switching `model.id` to
+  `Xenova/multilingual-e5-base` (bigger download/compute). Flagged to the user.
 - Q3 Keyword extraction: **Heuristics always + optional LLM upgrade**. Deterministic
   extraction of wake_keywords/trigger_extensions/trigger_frameworks; a config flag with an
   OpenAI-compatible endpoint adds an LLM pass over new/changed notes.

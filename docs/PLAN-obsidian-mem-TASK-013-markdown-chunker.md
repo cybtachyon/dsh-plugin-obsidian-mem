@@ -4,12 +4,17 @@ Depends: TASK-010. `packages/core/src/chunk.ts`.
 
 ## Scope
 
-- Port of langchain `MarkdownHeaderTextSplitter`
-  (https://github.com/langchain-ai/langchain/blob/e2db474707c90248f74b1398ea6f13883605f7e7/libs/text-splitters/langchain_text_splitters/markdown.py;
-  fetch it during implementation) to TypeScript: headers_to_split_on `#..######`, header
-  stack, emit chunks at each header boundary, header path joined as
-  `section_header` ("A > B > C"), and each chunk's text begins with the header line(s) so
-  context survives embedding.
+- Port of langchain `MarkdownHeaderTextSplitter` to TypeScript using the load-bearing
+  port spec in docs/research/milvus-transformers-findings.md §7 (authoritative; source
+  https://github.com/langchain-ai/langchain/blob/e2db474707c90248f74b1398ea6f13883605f7e7/libs/text-splitters/langchain_text_splitters/markdown.py
+  ): headers sorted by token length DESC; fence tracking BEFORE header matching with the
+  `count("```")===1` rule; metadata snapshot taken BEFORE a header mutates the stack
+  (content before a header flushes with PRE-header metadata); header-stack pop on
+  `level >=` with key deletion from initial_metadata; blank line flushes the entry;
+  aggregation joins same-metadata runs with `"  \n"` (hard break; blank lines are lost);
+  `#Header` (no space) is content; front matter is NOT special — strip YAML before
+  calling. Header path joined as `section_header` ("A > B > C") and PREPENDED to stored
+  chunk text so embedding retains context.
 - Respect fenced code blocks: `#` inside fences is never a header.
 - Noise stripping BEFORE embedding: YAML frontmatter, HTML comments `<!-- -->`, raw image
   base64/data URIs, autolink junk; repeated blank-line collapse. Stripping is applied to a

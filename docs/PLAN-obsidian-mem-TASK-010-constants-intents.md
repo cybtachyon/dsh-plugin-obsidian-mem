@@ -17,14 +17,23 @@ Depends: TASK-004. Lives in `packages/core/src/constants.ts` (+ index re-export)
 - `RECALLED_OPEN(source)` / `RECALLED_CLOSE` helpers producing
   `<recalled_memory source="/abs/path">` ... `</recalled_memory>` wrappers.
 - Tool names: `memory_read|memory_search|memory_write|memory_dream|memory_audit`.
+- Reserved NON-INDEXED vault files: `INTENTS_FILE='.INTENTS.md'`,
+  `DREAMS_FILE='DREAMS.md'` (dream diary, first shared vault root; `RESERVED_NON_INDEXED`
+  list consumed by indexer + audit note enumeration; also archive-history note suffix
+  `_history.md`).
+- Plugin message source kind constant: `PLUGIN_SOURCE_KIND='plugin:obsidian-mem'`
+  (MessageSourceMap augmentation lives in packages/events).
+- System-prompt section name + order 9600.
 - Budget defaults (overridable via plugin Config): turn-start recall tokens (e.g. 1200),
   read-intercept per-section tokens 350 and sections 2, global-memory injection tokens 1500,
   search default topK 6, maxResults cap 20, chunk maxTokens 500. Approximate tokens =
   `Math.ceil(chars/4)` helper `approxTokens()`.
 - Milvus collection name `obsidian_mem`; field names (chunk_id, source_path, section_header,
   chunk_text, vault, scope, trigger_extensions, trigger_frameworks, wake_keywords,
-  dense_vector, sparse as BM25 output if enabled, updated_at); default vectorDim 768 with
-  allowed {256,384,768}.
+  dense_vector, sparse as BM25 output if enabled, updated_at); default vectorDim 384
+  (multilingual-e5-small's true width) with allowed lossy values {128,192,256,320};
+  `DEFAULT_MODEL_ID='Xenova/multilingual-e5-small'`; transformers.js v4 pipeline options
+  `{pooling:'mean', normalize:true, dtype:'q8'}` (NOT `normalization`).
 - Embedding constants: model id `Xenova/multilingual-e5-small`, `PASSAGE_PREFIX='passage: '`,
   `QUERY_PREFIX='query: '`.
 

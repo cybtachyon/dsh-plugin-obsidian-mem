@@ -10,19 +10,32 @@ verified spawn command, db-file semantics, and Node SDK connection shape BEFORE 
 - Start is LAZY: the service calls the launcher only from `ensureMemoryAccess()`
   (Decision log in PLAN), never at activation, so an unconfigured install spawns no
   child process.
-- spawn mode lifecycle inside the plugin's own `ctx.effect`:
-  1. ensure `uv`/`uvx` binary (probe PATH + `~/.local/bin`; when absent, auto-install uv via
-     the official installer script; surface a friendly error if that fails).
-  2. free port probe on 127.0.0.1; write a minimal milvus-lite config yaml into
-     `$HOME/.dsh/obsidian-mem-db/` pointing at `memory.db`.
-  3. spawn `uvx milvus-lite server --config-file <yaml>` (exact invocation per findings;
-     pin `milvus-lite` version constant), detached=false, stdio piped to logger.
-  4. wait for readiness (SDK checkHealth/waitForReady or TCP probe loop with timeout),
-     expose address to the client factory.
-  5. kill child on effect disposal (SIGTERM→SIGKILL grace).
-- `milvusClient()` factory: `new MilvusClient({ address, ... })` shared instance, connect
-  retries, error wrapping. Detect "collection not found"/connection errors and map to
-  service errors with remediation text.
+- spawn mode lifecycle inside the plugin's own `ctx.effect` (VERIFIED bootstrap,
+  findings §5; the data path `$HOME/.dsh/obsidian-mem-db/memory.db` is a DIRECTORY under
+  milvus-lite 3.x — do not assume a file):
+  1. ensure `uvx` (probe PATH + `~/.local/bin`; absent ⇒ auto-install uv via the official
+     script; clear error if offline).
+  2. free port via `net.createServer().listen(0)`; persist `{port,pid}` in
+     `<dataDir>/.memlite.json` (lite writes no port file).
+  3. probe first: if a Milvus answers on the recorded port and `getVersion()` starts with
+     `milvus_lite`, ATTACH instead of spawning; foreign full-Milvus ⇒ honor external
+     config only. `DataDirLockedError` on spawn ⇒ owner exists: attach via their port file
+     or fail with an actionable message; never blind-retry.
+  4. spawn EXACTLY: `uvx --with pymilvus --from milvus-lite==<PIN> milvus-lite server
+     --data-dir <dbPath> --host 127.0.0.1 --port <p>` (`--with pymilvus` is mandatory —
+     milvus-lite omits it; `--host 127.0.0.1` mandatory — default 0.0.0.0 has no auth;
+     there is NO --config-file). Pin `milvus-lite==3.2.2` constant (3.x storage is
+     directory-based and unreadable by 2.x; no migration).
+  5. readiness: `await client.connectPromise`, then poll `checkHealth()` every 250 ms up
+     to ~90 s (`waitForMilvusReady` does NOT exist in SDK 3.0.6). Cold uvx ~60 s; warm
+     0.5 s — first-run UI should say so.
+  6. kill child on effect disposal (SIGTERM→SIGKILL grace); lite has no shutdown RPC.
+- `milvusClient()` factory: `new MilvusClient({address:'127.0.0.1:<p>', consistency_level:
+  Strong, telemetry:{enabled:false}})`; `await connectPromise`; then checkHealth/getVersion
+  handshake. EVERY call's response must pass an `assertOk` helper: the SDK RESOLVES on
+  server errors (error_code in `.status` for insert/search/query, BARE ResStatus for
+  createCollection/createIndex). A second concurrent plugin process must be refused
+  cleanly (the LOCK file).
 - Crash resilience: if the child dies, mark service degraded (memory_search returns
   explicit "index offline" message; audit reports it) and respawn with backoff.
 

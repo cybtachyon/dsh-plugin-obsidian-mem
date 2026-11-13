@@ -6,8 +6,9 @@ This is the `export function apply(ctx, config)` + `export const Config` row.
 ## Scope
 
 - `Config` JSON Schema (validated by cordis at activation; document every field):
-  `vaults: [{path, mode: 'shared'|'read-only'}]`, `vectorDim: 256|384|768 (768)`,
-  `model: { id, quantized }`, `milvus: { mode: 'spawn'|'external', address, dbPath }`,
+  `vaults: [{path, mode: 'shared'|'read-only'}]`, `vectorDim: enum
+  [128,192,256,320,384] default 384 (lower values LOSSY truncation, not MRL; change forces
+  re-index)`, `model: { id, dtype }` (default `Xenova/multilingual-e5-small` / `q8`),
   `budgets: { turnStartRecallTokens, globalMemoryTokens, readSections, readSectionTokens,
   searchTopK, thinkShotsPerTurn }`, `llm: { enabled, baseUrl, model, apiKeyEnv }`,
   `dreaming: { schedules: [{ id, label, expression|everySeconds }] }` (card-managed).

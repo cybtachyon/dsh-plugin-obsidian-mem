@@ -11,7 +11,9 @@ Depends: TASK-010. `packages/core/src/note.ts`. gray-matter allowed.
 - `parseNote(text)` → { meta, body } tolerant of missing fields (defaults applied);
   `serializeNote({meta, body})` stable field order, CRLF normalized.
 - `validateMeta(partial)` → errors array; `type` must be a scope constant or valid slug
-  (`isScopeSlug` from constants).
+  (`isScopeSlug` from constants). `index_description` discipline (engramory): it is the
+  recall hook, not a summary, and must not merely repeat `index_title`; soft-warn beyond
+  ~120 chars (validate returns warnings separately from errors).
 - Filename slug helper: `titleToFilename('Typescript: Writing style')` →
   `typescript-writing-style.md` (collision suffix `-2`).
 - `isArchived(note)`; archived notes are excluded from search defaults and reindexing.

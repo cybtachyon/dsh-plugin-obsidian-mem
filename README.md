@@ -49,8 +49,8 @@ The settings card (or the plugin's profile config) exposes:
 | Knob                    | Default                              | Notes                                                            |
 | ----------------------- | ------------------------------------ | ---------------------------------------------------------------- |
 | `vaults[]`              | (none; default vault is lazy-created) | Each vault: `path`, `mode` (`shared` \| `readonly`)              |
-| `vectorDim`             | `768`                                | Accepts `256` / `384` / `768`; changing it requires a re-index   |
-| `embeddingModel`        | `Xenova/multilingual-e5-small`       | ONNX int8, `passage:` / `query:` prefixes                        |
+| `vectorDim`             | `384`                                | Full e5-small width; `128`..`320` are lossy; change = re-index   |
+| `embeddingModel`        | `Xenova/multilingual-e5-small`       | ONNX q8, `passage:` / `query:` prefixes                        |
 | `modelCacheDir`         | `$HOME/.dsh/obsidian-mem/models`     | transformers.js `env.cacheDir`                                   |
 | `dbDir`                 | `$HOME/.dsh/obsidian-mem-db`         | Milvus-Lite data directory                                       |
 | `keywordLlm`            | off                                  | Optional OpenAI-compatible endpoint that augments heuristic wake-keyword extraction |
@@ -68,7 +68,7 @@ step, and no external Milvus to operate.
 ## Model download and offline use
 
 On first embedding the plugin downloads `Xenova/multilingual-e5-small` (ONNX
-int8, roughly 30 MB) into `$HOME/.dsh/obsidian-mem/models`. For an offline
+q8, roughly 135 MB) into `$HOME/.dsh/obsidian-mem/models`. For an offline
 host, pre-seed the cache on a connected machine:
 
 ```

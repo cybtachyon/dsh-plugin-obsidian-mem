@@ -11,8 +11,12 @@ Review the files touched by the previous 9 commits and identify the following co
  - **Overengineering**: Methods with single lines of code or slim classes.
 Then address and resolve each risk.
 
-Scope guard: Phase 1-3 touched only `.gitignore`, `AGENTS.md`, and
-package.json metadata. A legitimate finding here is, for example, the package
-version or the npm `files` list being restated somewhere it should be derived
-(scripts, docs, vitest config). Record findings and resolutions under
-`## Findings` in this file. If nothing qualifies, say so explicitly.
+Scope guard: this covers `6a25486..HEAD` (the tracking policy, the 0.0.1
+metadata, the committed emit, and the Phase 3b follow-ups). The only
+hand-edited source surfaces are `.gitignore`, `AGENTS.md`, the eight
+`package.json` files, and `scripts/`; `packages/*/lib` is machine emit. A
+legitimate finding is, for example, the package version, the npm `files` list,
+or the `exports` map being restated somewhere it should be derived (scripts,
+docs, vitest or eslint config), or a plan/task DoD that is structurally
+unsatisfiable as written. Record findings and resolutions under `## Findings` in
+this file. If nothing qualifies, say so explicitly.

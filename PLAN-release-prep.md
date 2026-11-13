@@ -19,7 +19,8 @@ symlink to this working tree, so the running DSH host loads these files directly
   `vitest.config.ts`), `pnpm lint` (`eslint .`).
 - Workflow lint gate: `mise x jactionlint@2.3.0 -- jactionlint` run from the
   repo root reports no findings.
-- Pack gate: `npm pack --dry-run` lists every file the DSH loader resolves:
+- Pack gate: `npm pack --dry-run` (unblocked by TASK-24) lists every file the
+  DSH loader resolves:
   `cordis.patch.yml`, `icon.svg`, `locale/*.json`, `dsh/host.js`,
   `dsh/client.js`, `packages/{core,service,ui,tools,events}/package.json` and
   their `lib/**/*.js` + `lib/**/*.d.ts`.
@@ -52,10 +53,11 @@ was untracked. `packages/*/tsconfig.tsbuildinfo` and `dsh/.build/` stay ignored.
 Two further findings closed without a task: the stale "(lib is git-ignored
 ...)" clause in the AGENTS.md install-carrier bullet was already rewritten inside
 `76915a9`, and `packages/bundle` emits no `lib` directory because it is a meta
-package (TASK-06 and TASK-08 must not expect one). `RESEARCH-FINDINGS.md`
-(51 KB of pre-implementation scratch, cross-linked from `docs/research/`) and
+package (TASK-06 and TASK-08 must not expect one). `RESEARCH-FINDINGS.md` was
+ruled out of scope there and came back into scope by user decision; see
+[TASK-25](docs/PLAN-release-prep-TASK-25-remove-research-findings-scratch.md).
 `docs/research/engramory-and-ext-findings.md` (cited by the AGENTS.md DSH Event
-Facts heading) are left as the user's call, outside release scope.
+Facts heading) stays.
 
 ### Phase 2: Namespace-less npm packaging metadata
 
@@ -68,6 +70,9 @@ Facts heading) are left as the user's call, outside release scope.
 
 - [x] [TASK-08-build-and-commit-artifacts](docs/PLAN-release-prep-TASK-08-build-and-commit-artifacts.md)
 - [x] [TASK-09-verify-build-idempotency](docs/PLAN-release-prep-TASK-09-verify-build-idempotency.md)
+- [ ] [TASK-24-drop-devengines-pin](docs/PLAN-release-prep-TASK-24-drop-devengines-pin.md)
+- [ ] [TASK-25-remove-research-findings-scratch](docs/PLAN-release-prep-TASK-25-remove-research-findings-scratch.md)
+- [ ] [TASK-26-ignore-idea-directory](docs/PLAN-release-prep-TASK-26-ignore-idea-directory.md)
 - [ ] [TASK-10-refactor-review-phase-1-3](docs/PLAN-release-prep-TASK-10-refactor-review-phase-1-3.md)
 
 ### Phase 4: GitHub Actions build workflow
@@ -101,9 +106,16 @@ Facts heading) are left as the user's call, outside release scope.
   before pack audit, pack audit before commit).
 - TASK-03 and TASK-07 → TASK-08 (committed artifacts must reflect the final
   tracking policy and final package metadata).
-- TASK-08 → TASK-09 → TASK-10.
-- TASK-11 and TASK-12 are independent of each other; both precede TASK-13 and
-  TASK-14.
+- TASK-08 → TASK-09.
+- TASK-09 → TASK-24 → TASK-25 → TASK-26 → TASK-10 (Phase 3b follow-ups from the
+  Q7-Q9 answers and the Phase 3 finding; the refactor review reads the whole
+  `6a25486..HEAD` range, so it runs last).
+- TASK-24 must precede TASK-11 and TASK-13: `publish.yml` ends in
+  `npm publish --provenance` and `ci.yml` carries an `npm pack --dry-run` step,
+  both of which EBADDEVENGINES while the `devEngines` pin stands.
+- TASK-26 must precede TASK-18 and TASK-21, whose gates read
+  `git status --porcelain` for empty.
+- TASK-10 → TASK-11 and TASK-12; both precede TASK-13 and TASK-14.
 - TASK-14 → TASK-15 → TASK-16 → TASK-17.
 - TASK-09 and TASK-17 → TASK-18 → TASK-19 → TASK-20 → TASK-21.
 

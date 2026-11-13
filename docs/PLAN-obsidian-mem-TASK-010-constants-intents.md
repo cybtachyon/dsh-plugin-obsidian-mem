@@ -16,6 +16,8 @@ Depends: TASK-004. Lives in `packages/core/src/constants.ts` (+ index re-export)
   `$HOME/.dsh/obsidian-mem`, `dbDir()` = `$HOME/.dsh/obsidian-mem-db`, `dbFile()` =
   `dbDir()/memory.db`, `modelCacheDir()` = `$HOME/.dsh/obsidian-mem/models`,
   stateDir() = dbDir()/state.
+- `wrapRecalled(source, content)` (already landed in core) applying the defang rule:
+  literal `</recalled_memory>` in content rewritten to `[close-tag defanged]`.
 - `RECALLED_OPEN(source)` / `RECALLED_CLOSE` helpers producing
   `<recalled_memory source="/abs/path">` ... `</recalled_memory>` wrappers.
 - Tool names: `memory_read|memory_search|memory_write|memory_dream|memory_audit`.

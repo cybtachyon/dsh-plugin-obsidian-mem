@@ -24,6 +24,9 @@ Depends: TASK-030. `packages/tools/src/read.ts`.
 - Effects: update frontmatter `last_read_at` (date) and `read_count += 1` (file write;
   skipped with a note for read-only vaults); register {path, contentHash, mtimeMs, at} in
   the read registry consumed by memory_write staleness.
+- Defang: inside the wrapper, any literal `</recalled_memory>` sequence in note content is
+  rewritten to `[close-tag defanged]` (a human-editable vault can otherwise break out of
+  the envelope; injected text reaches the model unescaped).
 - Result: full content wrapped exactly in
   `<recalled_memory source="/abs/path/to/memory.md">\n...\n</recalled_memory>`; oversized
   files paginated by offset/limit with a "truncated" marker line inside the wrapper.

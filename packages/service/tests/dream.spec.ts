@@ -450,7 +450,7 @@ describe('run: single flight and the launch sequence', () => {
     expect(summary.ok).toBe(true)
 
     expect(handle.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i)
-    expect(recorder.created).toEqual([{ sessionId: `dream-${handle.id}`, agentOptions: { provider: 'acme', model: 'm-1' } }])
+    expect(recorder.created).toEqual([{ sessionId: `dream-${handle.id}`, agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB } }])
     expect(recorder.calls).toEqual(['create', 'followup', 'whenIdle', 'dispose'])
     const message = recorder.followups[0] as { content: Array<{ type: string; text: string }>; source: { kind: string } }
     expect(message.source).toEqual({ kind: 'user' })
@@ -481,7 +481,19 @@ describe('run: single flight and the launch sequence', () => {
     const recorder = fakeGateway()
     const config = configFixture({ dreaming: { schedules: [], model: '', nearDuplicateThreshold: 0.92 } })
     await new DreamOrchestrator(deps({ gateway: recorder.gateway, config })).startRun().done
-    expect(recorder.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'm-1' } })
+    expect(recorder.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB } })
+  })
+
+  it('passes meta.cwd as the configured dbPath so the session lands in a GUI-addressable bucket', async () => {
+    // A non-default dbPath pins the value to config.milvus.dbPath rather
+    // than a constant: the session boundary keys the persisted transcript
+    // bucket off meta.cwd, and its absence is why dream transcripts 404 in
+    // the GUI (PLAN-dream-meta-cwd TASK-001).
+    const recorder = fakeGateway()
+    const config = configFixture({ milvus: { mode: 'spawn', address: '', dbPath: '/srv/other-mem-db', readinessTimeoutMs: 1 } })
+    await new DreamOrchestrator(deps({ gateway: recorder.gateway, config })).startRun().done
+    expect(recorder.created).toHaveLength(1)
+    expect(recorder.created[0]?.meta).toEqual({ cwd: '/srv/other-mem-db' })
   })
 
   it('resolves the model by precedence: per-run override over config, config over host', async () => {
@@ -489,10 +501,10 @@ describe('run: single flight and the launch sequence', () => {
     const overridden = fakeGateway()
     await new DreamOrchestrator(deps({ gateway: overridden.gateway, config })).startRun({ model: 'some/model-x' }).done
     // The override replaces only the model id; provider routing is host-only.
-    expect(overridden.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'some/model-x' } })
+    expect(overridden.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'some/model-x' }, meta: { cwd: DB } })
     const configured = fakeGateway()
     await new DreamOrchestrator(deps({ gateway: configured.gateway, config })).startRun().done
-    expect(configured.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'cfg/model' } })
+    expect(configured.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'cfg/model' }, meta: { cwd: DB } })
   })
 
   it('rejects the run as blocked when no provider/model pair resolves', () => {

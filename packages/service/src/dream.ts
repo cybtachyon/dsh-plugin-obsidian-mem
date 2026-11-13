@@ -204,6 +204,13 @@ export interface DreamAgentsGateway {
   create(options: {
     sessionId: string
     agentOptions?: DreamAgentRoute
+    /**
+     * Durable session metadata forwarded unchanged to
+     * `sessions.create().meta`: the validated absolute `cwd` decides the
+     * persisted transcript bucket and is what makes the session
+     * GUI-addressable (PLAN-dream-meta-cwd).
+     */
+    meta?: { cwd?: string }
   }): Promise<DreamAgentHandle>
 }
 
@@ -750,6 +757,13 @@ export class DreamOrchestrator {
       const handle = await gateway.create({
         sessionId: `${DREAM_SESSION_PREFIX}${id}`,
         agentOptions: route,
+        // meta.cwd is durable header data the session boundary validates and
+        // snapshots; without it the header has no cwd, the transcript lands
+        // in the _no-cwd bucket, and inspectApiSession answers
+        // session/not-found for every GUI open (PLAN-dream-meta-cwd). The
+        // plugin dbPath is absolute by config contract, one deterministic
+        // bucket, no fallback chain.
+        meta: { cwd: this.deps.config.milvus.dbPath },
       })
       try {
         handle.agent.followup({ content: [{ type: 'text', text: launchText }], source: { kind: 'user' } })

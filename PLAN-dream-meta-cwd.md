@@ -34,7 +34,7 @@ launches `agents.create({ sessionId, agentOptions })` with no
 
 ## Tasks
 
-### TASK-001 meta-cwd-at-launch
+### [x] TASK-001 meta-cwd-at-launch
 
 - `packages/service/src/dream.ts`: widen `DreamAgentsGateway.create`
   options with `meta?: { cwd?: string }`; the launch options assembly adds

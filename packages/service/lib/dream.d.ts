@@ -131,6 +131,15 @@ export interface DreamAgentsGateway {
     create(options: {
         sessionId: string;
         agentOptions?: DreamAgentRoute;
+        /**
+         * Durable session metadata forwarded unchanged to
+         * `sessions.create().meta`: the validated absolute `cwd` decides the
+         * persisted transcript bucket and is what makes the session
+         * GUI-addressable (PLAN-dream-meta-cwd).
+         */
+        meta?: {
+            cwd?: string;
+        };
     }): Promise<DreamAgentHandle>;
 }
 /**

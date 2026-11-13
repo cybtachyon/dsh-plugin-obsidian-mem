@@ -10,7 +10,7 @@ import type { DreamAgentHandle, DreamAgentsGateway } from '../src/dream.ts'
 
 export interface GatewayRecorder {
   gateway: DreamAgentsGateway
-  created: Array<{ sessionId: string; agentOptions?: { provider?: string; model?: string } }>
+  created: Array<{ sessionId: string; agentOptions?: { provider?: string; model?: string }; meta?: { cwd?: string } }>
   followups: unknown[]
   calls: string[]
   disposed: number

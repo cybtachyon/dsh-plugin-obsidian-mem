@@ -20,16 +20,11 @@
  * @module dsh-plugin-obsidian-mem/events/readIntercept
  */
 
-import { randomUUID } from 'node:crypto'
 import { dirname, extname, isAbsolute, normalize, resolve, sep } from 'node:path'
 import {
-  approxTokens,
   classifyPath,
   normalizeExtension,
-  wrapRecalled,
 } from '../../core/lib/index.js'
-import { describeError } from '../../service/lib/errors.js'
-import { IndexOfflineError } from '../../service/lib/search.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
 import type {
   HookLogger,
@@ -38,8 +33,21 @@ import type {
   ToolExecutionMirror,
   ToolResultMirror,
 } from './host.js'
-import { boundSummary, makeNoticeMessage } from './host.js'
-import { sourceKeyFor, wakeTermsForSource, type SessionRegistry } from './sessions.js'
+import { boundSummary } from './host.js'
+import type { SessionRegistry } from './sessions.js'
+import {
+  collectFreshSources,
+  fireAndForget,
+  injectNotice,
+  injectProvisionNotice,
+  logSearchFailure,
+  makeWarnOnce,
+  markSourceInjected,
+  messageIdFactory,
+  runGuarded,
+  sessionWorkspaceCwd,
+  type WarnOnce,
+} from './toolkit.js'
 
 /** The harness Read tool's registry name (verified live: `read`). */
 export const HARNESS_READ_TOOL_NAME = 'read'
@@ -69,22 +77,13 @@ export interface ReadInterceptDeps {
 export function installReadIntercept(deps: ReadInterceptDeps): () => void {
   // warnOnce for the offline state: a session that keeps reading against a
   // dead index gets one warning, then quiet skips.
-  const warned = new Set<string>()
-  const warnOnce = (key: string, message: string): void => {
-    if (warned.has(key)) {
-      return
-    }
-    warned.add(key)
-    deps.logger.warn(message)
-  }
+  const warnOnce = makeWarnOnce(deps.logger)
 
   const off = deps.ctx.on('tools/result', (exec, result) => {
-    try {
+    // Emit dispatch runs listeners raw; nothing may escape this one.
+    runGuarded(deps.logger, 'read-intercept', () => {
       observeRead(deps, exec, result, warnOnce)
-    } catch (error: unknown) {
-      // Emit dispatch runs listeners raw; nothing may escape this one.
-      deps.logger.warn(`read-intercept failed: ${describeError(error)}`)
-    }
+    })
     return undefined
   })
   return () => { off() }
@@ -96,7 +95,7 @@ function observeRead(
   deps: ReadInterceptDeps,
   exec: ToolExecutionMirror,
   result: ToolResultMirror,
-  warnOnce: (key: string, message: string) => void,
+  warnOnce: WarnOnce,
 ): void {
   if (exec.name !== HARNESS_READ_TOOL_NAME || result.isError) {
     return
@@ -134,13 +133,12 @@ function observeRead(
   const ext = normalizeExtension(extname(absPath))
   const snippet = importSnippetFrom(result.content)
   const dirSignals = dirSignalsOf(absPath)
-  void runExactRecall(deps, agent, sessionId, absPath, {
+  const recall = runExactRecall(deps, agent, sessionId, absPath, {
     ...(ext === null ? {} : { ext }),
     ...(snippet === '' ? {} : { snippet }),
     ...(dirSignals.length === 0 ? {} : { dirSignals }),
-  }, dir, warnOnce).catch((error: unknown) => {
-    deps.logger.warn(`read-intercept recall failed (skipped): ${describeError(error)}`)
-  })
+  }, dir, warnOnce)
+  fireAndForget(deps.logger, 'read-intercept recall', recall)
 }
 
 interface ExtractedSignals {
@@ -156,7 +154,7 @@ async function runExactRecall(
   absPath: string,
   signals: ExtractedSignals,
   dir: string,
-  warnOnce: (key: string, message: string) => void,
+  warnOnce: WarnOnce,
 ): Promise<void> {
   const { memory, registry } = deps
   const budgets = memory.config.budgets
@@ -172,52 +170,28 @@ async function runExactRecall(
       sectionTokens: budgets.readSectionTokens,
     })
   } catch (error: unknown) {
-    if (error instanceof IndexOfflineError) {
-      warnOnce('offline', `read-intercept skipped (index offline): ${describeError(error)}`)
-      return
-    }
-    deps.logger.warn(`read-intercept search failed (skipped): ${describeError(error)}`)
+    logSearchFailure({ logger: deps.logger, label: 'read-intercept', error, warnOnce })
     return
   }
 
-  const fresh: Array<{ key: string, block: string, fingerprint: string, terms: string[] }> = []
-  for (const item of results) {
-    const key = sourceKeyFor(item)
-    const fingerprint = String(item.updated_at)
-    if (!registry.shouldInject(sessionId, key, fingerprint)) {
-      continue
-    }
-    fresh.push({
-      key,
-      block: wrapRecalled(item.source_path, item.chunk_text),
-      fingerprint,
-      terms: wakeTermsForSource(item),
-    })
-  }
+  const fresh = collectFreshSources(registry, sessionId, results)
   if (fresh.length === 0) {
     return
   }
 
-  const newId = deps.newMessageId ?? (() => randomUUID())
-  let injectedTokens = 0
-  const inject = (id: string, summary: string, blocks: readonly string[]): number => {
-    agent.inject(makeNoticeMessage(id, summary, blocks))
-    return blocks.reduce((total, block) => total + approxTokens(block), 0)
-  }
-  if (notice !== undefined) {
-    injectedTokens += inject(newId(), 'obsidian-mem: default memory vault provisioned', [notice])
-  }
+  const newId = messageIdFactory(deps)
+  let injectedTokens = injectProvisionNotice(agent, newId, notice)
   // One envelope: the locality note names the file being read, then the
   // wrapped sections that speak to it.
   const locality = `Obsidian Mem: memory sections related to your read of ${absPath}.`
-  injectedTokens += inject(
+  injectedTokens += injectNotice(
+    agent,
     newId(),
     boundSummary(`read recall for ${absPath}`),
     [locality, ...fresh.map((item) => item.block)],
   )
   for (const item of fresh) {
-    registry.markInjected(sessionId, item.key, item.fingerprint)
-    registry.noteWakeTerms(sessionId, item.terms)
+    markSourceInjected(registry, sessionId, item)
   }
   registry.noteReadInjection(sessionId, dir)
   registry.addRecallTokens(sessionId, injectedTokens)
@@ -229,8 +203,8 @@ function resolveAgainstSession(agent: LiveAgent, given: string): string | null {
   if (isAbsolute(given)) {
     return normalize(given)
   }
-  const cwd = agent.session?.header?.cwd
-  if (cwd === undefined || cwd === '') {
+  const cwd = sessionWorkspaceCwd(agent)
+  if (cwd === null) {
     return null
   }
   return normalize(resolve(cwd, given))

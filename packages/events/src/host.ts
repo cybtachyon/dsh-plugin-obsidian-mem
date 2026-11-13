@@ -84,7 +84,7 @@ export interface HostContentBlock {
 export interface InjectedMessageSource {
   readonly kind: 'plugin:obsidian-mem'
   readonly form: 'notice'
-  /** One-line account, bounded to 120 chars like the harness producer. */
+  /** One-line account, bounded like the harness producer (boundSummary). */
   readonly summary: string
 }
 
@@ -280,9 +280,14 @@ export function makeNoticeMessage(
   }
 }
 
-/** BoundSummary clamps a notice summary to the harness 120-char bound. */
+/** NOTICE_SUMMARY_MAX_CHARS is the harness bound on one notice summary. */
+export const NOTICE_SUMMARY_MAX_CHARS = 120
+
+/** BoundSummary clamps a notice summary to {@link NOTICE_SUMMARY_MAX_CHARS}. */
 export function boundSummary(summary: string): string {
-  return summary.length <= 120 ? summary : `${summary.slice(0, 119)}…`
+  return summary.length <= NOTICE_SUMMARY_MAX_CHARS
+    ? summary
+    : `${summary.slice(0, NOTICE_SUMMARY_MAX_CHARS - 1)}…`
 }
 
 /** FirstTextBlock returns the first non-empty text block of a message, or ''. */

@@ -48,6 +48,9 @@ export const READ_INJECTION_THROTTLE_MS = 15_000
 /** Read-intercept injections per session, a cap independent of the Think budget. */
 export const READ_INJECTION_CAP_PER_SESSION = 6
 
+/** Default debounce between a ledger mutation and the debounced write. */
+export const SESSIONS_PERSIST_DEBOUNCE_MS = 1_000
+
 /** Wake terms one injected source contributes to the Think vocabulary. */
 const SOURCE_TERMS_MAX = 32
 
@@ -207,7 +210,7 @@ export class SessionRegistry {
     this.now = options.now ?? (() => Date.now())
     this.maxSessions = options.maxSessions ?? SESSIONS_LRU_MAX
     this.ttlMs = options.ttlMs ?? SESSION_TTL_MS
-    this.debounceMs = options.debounceMs ?? 1_000
+    this.debounceMs = options.debounceMs ?? SESSIONS_PERSIST_DEBOUNCE_MS
     this.log = options.log ?? (() => {})
   }
 

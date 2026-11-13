@@ -1,5 +1,7 @@
 # TASK-046 Refactor: events pass
 
+Status: done
+
 Review the files touched by the previous 6 commits and identify the following code risks:
  - **Multiple Sources of Truth**: Same calculations done in multiple places.
  - **Duplicate Code**: Nearly-identical code in multiple methods.

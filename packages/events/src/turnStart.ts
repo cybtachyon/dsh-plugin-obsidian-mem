@@ -23,15 +23,26 @@
  */
 
 import { readdirSync, readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
-import { approxTokens, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js'
+import { approxTokens, manifestQueryText, scanManifest } from '../../core/lib/index.js'
 import type { ManifestFs, WorkspaceManifest } from '../../core/lib/index.js'
 import { describeError } from '../../service/lib/errors.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
 import { compactionInstruction, isGlobalBudgetSpent } from './budget.js'
 import type { HookLogger, LiveAgent, MemoryEventsService, PreStepListener, StepMessage } from './host.js'
-import { firstUserText, makeNoticeMessage } from './host.js'
-import { sourceKeyFor, wakeTermsForSource, type SessionRegistry } from './sessions.js'
+import { firstUserText } from './host.js'
+import { type SessionRegistry } from './sessions.js'
+import {
+  collectFreshSources,
+  type FreshSource,
+  fireAndForget,
+  injectNotice,
+  injectProvisionNotice,
+  logSearchFailure,
+  markSourceInjected,
+  messageIdFactory,
+  runGuarded,
+  sessionWorkspaceCwd,
+} from './toolkit.js'
 
 /** Node ManifestFs over sync fs reads; unreadable paths answer null (skip). */
 export const nodeManifestFs: ManifestFs = {
@@ -70,12 +81,10 @@ export interface TurnStartDeps {
  */
 export function installTurnStart(deps: TurnStartDeps): () => void {
   const listener: PreStepListener = async (payload, next) => {
-    try {
+    // Observation only: a broken recall gate never touches the decision.
+    runGuarded(deps.logger, 'turn-start recall gate', () => {
       claimTurnStart(deps, payload.agent, payload.messages, payload.turn, payload.step)
-    } catch (error: unknown) {
-      // Observation only: a broken recall gate never touches the decision.
-      deps.logger.warn(`turn-start recall gate failed: ${describeError(error)}`)
-    }
+    })
     const decision = await next()
     return { ...decision }
   }
@@ -101,9 +110,11 @@ function claimTurnStart(
     return
   }
   deps.registry.markTurnStartDone(sessionId)
-  void runTurnStartRecall(deps, sessionId, messages).catch((error: unknown) => {
-    deps.logger.warn(`turn-start recall failed (skipped): ${describeError(error)}`)
-  })
+  fireAndForget(
+    deps.logger,
+    'turn-start recall',
+    runTurnStartRecall(deps, sessionId, messages),
+  )
 }
 
 /** RunTurnStartRecall is the whole once-per-session flow, errors contained. */
@@ -113,19 +124,13 @@ async function runTurnStartRecall(
   messages: readonly StepMessage[],
 ): Promise<void> {
   const { memory, registry } = deps
-  const newId = deps.newMessageId ?? (() => randomUUID())
-  const inject = (id: string, summary: string, block: string): number => {
-    deps.agent.inject(makeNoticeMessage(id, summary, [block]))
-    return approxTokens(block)
-  }
+  const newId = messageIdFactory(deps)
   let injectedTokens = 0
 
   // Step 0: lazy provisioning; the trigger call answers the one-time
   // default-vault notice, which reads first, exactly once.
   const notice = await memory.ensureMemoryAccess()
-  if (notice !== undefined) {
-    injectedTokens += inject(newId(), 'obsidian-mem: default memory vault provisioned', notice)
-  }
+  injectedTokens += injectProvisionNotice(deps.agent, newId, notice)
 
   // TASK-045: the global memory budget. While the summed recall injections
   // across this process's sessions sit past `budgets.globalMemoryTokens`,
@@ -134,18 +139,19 @@ async function runTurnStartRecall(
   const budgetTokens = memory.config.budgets.globalMemoryTokens
   if (isGlobalBudgetSpent(registry, budgetTokens)) {
     const usedTokens = registry.totalRecallTokensUsed()
-    injectedTokens += inject(
+    injectedTokens += injectNotice(
+      deps.agent,
       newId(),
       'obsidian-mem: global memory budget spent, run memory_dream',
-      compactionInstruction(usedTokens, budgetTokens),
+      [compactionInstruction(usedTokens, budgetTokens)],
     )
     registry.addRecallTokens(sessionId, injectedTokens)
     return
   }
 
   // Step 1: one manifest scan for the session, at the agent's workspace.
-  const cwd = deps.agent.session?.header?.cwd
-  const manifest = cwd === undefined || cwd === ''
+  const cwd = sessionWorkspaceCwd(deps.agent)
+  const manifest = cwd === null
     ? null
     : scanManifestSafe(cwd, deps.manifestFs ?? nodeManifestFs, deps.logger)
 
@@ -153,42 +159,35 @@ async function runTurnStartRecall(
   const query = [firstUserText(messages), manifest === null ? '' : manifestQueryText(manifest)]
     .filter((part) => part !== '')
     .join('\n\n')
-  const kept: Array<{ key: string, block: string, fingerprint: string, terms: string[] }> = []
+  const kept: FreshSource[] = []
   if (query !== '') {
     let results: MemorySearchResult[]
     try {
       results = await memory.search({ query, topK: memory.config.budgets.searchTopK })
     } catch (error: unknown) {
-      deps.logger.warn(`turn-start recall search failed (skipped): ${describeError(error)}`)
+      logSearchFailure({ logger: deps.logger, label: 'turn-start recall', error })
       results = []
     }
     let used = 0
-    for (const result of results) {
-      const key = sourceKeyFor(result)
-      const fingerprint = String(result.updated_at)
-      if (!registry.shouldInject(sessionId, key, fingerprint)) {
-        continue
-      }
-      const block = wrapRecalled(result.source_path, result.chunk_text)
-      const cost = approxTokens(block)
+    for (const item of collectFreshSources(registry, sessionId, results)) {
+      const cost = approxTokens(item.block)
       if (used + cost > memory.config.budgets.turnStartRecallTokens) {
         break
       }
       used += cost
-      kept.push({ key, block, fingerprint, terms: wakeTermsForSource(result) })
+      kept.push(item)
     }
   }
 
   // Recall bodies first, so the guidance line reads last.
   for (const item of kept) {
-    injectedTokens += inject(newId(), 'obsidian-mem: turn-start recall', item.block)
-    registry.markInjected(sessionId, item.key, item.fingerprint)
-    registry.noteWakeTerms(sessionId, item.terms)
+    injectedTokens += injectNotice(deps.agent, newId(), 'obsidian-mem: turn-start recall', [item.block])
+    markSourceInjected(registry, sessionId, item)
   }
   if (manifest !== null) {
     const guidance = guidanceLine(manifest)
     if (guidance !== '') {
-      injectedTokens += inject(newId(), 'obsidian-mem: memory_search guidance', guidance)
+      injectedTokens += injectNotice(deps.agent, newId(), 'obsidian-mem: memory_search guidance', [guidance])
     }
   }
   // TASK-045's global budget counts every token this flow injected.

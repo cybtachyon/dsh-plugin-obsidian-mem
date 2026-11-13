@@ -32,20 +32,15 @@
  * @module dsh-plugin-obsidian-mem/events/thinkIntercept
  */
 
-import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  approxTokens,
   INTENT_HINTS,
   INTENT_MARKERS,
   INTENTS_FILE,
   isIntentMarker,
-  wrapRecalled,
 } from '../../core/lib/index.js'
 import type { IntentMarker } from '../../core/lib/index.js'
-import { describeError } from '../../service/lib/errors.js'
-import { IndexOfflineError } from '../../service/lib/search.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
 import type {
   AssistantStreamFrameMirror,
@@ -54,8 +49,20 @@ import type {
   LiveAgent,
   MemoryEventsService,
 } from './host.js'
-import { makeNoticeMessage } from './host.js'
-import { sourceKeyFor, wakeTermsForSource, isWakeTerm, type SessionRegistry } from './sessions.js'
+import { boundSummary } from './host.js'
+import { isWakeTerm, type SessionRegistry } from './sessions.js'
+import {
+  collectFreshSources,
+  fireAndForget,
+  injectNotice,
+  injectProvisionNotice,
+  logSearchFailure,
+  makeWarnOnce,
+  markSourceInjected,
+  messageIdFactory,
+  runGuarded,
+  type WarnOnce,
+} from './toolkit.js'
 
 /** Completed-block search top K (task file: topK=2). */
 export const THINK_SEARCH_TOP_K = 2
@@ -100,7 +107,7 @@ export interface ThinkInterceptDeps {
 interface ThinkWatcher {
   deps: ThinkInterceptDeps
   stateByAttempt: Map<string, AttemptState>
-  warnOnce(key: string, message: string): void
+  warnOnce: WarnOnce
   /** The recorded-intents vocabulary half, read once per agent. */
   intentsTerms(): string[]
 }
@@ -122,14 +129,7 @@ interface AttemptState {
  */
 export function installThinkIntercept(deps: ThinkInterceptDeps): () => void {
   const stateByAttempt = new Map<string, AttemptState>()
-  const warned = new Set<string>()
-  const warnOnce = (key: string, message: string): void => {
-    if (warned.has(key)) {
-      return
-    }
-    warned.add(key)
-    deps.logger.warn(message)
-  }
+  const warnOnce = makeWarnOnce(deps.logger)
   // The recorded-intents half of the vocabulary, read once per agent.
   let intentsTerms: string[] | null = null
   const intentsTermsOnce = (): string[] => {
@@ -141,7 +141,8 @@ export function installThinkIntercept(deps: ThinkInterceptDeps): () => void {
   const watcher: ThinkWatcher = { deps, stateByAttempt, warnOnce, intentsTerms: intentsTermsOnce }
 
   const listener = (payload: AssistantStreamPayload): void => {
-    try {
+    // Emit dispatch runs listeners raw; nothing may escape this one.
+    runGuarded(deps.logger, 'think-intercept', () => {
       const frame = payload.frame
       if (typeof frame !== 'object' || frame === null || typeof frame.type !== 'string') {
         return
@@ -174,10 +175,7 @@ export function installThinkIntercept(deps: ThinkInterceptDeps): () => void {
       }
       const state = attemptState(stateByAttempt, frame.attemptId)
       observeChunk(watcher, sessionId, state, frame)
-    } catch (error: unknown) {
-      // Emit dispatch runs listeners raw; nothing may escape this one.
-      deps.logger.warn(`think-intercept failed: ${describeError(error)}`)
-    }
+    })
   }
 
   const off = deps.agent.ctx.on('agent/assistant-stream', listener)
@@ -257,9 +255,11 @@ function scheduleThinkRecall(watcher: ThinkWatcher, sessionId: string, blockText
   if (!deps.registry.thinkBudgetLeft(sessionId)) {
     return
   }
-  void runThinkRecall(deps, sessionId, blockText, matched, watcher.warnOnce).catch((error: unknown) => {
-    deps.logger.warn(`think-intercept recall failed (skipped): ${describeError(error)}`)
-  })
+  fireAndForget(
+    deps.logger,
+    'think-intercept recall',
+    runThinkRecall(deps, sessionId, blockText, matched, watcher.warnOnce),
+  )
 }
 
 async function runThinkRecall(
@@ -267,7 +267,7 @@ async function runThinkRecall(
   sessionId: string,
   blockText: string,
   matched: readonly string[],
-  warnOnce: (key: string, message: string) => void,
+  warnOnce: WarnOnce,
 ): Promise<void> {
   const { memory, registry } = deps
   // Lazy provisioning first: a pending one-time default-vault notice is
@@ -281,23 +281,11 @@ async function runThinkRecall(
       topK: THINK_SEARCH_TOP_K,
     })
   } catch (error: unknown) {
-    if (error instanceof IndexOfflineError) {
-      warnOnce('offline', `think-intercept skipped (index offline): ${describeError(error)}`)
-      return
-    }
-    deps.logger.warn(`think-intercept search failed (skipped): ${describeError(error)}`)
+    logSearchFailure({ logger: deps.logger, label: 'think-intercept', error, warnOnce })
     return
   }
 
-  const fresh: Array<{ key: string, block: string, fingerprint: string, result: MemorySearchResult }> = []
-  for (const result of results) {
-    const key = sourceKeyFor(result)
-    const fingerprint = String(result.updated_at)
-    if (!registry.shouldInject(sessionId, key, fingerprint)) {
-      continue
-    }
-    fresh.push({ key, block: wrapRecalled(result.source_path, result.chunk_text), fingerprint, result })
-  }
+  const fresh = collectFreshSources(registry, sessionId, results)
   if (fresh.length === 0) {
     return
   }
@@ -307,24 +295,17 @@ async function runThinkRecall(
     return
   }
 
-  const newId = deps.newMessageId ?? (() => randomUUID())
-  let injectedTokens = 0
-  const inject = (id: string, summary: string, blocks: readonly string[]): number => {
-    deps.agent.inject(makeNoticeMessage(id, summary, blocks))
-    return blocks.reduce((total, block) => total + approxTokens(block), 0)
-  }
-  if (notice !== undefined) {
-    injectedTokens += inject(newId(), 'obsidian-mem: default memory vault provisioned', [notice])
-  }
+  const newId = messageIdFactory(deps)
+  let injectedTokens = injectProvisionNotice(deps.agent, newId, notice)
   const header = `Obsidian Mem: memories matched by your thinking, terms: ${matched.join(', ')}.`
-  injectedTokens += inject(
+  injectedTokens += injectNotice(
+    deps.agent,
     newId(),
-    `think recall: ${matched.join(', ')}`.slice(0, 120),
+    boundSummary(`think recall: ${matched.join(', ')}`),
     [header, ...fresh.map((item) => item.block)],
   )
   for (const item of fresh) {
-    registry.markInjected(sessionId, item.key, item.fingerprint)
-    registry.noteWakeTerms(sessionId, wakeTermsForSource(item.result))
+    markSourceInjected(registry, sessionId, item)
   }
   registry.addRecallTokens(sessionId, injectedTokens)
 }

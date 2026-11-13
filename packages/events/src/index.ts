@@ -27,13 +27,13 @@ import type { ManifestFs } from '../../core/lib/index.js'
 // Type import only: pulls the `obsidianMem` Context augmentation in.
 import type {} from '../../service/lib/index.js'
 import { OBSIDIAN_MEM_SEAM } from '../../service/lib/index.js'
-import { describeError } from '../../service/lib/errors.js'
 import type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope } from './host.js'
 import { installReadIntercept } from './readIntercept.js'
 import { SESSIONS_FILE_NAME, SessionRegistry } from './sessions.js'
 import { installThinkIntercept } from './thinkIntercept.js'
 import { installMemoryToolWatch, installTurnEnd } from './turnEnd.js'
 import { installTurnStart } from './turnStart.js'
+import { runGuarded } from './toolkit.js'
 
 export const name = 'obsidian-mem-events'
 export const inject = ['obsidianMem']
@@ -71,6 +71,7 @@ export function apply(ctx: Context, options: MountOptions = {}): void {
 export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions = {}): SessionRegistry {
   const ctx = scope
   const logger = ctx.logger('obsidian-mem-events')
+  const hookLogger = logger as HookLogger
   const memory = scope.obsidianMem
   const registry = new SessionRegistry({
     file: join(dbStateDir(memory.config.milvus.dbPath), SESSIONS_FILE_NAME),
@@ -97,7 +98,7 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
   ctx.on('agent/created', (payload) => {
     // Serial dispatch: a throw here fails agent creation, so nothing may
     // escape this handler (the payload is read inside the guard too).
-    try {
+    runGuarded(hookLogger, 'agent/created wiring', () => {
       const agent = payload.agent
       const sessionId = String(agent.id)
       registry.ensure(sessionId, { subagent: isSubagentAgent(agent) })
@@ -108,7 +109,7 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
         agent,
         memory,
         registry,
-        logger: logger as HookLogger,
+        logger: hookLogger,
         ...(options.manifestFs === undefined ? {} : { manifestFs: options.manifestFs }),
         ...(options.newMessageId === undefined ? {} : { newMessageId: options.newMessageId }),
       }
@@ -125,28 +126,24 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
         }
       }, `${name}.agent`)
       agentDisposers.set(sessionId, () => { handle() })
-    } catch (error: unknown) {
-      logger.warn(`agent/created wiring failed: ${describeError(error)}`)
-    }
+    })
     return undefined
   })
 
   ctx.on('agent/disposed', (payload) => {
-    try {
+    runGuarded(hookLogger, 'agent/disposed session wiring', () => {
       const sessionId = String(payload.agent.id)
       agentDisposers.get(sessionId)?.()
       agentDisposers.delete(sessionId)
       registry.disposeSession(sessionId)
-    } catch (error: unknown) {
-      logger.warn(`agent/disposed session wiring failed: ${describeError(error)}`)
-    }
+    })
   })
 
   // Plugin-level tool observation: tools/result is keyed by exec.agent and
   // observed here (not per agent.ctx); see TASK-042 and the TASK-044
   // memory-tool turn guard.
-  installReadIntercept({ ctx, memory, registry, logger: logger as HookLogger })
-  installMemoryToolWatch({ ctx, registry, logger: logger as HookLogger })
+  installReadIntercept({ ctx, memory, registry, logger: hookLogger })
+  installMemoryToolWatch({ ctx, registry, logger: hookLogger })
 
   return registry
 }
@@ -172,6 +169,7 @@ export {
   SESSION_TTL_MS,
   SESSIONS_FILE_NAME,
   SESSIONS_LRU_MAX,
+  SESSIONS_PERSIST_DEBOUNCE_MS,
   SessionRegistry,
   sourceKeyFor,
   wakeTermsForSource,

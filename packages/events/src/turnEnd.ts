@@ -24,9 +24,7 @@
  */
 
 import { homedir } from 'node:os'
-import { randomUUID } from 'node:crypto'
 import { defaultVaultPath, MEMORY_TOOL_NAMES, VAULT_MODE_SHARED } from '../../core/lib/index.js'
-import { describeError } from '../../service/lib/errors.js'
 import type {
   HookLogger,
   LiveAgent,
@@ -37,6 +35,7 @@ import type {
 } from './host.js'
 import { makeNoticeMessage } from './host.js'
 import type { SessionRegistry } from './sessions.js'
+import { messageIdFactory, runGuarded } from './toolkit.js'
 
 /** First user text this long or shorter is trivial unless it carries a work marker. */
 export const TRIVIAL_TURN_MAX_CHARS = 24
@@ -99,9 +98,11 @@ export interface TurnEndDeps {
 export function installTurnEnd(deps: TurnEndDeps): () => void {
   /** The turn that already received its steer; the anti-loop guard. */
   let firedTurn: number | null = null
+  const newId = messageIdFactory(deps)
 
   const listener = (payload: TurnStoppingPayload): void => {
-    try {
+    // Serial dispatch: a throwing listener must not break the close.
+    runGuarded(deps.logger, 'turn-end reminder', () => {
       const turn = typeof payload.turn === 'number' ? payload.turn : -1
       if (firedTurn === turn) {
         return
@@ -114,17 +115,13 @@ export function installTurnEnd(deps: TurnEndDeps): () => void {
       // Claim the turn before steering: a steer keeps the turn open and
       // re-fires this listener; anything throwing mid-steer still counts.
       firedTurn = turn
-      const newId = deps.newMessageId ?? (() => randomUUID())
       const home = deps.homedir ?? homedir
       agent.steer(makeNoticeMessage(
         newId(),
         'obsidian-mem: turn-end save/audit reminder',
         [turnEndReminder(deps.memory.listVaults(), home())],
       ))
-    } catch (error: unknown) {
-      // Serial dispatch: a throwing listener must not break the close.
-      deps.logger.warn(`turn-end reminder failed: ${describeError(error)}`)
-    }
+    })
   }
 
   const off = deps.agent.ctx.on('agent/turn-stopping', listener)
@@ -176,19 +173,17 @@ const MEMORY_TOOL_SET: ReadonlySet<string> = new Set<string>(MEMORY_TOOL_NAMES)
  */
 export function installMemoryToolWatch(deps: MemoryToolWatchDeps): () => void {
   const off = deps.ctx.on('tools/result', (exec, result) => {
-    try {
+    runGuarded(deps.logger, 'memory-tool watch', () => {
       void result
       if (!MEMORY_TOOL_SET.has(exec.name)) {
-        return undefined
+        return
       }
       const agent = exec.agent
       if (agent === undefined) {
-        return undefined
+        return
       }
       deps.registry.noteMemoryToolUse(String(agent.id))
-    } catch (error: unknown) {
-      deps.logger.warn(`memory-tool watch failed: ${describeError(error)}`)
-    }
+    })
     return undefined
   })
   return () => { off() }

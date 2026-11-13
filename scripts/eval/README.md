@@ -139,3 +139,29 @@ Same inputs produce the same output: lite search is stable at this corpus
 size (the radius probe reproduced byte-identical results), client-side
 sorts are total, the artifact has no timestamps, and each query vector is
 embedded once per run.
+
+## Cross-encoder rerank study (TASK-012)
+
+`cross-encoder-rerank.mjs` replays the same query set through the CURRENT
+production page (its own copy of the split-rrf page computation pinned at
+the `search.ts` constants: radius 0.78, range 1.0, ef 64, sparse floor 2.5,
+RRF 60, fused floor 1/61, topK 6), scores every surviving row with
+`Xenova/bge-reranker-base` via `sigmoid(raw logit)`, and reports the
+cutoff sweep, the per-cutoff flipped-row ledger, per-class probability
+distributions, and latency. It answers only "what would a post-fusion
+cross-encoder cutoff do to this page"; there are no page knobs (production
+is the fixed input). The pipeline's own text-classification score is
+degenerate at this model's single logit (softmax of one value is 1.0), so
+the harness calls `classifier.model` directly and applies sigmoid itself.
+Latency is stdout-only; the JSON artifact has no timestamps, so two runs
+diff byte-identically.
+
+```
+node scripts/eval/cross-encoder-rerank.mjs                     # default sweep
+node scripts/eval/cross-encoder-rerank.mjs --cutoffs none,0.0028,0.05,0.35
+node scripts/eval/cross-encoder-rerank.mjs --dtype q8 --out docs/research/...
+```
+
+The model (q8, ~279 MB) downloads once into the production model cache
+(`<dbDir>/models`, core's `modelCacheDir`). Verdict and tables:
+[docs/research/cross-encoder-findings.md](../../docs/research/cross-encoder-findings.md).

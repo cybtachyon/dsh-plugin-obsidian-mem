@@ -6,7 +6,9 @@
  * (a steer keeps the turn open); subagent skip; memory_*-tool-used skip via
  * the plugin-ctx tools/result watcher keyed by agent; trivial-turn skip with
  * the WORK_MARKER exception; steer-only delivery (no inject, no followup, no
- * provisioning).
+ * provisioning). While the global budget is spent the same steer additionally
+ * carries the budget section after the checklist (TASK-003, PLAN-budget-
+ * reminder Q-PIGGYBACK full piggyback), inheriting every skip unchanged.
  * @module dsh-plugin-obsidian-mem/events/tests/turnEnd
  */
 
@@ -63,12 +65,14 @@ interface UnitHarness {
 /** installTurnEnd + installMemoryToolWatch without the turn-start flow. */
 function unit(options: {
   vaults?: Parameters<typeof fakeMemory>[0]['vaults']
+  budgets?: Parameters<typeof fakeMemory>[0]['budgets']
   subagent?: boolean
 } = {}): UnitHarness {
   const tmp = tempDbPath()
   const memory = fakeMemory({
     dbPath: tmp.dir,
     ...(options.vaults === undefined ? {} : { vaults: options.vaults }),
+    ...(options.budgets === undefined ? {} : { budgets: options.budgets }),
   })
   const ctx = fakeEventsCtx(memory)
   const registry = new SessionRegistry({
@@ -274,6 +278,91 @@ describe('skip conditions', () => {
 
   it('a turn whose first user text never surfaced stays quiet', async () => {
     const h = unit({ vaults: [vaultRow('/v/shared')] })
+    await h.stopTurn(1)
+    expect(h.agent.steered).toHaveLength(0)
+  })
+})
+
+// TASK-003 + TASK-005 (PLAN-budget-reminder Q-PIGGYBACK full piggyback): the
+// budget section rides the checklist's steer and inherits its skips unchanged.
+// The unit() flow never accumulates recall tokens on its own (no turn-start
+// recall here), so these tests drive the registry past the cap directly and
+// lower budgets.globalMemoryTokens through the testkit option.
+describe('over budget: the budget section rides the checklist steer', () => {
+  const CAP = 100
+  const OVER = 150
+
+  /** Pin the stable TASK-001 fragments of the compactionInstruction body. */
+  function expectBudgetSection(text: string, used: number): void {
+    expect(text).toContain(
+      `(${String(used)} of ${String(CAP)} tokens injected since the last successful dream or host restart)`,
+    )
+    expect(text).toContain('No fresh recall sections are injected while it stays over budget.')
+    expect(text).toContain('do not start until the user approves')
+    expect(text).toContain('`memory_dream`')
+  }
+
+  it('steers once whose body carries the checklist first, then the budget section', async () => {
+    const h = unit({ vaults: [vaultRow('/v/shared')], budgets: { globalMemoryTokens: CAP } })
+    h.registry.addRecallTokens('session-1', OVER)
+    h.registry.noteTurn('session-1', 1, WORK_TEXT)
+    await h.stopTurn(1)
+    expect(h.agent.steered).toHaveLength(1)
+    const message = h.agent.steered[0]
+    // Still the one reminder steer: same source, no second message.
+    expect(message?.source.summary).toBe('obsidian-mem: turn-end save/audit reminder')
+    expect(message?.content).toHaveLength(2)
+    expect(message?.content[0]?.text).toBe(expectedReminder('/v/shared'))
+    expectBudgetSection(message?.content[1]?.text ?? '', OVER)
+  })
+
+  it('usage exactly at the cap stays quiet: strictly-over flip', async () => {
+    const h = unit({ vaults: [vaultRow('/v/shared')], budgets: { globalMemoryTokens: CAP } })
+    h.registry.addRecallTokens('session-1', CAP)
+    h.registry.noteTurn('session-1', 1, WORK_TEXT)
+    await h.stopTurn(1)
+    expect(h.agent.steered).toHaveLength(1)
+    const message = h.agent.steered[0]
+    expect(message?.content).toHaveLength(1)
+    expect(message?.content[0]?.text).toBe(expectedReminder('/v/shared'))
+  })
+
+  it('the once-per-turn guard holds while over budget', async () => {
+    const h = unit({ vaults: [vaultRow('/v/shared')], budgets: { globalMemoryTokens: CAP } })
+    h.registry.addRecallTokens('session-1', OVER)
+    h.registry.noteTurn('session-1', 1, WORK_TEXT)
+    await h.stopTurn(1)
+    await h.stopTurn(1)
+    await h.stopTurn(1)
+    expect(h.agent.steered).toHaveLength(1)
+    expect(h.agent.steered[0]?.content).toHaveLength(2)
+  })
+
+  it('a subagent over budget still gets zero steers', async () => {
+    const h = unit({
+      subagent: true,
+      vaults: [vaultRow('/v/shared')],
+      budgets: { globalMemoryTokens: CAP },
+    })
+    h.registry.addRecallTokens('session-1', OVER)
+    h.registry.noteTurn('session-1', 1, WORK_TEXT)
+    await h.stopTurn(1)
+    expect(h.agent.steered).toHaveLength(0)
+  })
+
+  it('a memory-tool turn over budget is skipped: the full piggyback swallows the section', async () => {
+    const h = unit({ vaults: [vaultRow('/v/shared')], budgets: { globalMemoryTokens: CAP } })
+    h.registry.addRecallTokens('session-1', OVER)
+    h.registry.noteTurn('session-1', 1, WORK_TEXT)
+    h.useMemoryTool('memory_search')
+    await h.stopTurn(1)
+    expect(h.agent.steered).toHaveLength(0)
+  })
+
+  it('a trivial turn over budget is skipped too', async () => {
+    const h = unit({ vaults: [vaultRow('/v/shared')], budgets: { globalMemoryTokens: CAP } })
+    h.registry.addRecallTokens('session-1', OVER)
+    h.registry.noteTurn('session-1', 1, 'thanks!')
     await h.stopTurn(1)
     expect(h.agent.steered).toHaveLength(0)
   })

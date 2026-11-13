@@ -73,7 +73,7 @@ Task bodies live in the linked files. Execute top to bottom.
 ### Phase 2: tests
 
 - [x] [TASK-004-turnstart-specs](docs/PLAN-budget-reminder-TASK-004-turnstart-specs.md)
-- [ ] [TASK-005-turnend-specs](docs/PLAN-budget-reminder-TASK-005-turnend-specs.md)
+- [x] [TASK-005-turnend-specs](docs/PLAN-budget-reminder-TASK-005-turnend-specs.md)
 
 ### Phase 2b: budget-sentence alignment (service + tools, per Q-WORDING-SCOPE)
 

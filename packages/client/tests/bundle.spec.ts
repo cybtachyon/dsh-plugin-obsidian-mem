@@ -52,5 +52,7 @@ describe('dsh/client.js ModuleLoader contract', () => {
     expect(artifact).toContain('obsidian-mem-audit-view')
     expect(artifact).toContain('Adopt and Share')
     expect(artifact).toContain('Dreaming triggers')
+    // TASK-010: the add-form global-file copy must survive bundling.
+    expect(artifact).toContain('Global memory relative file path e.g. GLOBAL.md')
   })
 })

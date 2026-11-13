@@ -1,6 +1,6 @@
 /**
- * The Vaults section: the registry rows (path, source, mode), the add form
- * (path + mode), and the guarded two-step remove.
+ * The Vaults section: the registry rows (path, source, mode, global file),
+ * the add form (path + mode + global file), and the guarded two-step remove.
  *
  * The rows read the polled status (status.vaults is the same sync registry
  * view the routes serve). Remove is two-step (Remove, then Confirm right
@@ -10,7 +10,7 @@
  * protected message names the actionable place to remove the vault.
  * @module dsh-plugin-obsidian-mem/client/sections/vaults
  */
-import { addVault, errorText, removeVault, } from '../api.js';
+import { addVault, addVaultPayload, errorText, removeVault, } from '../api.js';
 import { truncate } from '../format.js';
 import { renderButton, renderInput, renderSegmented, renderTag, } from '../primitives.js';
 import { react } from '../react.js';
@@ -30,19 +30,20 @@ const SOURCE_TONES = {
 export function VaultsSection(props) {
     const [path, setPath] = react.useState('');
     const [mode, setMode] = react.useState('shared');
+    const [globalFile, setGlobalFile] = react.useState('');
     const [busy, setBusy] = react.useState(false);
     const [error, setError] = react.useState(null);
     const [confirmPath, setConfirmPath] = react.useState(null);
     const submitAdd = () => {
-        const trimmed = path.trim();
-        if (trimmed === '') {
+        if (path.trim() === '') {
             return;
         }
         setBusy(true);
         setError(null);
-        addVault({ path: trimmed, mode }).then(() => {
+        addVault(addVaultPayload(path, mode, globalFile)).then(() => {
             setBusy(false);
             setPath('');
+            setGlobalFile('');
             props.refresh();
         }, (failure) => {
             setBusy(false);
@@ -78,6 +79,13 @@ export function VaultsSection(props) {
                 disabled: busy,
                 onChange: (text) => setPath(text),
             }),
+            renderInput({
+                value: globalFile,
+                placeholder: 'Global memory relative file path e.g. GLOBAL.md',
+                title: 'Optional; relative to the vault root; blank defaults to GLOBAL.md',
+                disabled: busy,
+                onChange: (text) => setGlobalFile(text),
+            }),
             renderSegmented({
                 id: 'obsidian-mem-vault-mode',
                 label: 'Vault mode',
@@ -97,6 +105,7 @@ export function VaultsSection(props) {
             react.createElement("span", { style: MONO_STYLE, title: entry.path }, truncate(entry.path, 64)),
             renderTag(SOURCE_TONES[entry.source] ?? 'neutral', entry.source),
             renderTag('quiet', entry.mode),
+            renderTag('quiet', entry.globalFile),
             confirmPath === entry.path ? (react.createElement(react.Fragment, null,
                 renderButton({
                     label: 'Confirm remove',

@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   addVault,
+  addVaultPayload,
   ApiError,
   deleteSchedule,
   errorText,
@@ -94,6 +95,40 @@ describe('error envelope handling', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ path: '/home/test/vault', mode: 'shared' }),
+    })
+  })
+})
+
+/**
+ * TASK-010 wire rule: unset globalFile is expressed ONLY by omitting the key
+ * (the route answers a present blank with 400 vault_invalid), so the payload
+ * builder trims and drops; a "" never travels in the body.
+ */
+describe('addVaultPayload globalFile omission', () => {
+  it('omits the key when globalFile is blank, whitespace, or empty after trim', () => {
+    for (const raw of ['', '   ', '\t\n ']) {
+      const body = addVaultPayload('/home/test/vault', 'shared', raw)
+      expect(body).toEqual({ path: '/home/test/vault', mode: 'shared' })
+      expect(body).not.toHaveProperty('globalFile')
+    }
+  })
+
+  it('trims and keeps a non-empty globalFile', () => {
+    expect(addVaultPayload('/home/test/vault ', 'read-only', '  notes/GLOBAL.md ')).toEqual({
+      path: '/home/test/vault',
+      mode: 'read-only',
+      globalFile: 'notes/GLOBAL.md',
+    })
+  })
+
+  it('sends the trimmed globalFile in the POST body through addVault', async () => {
+    const calls = stubFetch([{ status: 201, body: {} }])
+    await addVault(addVaultPayload('/home/test/vault', 'shared', ' GLOBAL.md '))
+    expect(calls[0]!.url).toBe('/obsidian-mem/vaults')
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
+      path: '/home/test/vault',
+      mode: 'shared',
+      globalFile: 'GLOBAL.md',
     })
   })
 })

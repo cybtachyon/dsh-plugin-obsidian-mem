@@ -90,10 +90,34 @@ export interface SchedulesPayload {
   configured: StatusPayload['dreaming']['schedules']
 }
 
-/** AddVaultRequest is the POST /obsidian-mem/vaults body. */
+/**
+ * AddVaultRequest is the POST /obsidian-mem/vaults body. Unset globalFile is
+ * expressed ONLY by omitting the key: a present value must be a non-empty
+ * string on the wire, so a blank field never travels as `globalFile: ""`.
+ */
 export interface AddVaultRequest {
   path: string
   mode: VaultMode
+  /** Vault-root-relative global memory file; omitted takes the host GLOBAL.md default. */
+  globalFile?: string
+}
+
+/**
+ * AddVaultPayload builds the add-vault body from raw form fields: the path and
+ * globalFile arrive trimmed, and a globalFile that is empty after trimming is
+ * left OUT of the body (the omission is the host's "use the default" signal).
+ */
+export function addVaultPayload(
+  path: string,
+  mode: VaultMode,
+  globalFile: string,
+): AddVaultRequest {
+  const globalFileTrimmed = globalFile.trim()
+  return {
+    path: path.trim(),
+    mode,
+    ...(globalFileTrimmed === '' ? {} : { globalFile: globalFileTrimmed }),
+  }
 }
 
 /** SearchPayload answers GET /obsidian-mem/search. */

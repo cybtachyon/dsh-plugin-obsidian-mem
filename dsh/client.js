@@ -70,6 +70,14 @@ function isApiError(error) {
 function errorText(error) {
   return error instanceof Error ? error.message : String(error);
 }
+function addVaultPayload(path, mode, globalFile) {
+  const globalFileTrimmed = globalFile.trim();
+  return {
+    path: path.trim(),
+    mode,
+    ...globalFileTrimmed === "" ? {} : { globalFile: globalFileTrimmed }
+  };
+}
 async function request(method, path, body) {
   const response = await fetch(
     path,
@@ -933,20 +941,21 @@ var SOURCE_TONES = {
 function VaultsSection(props) {
   const [path, setPath] = react.useState("");
   const [mode, setMode] = react.useState("shared");
+  const [globalFile, setGlobalFile] = react.useState("");
   const [busy, setBusy] = react.useState(false);
   const [error, setError] = react.useState(null);
   const [confirmPath, setConfirmPath] = react.useState(null);
   const submitAdd = () => {
-    const trimmed = path.trim();
-    if (trimmed === "") {
+    if (path.trim() === "") {
       return;
     }
     setBusy(true);
     setError(null);
-    addVault({ path: trimmed, mode }).then(
+    addVault(addVaultPayload(path, mode, globalFile)).then(
       () => {
         setBusy(false);
         setPath("");
+        setGlobalFile("");
         props.refresh();
       },
       (failure) => {
@@ -985,6 +994,12 @@ function VaultsSection(props) {
     wide: true,
     disabled: busy,
     onChange: (text) => setPath(text)
+  }), renderInput({
+    value: globalFile,
+    placeholder: "Global memory relative file path e.g. GLOBAL.md",
+    title: "Optional; relative to the vault root; blank defaults to GLOBAL.md",
+    disabled: busy,
+    onChange: (text) => setGlobalFile(text)
   }), renderSegmented({
     id: "obsidian-mem-vault-mode",
     label: "Vault mode",
@@ -998,7 +1013,7 @@ function VaultsSection(props) {
     busy,
     disabled: path.trim() === "",
     onClick: submitAdd
-  })), vaults.map((entry) => /* @__PURE__ */ react.createElement("div", { key: entry.path, style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: MONO_STYLE, title: entry.path }, truncate(entry.path, 64)), renderTag(SOURCE_TONES[entry.source] ?? "neutral", entry.source), renderTag("quiet", entry.mode), confirmPath === entry.path ? /* @__PURE__ */ react.createElement(react.Fragment, null, renderButton({
+  })), vaults.map((entry) => /* @__PURE__ */ react.createElement("div", { key: entry.path, style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: MONO_STYLE, title: entry.path }, truncate(entry.path, 64)), renderTag(SOURCE_TONES[entry.source] ?? "neutral", entry.source), renderTag("quiet", entry.mode), renderTag("quiet", entry.globalFile), confirmPath === entry.path ? /* @__PURE__ */ react.createElement(react.Fragment, null, renderButton({
     label: "Confirm remove",
     variant: "outline",
     busy,

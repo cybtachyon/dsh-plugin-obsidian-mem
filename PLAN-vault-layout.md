@@ -106,7 +106,7 @@ Ordered list; every task is defined in its own file.
  - [x] [TASK-014-global-memory-injection](docs/PLAN-VAULT-LAYOUT-TASK-014-global-memory-injection.md)
  - [x] [TASK-015-global-file-compaction-protect](docs/PLAN-VAULT-LAYOUT-TASK-015-global-file-compaction-protect.md)
  - [x] [TASK-009-ui-route-global-file](docs/PLAN-VAULT-LAYOUT-TASK-009-ui-route-global-file.md)
- - [ ] [TASK-010-client-card-global-file](docs/PLAN-VAULT-LAYOUT-TASK-010-client-card-global-file.md)
+ - [x] [TASK-010-client-card-global-file](docs/PLAN-VAULT-LAYOUT-TASK-010-client-card-global-file.md)
  - [ ] [Refactor: Phase 3 review](docs/PLAN-VAULT-LAYOUT-TASK-R3-refactor-phase-3.md)
 
 ### Phase 4 — Ship

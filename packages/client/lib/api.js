@@ -50,6 +50,19 @@ export function isApiError(error) {
 export function errorText(error) {
     return error instanceof Error ? error.message : String(error);
 }
+/**
+ * AddVaultPayload builds the add-vault body from raw form fields: the path and
+ * globalFile arrive trimmed, and a globalFile that is empty after trimming is
+ * left OUT of the body (the omission is the host's "use the default" signal).
+ */
+export function addVaultPayload(path, mode, globalFile) {
+    const globalFileTrimmed = globalFile.trim();
+    return {
+        path: path.trim(),
+        mode,
+        ...(globalFileTrimmed === '' ? {} : { globalFile: globalFileTrimmed }),
+    };
+}
 // request runs one fetch round trip and settles to the parsed JSON answer.
 // A non-OK answer throws ApiError built from the route's error envelope (code
 // and message verbatim; a body that is not the envelope degrades to HTTP

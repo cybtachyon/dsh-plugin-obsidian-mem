@@ -1,6 +1,6 @@
 /**
- * The Vaults section: the registry rows (path, source, mode), the add form
- * (path + mode), and the guarded two-step remove.
+ * The Vaults section: the registry rows (path, source, mode, global file),
+ * the add form (path + mode + global file), and the guarded two-step remove.
  *
  * The rows read the polled status (status.vaults is the same sync registry
  * view the routes serve). Remove is two-step (Remove, then Confirm right
@@ -15,6 +15,7 @@ import type { ReactNode } from 'react'
 import type { VaultMode } from '../../../core/lib/index.js'
 import {
   addVault,
+  addVaultPayload,
   errorText,
   removeVault,
   type StatusPayload,
@@ -58,21 +59,22 @@ export interface VaultsSectionProps {
 export function VaultsSection(props: VaultsSectionProps): ReactNode {
   const [path, setPath] = react.useState('')
   const [mode, setMode] = react.useState<VaultMode>('shared')
+  const [globalFile, setGlobalFile] = react.useState('')
   const [busy, setBusy] = react.useState(false)
   const [error, setError] = react.useState<string | null>(null)
   const [confirmPath, setConfirmPath] = react.useState<string | null>(null)
 
   const submitAdd = (): void => {
-    const trimmed = path.trim()
-    if (trimmed === '') {
+    if (path.trim() === '') {
       return
     }
     setBusy(true)
     setError(null)
-    addVault({ path: trimmed, mode }).then(
+    addVault(addVaultPayload(path, mode, globalFile)).then(
       () => {
         setBusy(false)
         setPath('')
+        setGlobalFile('')
         props.refresh()
       },
       (failure: unknown) => {
@@ -122,6 +124,13 @@ export function VaultsSection(props: VaultsSectionProps): ReactNode {
           disabled: busy,
           onChange: (text) => setPath(text),
         })}
+        {renderInput({
+          value: globalFile,
+          placeholder: 'Global memory relative file path e.g. GLOBAL.md',
+          title: 'Optional; relative to the vault root; blank defaults to GLOBAL.md',
+          disabled: busy,
+          onChange: (text) => setGlobalFile(text),
+        })}
         {renderSegmented<VaultMode>({
           id: 'obsidian-mem-vault-mode',
           label: 'Vault mode',
@@ -143,6 +152,7 @@ export function VaultsSection(props: VaultsSectionProps): ReactNode {
           <span style={MONO_STYLE} title={entry.path}>{truncate(entry.path, 64)}</span>
           {renderTag(SOURCE_TONES[entry.source] ?? 'neutral', entry.source)}
           {renderTag('quiet', entry.mode)}
+          {renderTag('quiet', entry.globalFile)}
           {confirmPath === entry.path ? (
             <>
               {renderButton({

@@ -1,6 +1,6 @@
 /**
- * The Vaults section: the registry rows (path, source, mode), the add form
- * (path + mode), and the guarded two-step remove.
+ * The Vaults section: the registry rows (path, source, mode, global file),
+ * the add form (path + mode + global file), and the guarded two-step remove.
  *
  * The rows read the polled status (status.vaults is the same sync registry
  * view the routes serve). Remove is two-step (Remove, then Confirm right

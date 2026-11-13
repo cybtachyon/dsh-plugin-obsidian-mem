@@ -73,10 +73,12 @@ Depends on: TASK-001.
   codepoints still match what the BM25 analyzer produced at index time
   (schema.ts enables the default analyzer, no jieba). If they provably
   cannot, keep CJK UNSTRIPPED (fail-open) and document `zho` as a
-  mixed-language noise guard only. Observed scope notes: `zho` contains
-  frequently-used Han characters (日月年時分秒一二 等), so Japanese-adjacent
-  Han runs are affected too; kana and Hangul are word characters here and
-  pass through whole.
+  mixed-language noise guard only. Observed scope notes (CORRECTED
+  2026-11-13 per TASK-003 verification against the installed list): `zho`
+  contains frequently-used SIMPLIFIED Han characters (日 月 年 时 分 秒 一
+  等) but NOT traditional 時, nor 二, nor 间/間, so Japanese-adjacent Han
+  runs are affected only on the shared simplified shapes; kana and Hangul
+  are word characters here and pass through whole.
 - Existing golden updated for the intentional change: the two-route
   dispatch spec's BM25 `data` pin moved from the raw
   `'how do i rate limit'` to the stripped `'rate limit'`. Deeper strip

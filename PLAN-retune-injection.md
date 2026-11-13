@@ -69,7 +69,7 @@ decoy memories, machinae-game subagents reporting every recall they see.
  - [x] [TASK-005-offline-ab-eval](docs/PLAN-retune-injection-TASK-005-offline-ab-eval.md)
  - [x] [TASK-018-han-run-unstripped-fix](docs/PLAN-retune-injection-TASK-018-han-run-unstripped-fix.md)
  - [x] [TASK-006-sparse-floor-resweep](docs/PLAN-retune-injection-TASK-006-sparse-floor-resweep.md)
- - [ ] [TASK-007-green-gates](docs/PLAN-retune-injection-TASK-007-green-gates.md)
+ - [x] [TASK-007-green-gates](docs/PLAN-retune-injection-TASK-007-green-gates.md)
  - [ ] [TASK-008-refactor-phase-1](docs/PLAN-retune-injection-TASK-008-refactor-phase-1.md)
 
 ### Phase 2 - Undecided-item decisions

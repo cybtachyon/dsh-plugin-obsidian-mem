@@ -3,8 +3,10 @@ import {
   ensureWhyAndHow,
   isArchived,
   MAX_INDEX_DESCRIPTION_CHARS,
+  NOTE_FRONTMATTER_KEYS,
   parseNote,
   serializeNote,
+  serializeNoteWithRaw,
   titleToFilename,
   validateMeta,
 } from '../src/note.ts'
@@ -313,5 +315,65 @@ describe('ensureWhyAndHow', () => {
 
   it('does not count a bare heading as the discipline line', () => {
     expect(ensureWhyAndHow('## Why\n\nno colon form here\n')).toHaveLength(2)
+  })
+})
+
+describe('serializeNoteWithRaw', () => {
+  it('keeps un-modelled frontmatter keys round-tripped', () => {
+    const text = `---
+index_title: T
+index_description: d
+type: global
+archive: false
+created: 2026-11-01
+updated: 2026-11-01
+read_count: 1
+keywords:
+  - alpha
+trigger_extensions:
+  - .ts
+custom_author_key: keep
+---
+body
+`
+    const note = parseNote(text)
+    const rewritten = serializeNoteWithRaw({
+      meta: { ...note.meta, index_title: 'T2' },
+      body: note.body,
+    }, note.raw)
+    const roundTrip = parseNote(rewritten)
+    expect(roundTrip.meta.index_title).toBe('T2')
+    expect(roundTrip.raw?.keywords).toEqual(['alpha'])
+    expect(roundTrip.raw?.trigger_extensions).toEqual(['.ts'])
+    expect(roundTrip.raw?.custom_author_key).toBe('keep')
+  })
+
+  it('renders the modelled keys in the serializeNote order first', () => {
+    const raw = { keywords: 'k', index_title: 'IGNORED', archive: true }
+    const text = serializeNoteWithRaw(
+      { meta: baseMeta({ index_title: 'Real', last_read_at: '2026-11-03' }), body: 'x' },
+      raw,
+    )
+    const keys = frontmatterKeys(text)
+    expect(keys).toEqual([
+      'index_title',
+      'index_description',
+      'type',
+      'archive',
+      'created',
+      'updated',
+      'last_read_at',
+      'read_count',
+      'keywords',
+    ])
+    expect(keys).toEqual([...NOTE_FRONTMATTER_KEYS, 'keywords'])
+    expect(text).toContain('index_title: Real')
+    expect(text).not.toContain('IGNORED')
+  })
+
+  it('equals serializeNote when there is no raw or no extras', () => {
+    const note: Note = { meta: baseMeta(), body: 'plain\n' }
+    expect(serializeNoteWithRaw(note)).toBe(serializeNote(note))
+    expect(serializeNoteWithRaw(note, { read_count: 2 })).toBe(serializeNote(note))
   })
 })

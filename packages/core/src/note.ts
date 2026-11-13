@@ -99,16 +99,23 @@ export function parseNote(text: string): Note {
   return { meta, body: parsed.content, raw: data }
 }
 
-/**
- * serializeNote renders {meta, body} back to note text: frontmatter keys in
- * one stable order (index_title, index_description, type, archive, created,
- * updated, last_read_at, read_count), CRLF collapsed to LF, body ending in
- * exactly one newline. Optional timestamps are omitted when empty, so a
- * re-serialize of untouched content is byte-identical.
- */
-export function serializeNote(note: Note): string {
-  const { meta, body } = note
-  const ordered = {
+/** Frontmatter keys NoteMeta models; every other key in a parsed note is raw. */
+export const NOTE_FRONTMATTER_KEYS: readonly string[] = [
+  'index_title',
+  'index_description',
+  'type',
+  'archive',
+  'created',
+  'updated',
+  'last_read_at',
+  'read_count',
+]
+
+// The modelled frontmatter block in its one stable key order, shared by
+// serializeNote and serializeNoteWithRaw so the rendering order has a single
+// source of truth.
+function orderedMeta(meta: NoteMeta): Record<string, unknown> {
+  return {
     index_title: meta.index_title,
     index_description: meta.index_description,
     type: meta.type,
@@ -118,9 +125,48 @@ export function serializeNote(note: Note): string {
     ...(meta.last_read_at ? { last_read_at: meta.last_read_at } : {}),
     read_count: meta.read_count,
   }
+}
+
+// Body pre-normalization both serializers share: CRLF to LF, exactly one
+// trailing newline.
+function normalizedBody(body: string): string {
   const trimmed = body.replace(/\r\n?/g, '\n').replace(/\s+$/, '')
-  const normalized = trimmed === '' ? '' : `${trimmed}\n`
-  return matter.stringify(normalized, ordered)
+  return trimmed === '' ? '' : `${trimmed}\n`
+}
+
+/**
+ * serializeNote renders {meta, body} back to note text: frontmatter keys in
+ * one stable order (index_title, index_description, type, archive, created,
+ * updated, last_read_at, read_count), CRLF collapsed to LF, body ending in
+ * exactly one newline. Optional timestamps are omitted when empty, so a
+ * re-serialize of untouched content is byte-identical. It renders the
+ * modelled keys only; a rewrite of an authored note must use
+ * serializeNoteWithRaw to keep the keys it does not model.
+ */
+export function serializeNote(note: Note): string {
+  return matter.stringify(normalizedBody(note.body), orderedMeta(note.meta))
+}
+
+/**
+ * serializeNoteWithRaw renders the modelled frontmatter (same order as
+ * serializeNote) plus every key from `raw` that NoteMeta does not model
+ * (keywords, trigger_extensions, trigger_frameworks, user keys), in the raw
+ * record's original order after the modelled block. Rewriting an authored
+ * note through this seam is lossless: parseNote → edit meta → serialize-
+ * NoteWithRaw round-trips the un-modelled keys. With no extras (or none
+ * beyond the modelled keys) the output is byte-identical to serializeNote.
+ */
+export function serializeNoteWithRaw(note: Note, raw?: Record<string, unknown>): string {
+  const source = raw ?? note.raw
+  const frontmatter = orderedMeta(note.meta)
+  if (source !== undefined) {
+    for (const [key, value] of Object.entries(source)) {
+      if (!NOTE_FRONTMATTER_KEYS.includes(key) && !Object.hasOwn(frontmatter, key)) {
+        frontmatter[key] = value
+      }
+    }
+  }
+  return matter.stringify(normalizedBody(note.body), frontmatter)
 }
 
 /**

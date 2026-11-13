@@ -75,6 +75,13 @@ export interface EmbedderOptions {
   /** Texts per pipeline call; default EMBED_BATCH_SIZE. */
   batchSize?: number
   /**
+   * ONNX quantization passed to the pipeline loader; default
+   * TRANSFORMERS_PIPELINE_OPTIONS.dtype (q8). Only the production loader
+   * reads it; an injected extractorLoader receives the model/cache pair and
+   * owns its own dtype.
+   */
+  dtype?: string
+  /**
    * Pipeline loader seam. Tests inject a fake extractor here; production
    * uses loadTransformersExtractor, and the fake never touches env, fs, or
    * the network.
@@ -114,7 +121,10 @@ export function createEmbedder(options: EmbedderOptions = {}): Embedder {
   }
   const cacheDir = options.cacheDir ?? modelCacheDir(options.homedir ?? homedir())
   const batchSize = options.batchSize ?? EMBED_BATCH_SIZE
-  const loadExtractor = options.extractorLoader ?? loadTransformersExtractor
+  const loadExtractor = options.extractorLoader
+    ?? ((loader: { modelId: string; cacheDir: string }) => loadTransformersExtractor(
+      { ...loader, dtype: options.dtype ?? TRANSFORMERS_PIPELINE_OPTIONS.dtype },
+    ))
 
   let extractorPromise: Promise<FeatureExtractor> | null = null
   let modelWidth = 0
@@ -252,7 +262,7 @@ export function fakeEmbedder(options: { modelId?: string; vectorDim?: number } =
 
 /** LoadTransformersExtractor loads the v4 pipeline from the configured cache. */
 async function loadTransformersExtractor(
-  options: { modelId: string; cacheDir: string },
+  options: { modelId: string; cacheDir: string; dtype: string },
 ): Promise<FeatureExtractor> {
   // Dynamic import keeps onnxruntime out of every process that only uses
   // fakeEmbedder or unit-injected extractors (and out of the module graph
@@ -263,7 +273,10 @@ async function loadTransformersExtractor(
   env.allowLocalModels = false
   env.allowRemoteModels = true
   const extractor = await pipeline('feature-extraction', options.modelId, {
-    dtype: TRANSFORMERS_PIPELINE_OPTIONS.dtype,
+    // The SDK types dtype as a fixed union; config.model.dtype is an open
+    // string and transformers.js validates it at load, so the cast only
+    // forwards the user's choice to the runtime gate.
+    dtype: options.dtype as 'q8',
   })
   // Structural cast: the pipeline type is a callable union over tensor
   // payload types; only the documented slice above is used.

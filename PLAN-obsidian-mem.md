@@ -77,7 +77,7 @@ task file lists explicit cross-phase prerequisites.
 
 ### Phase 4: Host service + tools (packages/service, packages/tools)
 
-- [ ] [TASK-030-host-service-config](docs/PLAN-obsidian-mem-TASK-030-host-service-config.md)
+- [x] [TASK-030-host-service-config](docs/PLAN-obsidian-mem-TASK-030-host-service-config.md)
 - [ ] [TASK-031-tool-memory-read](docs/PLAN-obsidian-mem-TASK-031-tool-memory-read.md)
 - [ ] [TASK-032-tool-memory-search](docs/PLAN-obsidian-mem-TASK-032-tool-memory-search.md)
 - [ ] [TASK-033-tool-memory-write](docs/PLAN-obsidian-mem-TASK-033-tool-memory-write.md)
@@ -190,3 +190,19 @@ task file lists explicit cross-phase prerequisites.
   `approxCharsForTokens` (token budgets), `normalizeExtension` (canonical trigger
   extension for extraction AND filters), plus `service/serial-queue.ts`,
   `service/errors.ts` (`describeError`), and `service/llm-refine.ts` (`LlmRefiner`).
+- 2026-11-12 **Service seam landed** (TASK-030): `obsidianMem` is a cordis
+  class plugin (`class ObsidianMemService extends Service` + `static Config`,
+  verified against cordis 4.1.0 `fiber.ts` `_runner.execute`; the scaffold-era
+  `apply()` row is gone). Config is a hand-rolled standard-schema: wrong types
+  or enums die (cordis ValidationError), unknown keys only warn (carried on a
+  symbol, never into the resolved value); `{}` is a complete config. Vault
+  additions from the settings card persist to `<dbPath>/state/vaults.json`
+  (tmp+rename); row-config vaults and the default vault are unremovable from
+  the card. Dim drift rebuilds the collection AND drops per-vault indexer
+  state files (forced full reindex). A failed milvus start is terminal per
+  process: phase `degraded`, status reports, `search` throws
+  `IndexOfflineError`, next process retries. `serializeNoteWithRaw` lives in
+  core (note format ownership; gray-matter stays core-only) and answers the
+  TASK-025 note above for `applyWrite`. `sessionRegistry` is NOT on the seam
+  yet: TASK-040 adds it. `audit()`/`dream()` are typed not-implemented seams
+  until TASK-034/035.

@@ -1,5 +1,7 @@
 # TASK-030 Host service + Config schema
 
+Status: done
+
 Depends: TASK-024, TASK-011. `packages/service/src/index.ts` (+ config.ts, service.ts).
 This is the `export function apply(ctx, config)` + `export const Config` row.
 

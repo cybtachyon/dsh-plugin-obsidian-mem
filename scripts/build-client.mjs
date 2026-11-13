@@ -16,34 +16,24 @@
  * Run after `tsc -b` (the root build script chains the two). The output is
  * deterministic: a second run writes a byte-identical dsh/client.js.
  *
- * Scaffold guard: packages/client/src/index.ts is still the cordis plugin
- * stub, not the browser card. The card lands with TASK-051 and adds
- * packages/client/src/card.ts(x); until that marker exists this script skips
- * (exit 0, no artifact) so the Phase 1 build stays green, and
- * scripts/verify-emit.mjs mirrors the same condition: once the marker lands,
- * a missing or truncated dsh/client.js fails the build (TASK-052).
+ * The bundle is REQUIRED (TASK-052): the browser card is a shipped half of
+ * the install (root package.json files list and the dsh.client manifest
+ * block), so a missing card entry or a failed esbuild pass fails the build
+ * here, and scripts/verify-emit.mjs always asserts the artifact exists and
+ * is non-empty. The ModuleLoader id is the root package.json "name" (the
+ * bare package the client-module scan keys dsh.client on), matching
+ * dsh-plugin-local-infer's convention.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const entry = join(root, 'packages/client/src/index.ts')
-const cardMarkers = ['card.ts', 'card.tsx'].map((file) =>
-  join(root, 'packages/client/src', file),
-)
 const intermediate = join(root, 'dsh/.build/client.cjs')
 const artifact = join(root, 'dsh/client.js')
-
-if (!cardMarkers.some((marker) => existsSync(marker))) {
-  console.log(
-    'build-client: no browser card entry yet (packages/client/src/card.ts[x]); ' +
-      'skipping dsh/client.js — the card pipeline lands with TASK-051/052.',
-  )
-  process.exit(0)
-}
 
 // Classic JSX transform (jsxFactory / jsxFragment): the automatic runtime
 // (react/jsx-runtime) is not in the shell's platform module table.

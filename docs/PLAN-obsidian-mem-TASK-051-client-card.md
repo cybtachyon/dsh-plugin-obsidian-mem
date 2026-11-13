@@ -1,5 +1,7 @@
 # TASK-051 Client settings card
 
+Status: done
+
 Depends: TASK-050. `packages/client/src/{index.ts,plugin.ts,Card.tsx,store/,render/}`.
 Copy architecture from `/home/derek/src/dsh-plugin-local-infer/packages/client` (lazy-CJS
 factory, `require('react')` + primitives require-with-fallback, routeExists probe,

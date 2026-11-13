@@ -18,15 +18,6 @@ const PACKAGE_JSON = 'packages';
 const EMITTED = ['js', 'js.map', 'd.ts', 'd.ts.map'];
 const SOURCE_EXTENSIONS = ['.ts', '.tsx'];
 
-// The browser-card marker scripts/build-client.mjs keys its bundle on: once
-// one exists, dsh/client.js is a required artifact (TASK-052). Before that
-// (the Phase 1 scaffold) the client package is a plugin stub only and the
-// artifact legitimately does not exist yet.
-const CARD_MARKERS = [
-    'packages/client/src/card.ts',
-    'packages/client/src/card.tsx',
-];
-
 // readTsConfig parses a package tsconfig; it strips // comments because
 // these files carry them and only compilerOptions.rootDir/outDir matter.
 function readTsConfig(pkgDir) {
@@ -98,10 +89,11 @@ if (!fs.existsSync(hostCarrier) || fs.statSync(hostCarrier).size < 2) {
     broken.push('dsh/host.js (missing or truncated)');
 }
 
-// dsh/client.js: required once the browser card exists, tolerated before.
-const cardLanded = CARD_MARKERS.some(marker => fs.existsSync(path.join(ROOT, marker)));
+// The browser bundle scripts/build-client.mjs writes: a shipped half of the
+// install (the dsh.client manifest block loads it), always required from
+// TASK-052 on, with the same missing-or-truncated signature as the carrier.
 const clientArtifact = path.join(ROOT, 'dsh', 'client.js');
-if (cardLanded && (!fs.existsSync(clientArtifact) || fs.statSync(clientArtifact).size < 2)) {
+if (!fs.existsSync(clientArtifact) || fs.statSync(clientArtifact).size < 2) {
     broken.push('dsh/client.js (missing or truncated)');
 }
 
@@ -117,6 +109,3 @@ if (broken.length > 0) {
 const total = packages.reduce(
     (count, pkg) => count + expectedOutputs(pkg).length, 0);
 console.log(`verify-emit: ${total} tsc artifacts intact across ${packages.length} packages`);
-if (!cardLanded) {
-    console.log('verify-emit: dsh/client.js not required yet (client card lands with TASK-051/052)');
-}

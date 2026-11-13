@@ -1,5 +1,7 @@
 # TASK-052 Client build pipeline wired
 
+Status: done
+
 Depends: TASK-051. Adapt local-infer `scripts/build-client.mjs`:
 - esbuild `packages/client/src/index.ts` → CJS bundle wrapped as
   `window.__ModuleLoader__.load({ id: 'dsh-plugin-obsidian-mem', factory: (require) => ... })`

@@ -39,9 +39,9 @@
   save/audit reminder, and the global per-session recall budget.
 - **client** is the browser card source:
   - `packages/client` is the source private workspace package
-  - ESBuild bundles to lazy-CJS artifact `dsh/client.js`
-    (scaffold note: until the card lands in TASK-051/052,
-    `scripts/build-client.mjs` skips and no `dsh/client.js` exists).
+  - ESBuild bundles to lazy-CJS artifact `dsh/client.js` (required since
+    TASK-052: the build fails when the card entry cannot bundle, and the
+    artifact is tracked in git).
   - **bundle** is the meta-package holding the duplicate `cordis.patch.yml`
     and the workspace deps, wiring service/ui/tools/events into one layer.
 - **client build pipeline** `pnpm build`:
@@ -55,9 +55,7 @@
     the emitted lib artifacts (`.js`, `.d.ts`, `.js.map`, and `.d.ts.map` in
     `dsh` and every `packages/*/lib`) so the build leaves the tree clean.
   - Then `node scripts/verify-emit.mjs` fails the build when any expected
-    `lib` artifact, `dsh/host.js`, or (once the card marker
-    `packages/client/src/card.ts[x]` exists) `dsh/client.js` is missing or
-    emptied.
+    `lib` artifact, `dsh/host.js`, or `dsh/client.js` is missing or emptied.
   - `react` and `@deepseek-ai/dsh-client-ui-primitives` are esbuild externals:
     they stay out of the bundle and resolve at runtime through the DSH's
     frozen platform module table with `require` calls.
@@ -187,9 +185,10 @@ Fetch these docs to answer questions about their covered topic.
 
 - Build with `pnpm build` (runs `tsc -b --force`, then
   `node scripts/build-client.mjs` to produce the `dsh/client.js` card
-  artifact (skips until the client card lands), then
+  artifact, then
   `node scripts/build-format.mjs`, then `node scripts/verify-emit.mjs` which
-  fails the build when any expected `lib` artifact is missing or emptied).
+  fails the build when any expected `lib` artifact, `dsh/host.js`, or
+  `dsh/client.js` is missing or emptied).
 - Run the full test suite with `pnpm test` (runs `vitest run`).
 - Run coverage with `pnpm test:coverage`; the suite must clear the thresholds
   in `vitest.config.ts` (scaffold-era floors: lines 75 / functions 75 /

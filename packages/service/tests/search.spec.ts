@@ -264,11 +264,14 @@ describe('two-route search dispatch', () => {
 })
 
 describe('sparseQueryText tokenizer table (shipped behavior)', () => {
-  // Goldens pinned against the SHIPPED behavior (TASK-003), not intent:
-  // Han runs split per codepoint so the single-character zho entries
-  // fire, kana and Hangul are word characters and pass whole, hyphens
-  // and punctuation are separators, '_' stays inside a word run, and
-  // casing survives because removal matches on token.toLowerCase().
+  // Goldens pinned against the SHIPPED lib (TASK-003 discipline: outputs
+  // read off packages/service/lib/search.js after the build, not from
+  // intent; re-run for this TASK-018 re-pin). Han forms maximal runs and
+  // a run drops only when the WHOLE run is a list entry (the TASK-005
+  // analyzer finding, rule home: the sparseQueryText docblock), kana and
+  // Hangul are word characters and pass whole, hyphens and punctuation
+  // are separators, '_' stays inside a word run, and casing survives
+  // because removal matches on token.toLowerCase().
   it.each([
     ['collapses the spaces left by removed stopwords', 'the   rate   limit', 'rate limit'],
     ['splits hyphen and trailing-punctuation tokens', 'rate-limit!', 'rate limit'],
@@ -277,12 +280,16 @@ describe('sparseQueryText tokenizer table (shipped behavior)', () => {
     ['keeps digits inside word runs', 'top10 k8s', 'top10 k8s'],
     ['removes case-insensitively and keeps survivor casing', 'THE rate Limit', 'rate Limit'],
     ['leaves words the 108-entry eng list lacks', 'IPv6 address filtering', 'IPv6 address filtering'],
-    ['splits Han runs per codepoint', '我 喜欢 混合 检索', '喜 欢 混 合 检 索'],
-    ['fires the single-character zho entries', '时间 和 日期', '间 期'],
-    ['keeps kana runs whole beside split Han', 'テストの時間', 'テストの 時 間'],
+    ['passes a whole Han run untouched (TASK-018)', '我喜欢混合检索', '我喜欢混合检索'],
+    ['keeps a Han run holding a function char whole', '智能体的共享记忆', '智能体的共享记忆'],
+    ['drops a standalone single-char zho run', '智能体 的 共享记忆', '智能体 共享记忆'],
+    ['drops standalone zho chars, keeps word runs', '我 喜欢 混合 检索', '喜欢 混合 检索'],
+    ['keeps multi-char Han runs the zho list lacks', '时间 和 日期', '时间 日期'],
+    ['keeps kana runs whole beside a Han run', 'テストの時間', 'テストの 時間'],
     ['passes Hangul through whole', '안녕하세요', '안녕하세요'],
     ['strips a zho single char between Latin words', 'upsert 和 delete', 'upsert delete'],
     ['fail-opens an all-stop-word query to the original', 'the a an of and is are', 'the a an of and is are'],
+    ['fail-opens a lone zho char query to the original', '的', '的'],
     ['fail-opens a symbols-only query to the original', '?! ... @#', '?! ... @#'],
     ['returns empty input unchanged (identity via fail-open)', '', ''],
   ])('%s', (_label, query, expected) => {

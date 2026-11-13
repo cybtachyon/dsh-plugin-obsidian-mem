@@ -281,6 +281,11 @@ accident; none of it drove any per-query regression here.
    mixed-language-noise guard the `search.ts` comment documents). Requires
    TASK-003 golden updates (the split goldens pin today's provably-dead
    behavior). Highest-value correctness fix from this task.
+   **SHIPPED (TASK-018, 2026-11-13):** `SPARSE_TOKEN_RUN` now captures
+   `[\p{Script=Han}]+` maximal runs and a run is removed only when the
+   WHOLE run is a list entry; the TASK-003 goldens are re-pinned against
+   the shipped lib and the `sparseQueryText` docblock is the single home
+   for the rule.
 2. **Sparse floor re-sweep on strip-on scores**: `SPARSE_SEARCH_RADIUS`
    2.5 is inert on both halves (trims 0 of 193 fetched-window candidates);
    sweep candidates ≥ 4 to engage (ON trims 19/193 at 5.0 where OFF trims

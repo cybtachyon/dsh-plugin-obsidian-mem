@@ -276,7 +276,7 @@ export declare const CANDIDATE_OVERSAMPLE = 2;
 export declare function buildFilterExpr(criteria: FilterCriteria): string | undefined;
 /**
  * SparseQueryText renders the query text the BM25 route receives: tokens
- * split on non-word chars (SPARSE_TOKEN_RUN; Han per codepoint), the
+ * split on non-word chars (SPARSE_TOKEN_RUN; Han as maximal runs), the
  * {@link SPARSE_QUERY_STOPWORDS} list applied via stopword's
  * case-insensitive match (nothing re-cased here), survivors re-joined with
  * single spaces. Its ONE application point is dispatchRoutes' sparse
@@ -285,13 +285,18 @@ export declare function buildFilterExpr(criteria: FilterCriteria): string | unde
  * Fail-open: an all-stop-word or symbols-only query returns the ORIGINAL
  * text; an empty BM25 data string must never reach lite.
  *
- * Recorded choice (TASK-002, plan A2): CJK runs are split into single
- * codepoints and re-joined with single spaces so the 78 single-character
- * `zho` entries can fire. OPEN QUESTION for the TASK-005 A/B: whether
- * those re-joined codepoints still match what the analyzer produced at
- * index time (schema.ts enables the default analyzer, no jieba); if they
- * provably cannot, keep CJK text UNSTRIPPED (fail-open) and document that
- * `zho` only guards mixed-language noise.
+ * A Han run is removed only when the WHOLE run is a stop-word entry, so
+ * standalone single-character function-word runs (的, 和, 时) still drop
+ * as mixed-language noise while word runs (智能体, 记忆) pass through.
+ * Settled by the TASK-005 zh probe against the live analyzer
+ * (2026-11-13, docs/research/stopword-strip-findings.md §"CJK analyzer
+ * open question"): the default Milvus analyzer stores MAXIMAL HAN RUNS
+ * on both index and query sides, so the TASK-002 per-codepoint split
+ * provably never matched a Han word and the strip destroyed the matching
+ * shape (raw `记忆` hit; split `记 忆` returned 0). This docblock is the
+ * single home for that rule (TASK-018). Japanese run-shape under the same
+ * analyzer is unproven; kana staying word characters carries the same
+ * caveat class as the settled Han finding.
  *
  * Exported (like RRF_RANKER_K) so scripts/eval replays production from
  * the shipped module (TASK-004).

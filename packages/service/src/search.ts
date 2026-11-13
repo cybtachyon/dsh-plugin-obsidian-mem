@@ -263,13 +263,14 @@ export const SPARSE_SEARCH_RADIUS = 2.5
  */
 const SPARSE_QUERY_STOPWORDS: readonly string[] = [...eng, ...zho]
 
-// SparseTokenRun tokenizes sparseQueryText's input: one Han codepoint per
-// match, otherwise a run of word characters ([\p{L}\p{N}_], Han excluded);
-// every other character separates. Han splits per-character because zho
-// lists only single-character function words and stopword ships no
-// segmenter (TASK-001 findings). Kana and Hangul count as word characters:
-// their scripts' lists are not in use, so those runs pass through whole.
-const SPARSE_TOKEN_RUN = /[\p{Script=Han}]|(?:(?![\p{Script=Han}])[\p{L}\p{N}_])+/gu
+// SparseTokenRun tokenizes sparseQueryText's input: one maximal Han run
+// per match, otherwise a run of word characters ([\p{L}\p{N}_], Han
+// excluded); every other character separates. Han runs stay maximal to
+// mirror the default analyzer's index-time tokenization (see the
+// sparseQueryText docblock for the settled finding). Kana and Hangul
+// count as word characters: their scripts' lists are not in use, so
+// those runs pass through whole.
+const SPARSE_TOKEN_RUN = /[\p{Script=Han}]+|(?:(?![\p{Script=Han}])[\p{L}\p{N}_])+/gu
 
 /**
  * FUSED_SCORE_FLOOR is the default FUSED-score floor hybridSearch applies
@@ -364,7 +365,7 @@ export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
 
 /**
  * SparseQueryText renders the query text the BM25 route receives: tokens
- * split on non-word chars (SPARSE_TOKEN_RUN; Han per codepoint), the
+ * split on non-word chars (SPARSE_TOKEN_RUN; Han as maximal runs), the
  * {@link SPARSE_QUERY_STOPWORDS} list applied via stopword's
  * case-insensitive match (nothing re-cased here), survivors re-joined with
  * single spaces. Its ONE application point is dispatchRoutes' sparse
@@ -373,13 +374,18 @@ export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
  * Fail-open: an all-stop-word or symbols-only query returns the ORIGINAL
  * text; an empty BM25 data string must never reach lite.
  *
- * Recorded choice (TASK-002, plan A2): CJK runs are split into single
- * codepoints and re-joined with single spaces so the 78 single-character
- * `zho` entries can fire. OPEN QUESTION for the TASK-005 A/B: whether
- * those re-joined codepoints still match what the analyzer produced at
- * index time (schema.ts enables the default analyzer, no jieba); if they
- * provably cannot, keep CJK text UNSTRIPPED (fail-open) and document that
- * `zho` only guards mixed-language noise.
+ * A Han run is removed only when the WHOLE run is a stop-word entry, so
+ * standalone single-character function-word runs (的, 和, 时) still drop
+ * as mixed-language noise while word runs (智能体, 记忆) pass through.
+ * Settled by the TASK-005 zh probe against the live analyzer
+ * (2026-11-13, docs/research/stopword-strip-findings.md §"CJK analyzer
+ * open question"): the default Milvus analyzer stores MAXIMAL HAN RUNS
+ * on both index and query sides, so the TASK-002 per-codepoint split
+ * provably never matched a Han word and the strip destroyed the matching
+ * shape (raw `记忆` hit; split `记 忆` returned 0). This docblock is the
+ * single home for that rule (TASK-018). Japanese run-shape under the same
+ * analyzer is unproven; kana staying word characters carries the same
+ * caveat class as the settled Han finding.
  *
  * Exported (like RRF_RANKER_K) so scripts/eval replays production from
  * the shipped module (TASK-004).

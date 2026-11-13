@@ -82,7 +82,7 @@ each follows. TASK-013 runs after everything is checked.
  - [x] [TASK-008-fallback-keyword-intersection](docs/PLAN-mem-loop-tuning-TASK-008-fallback-keyword-intersection.md)
  - [x] [TASK-009-fallback-agreement-floor](docs/PLAN-mem-loop-tuning-TASK-009-fallback-agreement-floor.md)
  - [x] [TASK-010-read-intercept-file-tokens](docs/PLAN-mem-loop-tuning-TASK-010-read-intercept-file-tokens.md)
- - [ ] [Refactor review after Phase 2](docs/PLAN-mem-loop-tuning-TASK-011-refactor-phase2.md)
+ - [x] [Refactor review after Phase 2](docs/PLAN-mem-loop-tuning-TASK-011-refactor-phase2.md)
 
 ### Phase 3: Gates
 

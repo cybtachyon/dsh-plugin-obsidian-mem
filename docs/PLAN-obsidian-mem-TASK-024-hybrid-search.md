@@ -1,5 +1,7 @@
 # TASK-024 Hybrid search with ARRAY_CONTAINS filters
 
+Status: done
+
 Depends: TASK-022, TASK-023. `packages/service/src/search.ts`.
 
 ## Scope

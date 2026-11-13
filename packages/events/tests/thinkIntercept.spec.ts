@@ -5,19 +5,21 @@
  * vocabulary (INTENT_MARKERS + registry-held injected-source terms + the
  * shared vault's recorded .INTENTS.md entries), the per-turn
  * budgets.thinkShotsPerTurn counter with the new-turn reset, once-per-session
- * source dedupe, poisoned-payload containment, and disposal cleanup.
+ * source dedupe, the same-session written-source exclusion (TASK-003: the
+ * full memory_write loop), poisoned-payload containment, and disposal
+ * cleanup.
  * @module dsh-plugin-obsidian-mem/events/tests/thinkIntercept
  */
 
 import { describe, expect, it } from 'vitest'
 
 import type { VaultEntry } from '../../service/lib/index.js'
-import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
+import { GLOBAL_MEMORY_FILE_DEFAULT, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import type { AssistantStreamFrameMirror, HookLogger } from '../src/host.ts'
 import { mountLifecycle } from '../src/index.ts'
 import { installThinkIntercept, extractCompletedThinkBlocks, THINK_QUERY_MAX_CHARS } from '../src/thinkIntercept.ts'
-import { SessionRegistry, wakeTermsForSource } from '../src/sessions.ts'
+import { SessionRegistry, sourceKeyFor, wakeTermsForSource } from '../src/sessions.ts'
 import {
   fakeAgent,
   fakeEventsCtx,
@@ -30,8 +32,10 @@ import {
   streamStart,
   tempDbPath,
   textDelta,
+  toolResult,
   userMessage,
   type FakeAgent,
+  type FakeEventsCtx,
   type FakeMemoryService,
 } from './testkit.ts'
 
@@ -58,6 +62,7 @@ const topic = memoryResult({
 
 interface Harness {
   agent: FakeAgent
+  ctx: FakeEventsCtx
   memory: FakeMemoryService
   registry: ReturnType<typeof mountLifecycle>
   warnings: string[]
@@ -86,6 +91,7 @@ function harness(options: {
   ctx.emit('agent/created', agent.asCreated())
   return {
     agent,
+    ctx,
     memory,
     registry,
     warnings: ctx.warnings,
@@ -400,6 +406,46 @@ describe('think budget and dedupe', () => {
     expect(child.injected).toHaveLength(1)
     expect(registry.recallTokensUsed('session-child')).toBeGreaterThan(0)
     expect(registry.recallTokensUsed('session-absent')).toBe(0)
+  })
+})
+
+describe('written-source exclusion (TASK-003)', () => {
+  it('never re-injects what the session wrote; a fresh source still lands', async () => {
+    const h = harness()
+    const selfAuthored = memoryResult({
+      chunk_id: 5,
+      source_path: '/home/test/vault/self-authored.md',
+      chunk_text: 'a fact this session authored',
+      updated_at: 1_700_000_000_777,
+    })
+    // The session writes the note: the mounted write observer keys it into
+    // the ledger from the structured tools/result value.
+    h.ctx.emit(
+      'tools/result',
+      h.agent.asToolCaller(TOOL_MEMORY_WRITE, { path: selfAuthored.source_path }),
+      toolResult(false, 'Created memory note', {
+        kind: 'written',
+        path: selfAuthored.source_path,
+        created: true,
+        vault: selfAuthored.vault,
+        warnings: [],
+        write_through: 'attempted',
+      }),
+    )
+    expect(h.registry.wasWrittenIn('session-1', sourceKeyFor(selfAuthored))).toBe(true)
+    // The self-authored note and a fresh source ride the same search page.
+    h.memory.search = async (request) => {
+      h.memory.searchRequests.push(request)
+      return [selfAuthored, topic]
+    }
+    stream(h.agent, streamStart('a1', 1), textDelta('<think>why does milvus stall</think>', 'a1'))
+    await h.settle()
+    expect(h.agent.injected).toHaveLength(1)
+    const texts = h.agent.injected[0]!.content.map((block) => block.text ?? '')
+    expect(texts.some((text) => text.includes('self-authored.md'))).toBe(false)
+    expect(texts.some((text) => text.includes('milvus-ops.md'))).toBe(true)
+    // The exclusion runs before the ledger: the source was never injected.
+    expect(h.registry.injectedSources('session-1').has(sourceKeyFor(selfAuthored))).toBe(false)
   })
 })
 

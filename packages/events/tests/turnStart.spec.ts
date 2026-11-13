@@ -286,6 +286,20 @@ describe('injection content', () => {
     expect(registry.shouldInject('agent-2', sourceKeyFor(factA))).toBe(true)
   })
 
+  it('drops sources the session wrote itself from the recall page (TASK-003)', async () => {
+    const { agent, registry, preStep } = turnStartHarness({ searchResults: [factA, factB] })
+    registry.noteWrittenSource('agent-1', sourceKeyFor(factA))
+    await preStep(1, 1)
+    await settled()
+    const recalled = recalledBlocks(agent)
+    expect(recalled).toHaveLength(1)
+    expect(recalled[0]).toContain('react.md')
+    // The written-source exclusion is stricter than the injection rule:
+    // shouldInject would still have admitted this never-seen source.
+    expect(registry.shouldInject('agent-1', sourceKeyFor(factA))).toBe(true)
+    expect(registry.wasWrittenIn('agent-1', sourceKeyFor(factA))).toBe(true)
+  })
+
   it('trims to the turn budget, injecting the top-ranked prefix only', async () => {
     const bigA = memoryResult({
       chunk_id: 10,

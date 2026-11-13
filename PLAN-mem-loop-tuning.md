@@ -71,7 +71,7 @@ each follows. TASK-013 runs after everything is checked.
 
  - [x] [TASK-001-written-source-ledger](docs/PLAN-mem-loop-tuning-TASK-001-written-source-ledger.md)
  - [x] [TASK-002-write-observer](docs/PLAN-mem-loop-tuning-TASK-002-write-observer.md)
- - [ ] [TASK-003-think-written-filter](docs/PLAN-mem-loop-tuning-TASK-003-think-written-filter.md)
+ - [x] [TASK-003-think-written-filter](docs/PLAN-mem-loop-tuning-TASK-003-think-written-filter.md)
  - [ ] [TASK-004-intents-all-vaults](docs/PLAN-mem-loop-tuning-TASK-004-intents-all-vaults.md)
  - [ ] [TASK-005-think-sleep-after-injection](docs/PLAN-mem-loop-tuning-TASK-005-think-sleep-after-injection.md)
  - [ ] [TASK-006-think-query-sentences](docs/PLAN-mem-loop-tuning-TASK-006-think-query-sentences.md)

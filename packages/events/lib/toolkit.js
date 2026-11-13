@@ -6,8 +6,10 @@
  * the search-failure log line (offline degrades to one warning when the
  * caller carries a warn-once sink), the once-per-session fresh-source
  * filter shared by the three recall flows (wrapRecalled envelope, content
- * fingerprint, wake terms, all clumped in one FreshSource), the notice
- * injector with token accounting, the one-time provisioning-notice
+ * fingerprint, wake terms, all clumped in one FreshSource), which also
+ * drops every source the session itself wrote (a session never gets back
+ * what it authored, no matter which agent instance of it wrote that), the
+ * notice injector with token accounting, the one-time provisioning-notice
  * prepend, and the per-source ledger mark.
  *
  * Nothing here decides when a flow fires: the gates stay with their owners
@@ -69,15 +71,23 @@ export function logSearchFailure(opts) {
     logger.warn(`${label} search failed (skipped): ${describeError(error)}`);
 }
 /**
- * CollectFreshSources maps the results the session has not already seen
- * (same or unknown fingerprint stays filtered) to FreshSource records, in
- * result order. Callers keep their own gates: budget trimming (turnStart),
- * the per-turn Think shot (thinkIntercept), the Read throttle and cap.
+ * CollectFreshSources maps the results the session has neither written
+ * itself (the TASK-001 written-source ledger) nor already seen (same or
+ * unknown fingerprint stays filtered) to FreshSource records, in result
+ * order. Callers keep their own gates: budget trimming (turnStart), the
+ * per-turn Think shot (thinkIntercept), the Read throttle and cap.
  */
 export function collectFreshSources(registry, sessionId, results) {
     const fresh = [];
     for (const result of results) {
         const key = sourceKeyFor(result);
+        // The exclusion is the shared rule of all three flows (PLAN-mem-loop-
+        // tuning Q2): a self-authored note answers nothing the author does not
+        // already hold, and the written ledger is keyed by session id, so a
+        // write by any agent instance of the session excludes the source.
+        if (registry.wasWrittenIn(sessionId, key)) {
+            continue;
+        }
         const fingerprint = String(result.updated_at);
         if (!registry.shouldInject(sessionId, key, fingerprint)) {
             continue;

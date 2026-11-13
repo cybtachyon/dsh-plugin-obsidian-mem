@@ -24,8 +24,10 @@
  * terms of the first shared vault's `.INTENTS.md`. Regex-scan only, no
  * embedding; a block with no hit is dropped. On a hit: `service.search`
  * with the block text (capped) as query and the matched terms as
- * `wakeKeywords` (top 2), the once-per-session source filter, the
- * per-turn `budgets.thinkShotsPerTurn` gate via the registry counter, and
+ * `wakeKeywords` (top 2), the once-per-session source filter (shared in
+ * toolkit.ts, where a session never gets back what it itself wrote, no
+ * matter which agent instance of that session wrote it), the per-turn
+ * `budgets.thinkShotsPerTurn` gate via the registry counter, and
  * `wrapRecalled` envelopes through `agent.inject()` (never `steer`, never
  * wakes). The listener never throws and all work is fire-and-forget: a cold
  * or dead index degrades to a warning, never a stalled stream.

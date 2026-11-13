@@ -251,6 +251,22 @@ describe('request wiring and injected envelope', () => {
     expect(agent.injected).toHaveLength(0)
   })
 
+  it('drops sections the session wrote itself from the envelope (TASK-003)', async () => {
+    const { agent, registry, read } = readHarness({ exactResults: [sectionA, sectionB] })
+    // The registry ledger path stands in here: writeLedger.spec.ts and the
+    // think spec cover the tools/result observation that fills it.
+    registry.noteWrittenSource('agent-1', sourceKeyFor(sectionA))
+    read()
+    await settled()
+    expect(agent.injected).toHaveLength(2) // the notice, then one recall
+    const blocks = agent.injected[1]!.content
+    expect(blocks).toHaveLength(2) // locality + sectionB only
+    expect(blocks[0]!.text).toContain('your read of /work/project/src/App.tsx')
+    expect(blocks[1]!.text).toBe(
+      '<recalled_memory source="vite.md">\nbuilds go through vite here\n</recalled_memory>',
+    )
+  })
+
   it('an offline skip keeps the notice pending; the next injection delivers it once', async () => {
     const { agent, advance, memory, read } = readHarness({
       exactError: new IndexOfflineError('memory index is offline'),

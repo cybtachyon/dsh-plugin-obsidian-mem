@@ -12,10 +12,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   addVault,
   ApiError,
+  deleteSchedule,
+  errorText,
   fetchAudit,
+  fetchDreamPlan,
+  fetchDreamState,
+  fetchSchedules,
+  fetchStatus,
+  isApiError,
   probeSearch,
   removeVault,
   routeExists,
+  runDream,
+  upsertSchedule,
 } from '../src/api.ts'
 
 interface FetchCall {
@@ -113,5 +122,48 @@ describe('routeExists probe', () => {
     expect(await routeExists()).toBe(true)
     vi.stubGlobal('fetch', () => Promise.reject(new TypeError('offline')))
     expect(await routeExists()).toBe(false)
+  })
+})
+
+/**
+ * TASK-060: the wrapper table is the client half of the route contract;
+ * each wrapper must hit its documented method+path (routes.spec pins the
+ * server half). Thin, but silently renaming a path here breaks the card
+ * at runtime with a 404 no one sees until the settings page misbehaves.
+ */
+describe('route contract table', () => {
+  it('each wrapper hits its documented method and path with the right body shape', async () => {
+    const answers = [{ status: 200, body: {} }]
+    const calls = stubFetch(answers)
+
+    await fetchStatus()
+    await fetchDreamPlan()
+    await runDream()
+    await fetchDreamState()
+    await fetchSchedules()
+    await upsertSchedule({ id: 'nightly', label: 'Nightly', sessionId: 's1', expression: '0 3 * * *' })
+    await deleteSchedule('card:nightly')
+
+    expect(calls.map((call) => [call.init?.method, call.url])).toEqual([
+      ['GET', '/obsidian-mem/status'],
+      ['GET', '/obsidian-mem/dream/plan'],
+      ['POST', '/obsidian-mem/dream/run'],
+      ['GET', '/obsidian-mem/dream/state'],
+      ['GET', '/obsidian-mem/dreaming/schedules'],
+      ['POST', '/obsidian-mem/dreaming/schedules'],
+      ['DELETE', '/obsidian-mem/dreaming/schedules'],
+    ])
+    expect(calls[5]!.init?.body).toContain('"sessionId":"s1"')
+    expect(calls[6]!.init?.body).toContain('"id":"card:nightly"')
+  })
+})
+
+describe('error helpers', () => {
+  it('isApiError narrows ApiError only, errorText renders any caught value', () => {
+    expect(isApiError(new ApiError(500, 'boom', 'bad'))).toBe(true)
+    expect(isApiError(new Error('plain'))).toBe(false)
+    expect(isApiError('string failure')).toBe(false)
+    expect(errorText(new TypeError('offline'))).toBe('offline')
+    expect(errorText(42)).toBe('42')
   })
 })

@@ -104,7 +104,7 @@ task file lists explicit cross-phase prerequisites.
 
 ### Phase 7: Tests, install, verification
 
-- [ ] [TASK-060-unit-tests](docs/PLAN-obsidian-mem-TASK-060-unit-tests.md)
+- [x] [TASK-060-unit-tests](docs/PLAN-obsidian-mem-TASK-060-unit-tests.md)
 - [ ] [TASK-061-integration-tests](docs/PLAN-obsidian-mem-TASK-061-integration-tests.md)
 - [ ] [TASK-062-install-bundle](docs/PLAN-obsidian-mem-TASK-062-install-bundle.md)
 - [ ] [TASK-063-live-verification](docs/PLAN-obsidian-mem-TASK-063-live-verification.md)

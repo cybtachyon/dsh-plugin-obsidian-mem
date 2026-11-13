@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 import { MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
@@ -6,6 +9,8 @@ import type { Embedder } from '../src/embedder.ts'
 import {
   IndexerManager,
   MAX_CHUNKS_PER_FILE,
+  MAX_FILES_PER_VAULT,
+  nodeIndexerFs,
   STATE_FILE_NAME,
   VaultIndexer,
 } from '../src/indexer.ts'
@@ -590,6 +595,37 @@ describe('caps and manager', () => {
     expect(rows).toHaveLength(MAX_CHUNKS_PER_FILE)
   })
 
+  // TASK-025 carry-over #3: the vault walk must stop at the cap, and the
+  // dropped tail must be the sorted-end files (deterministic, log-named).
+  it('caps files per vault at MAX_FILES_PER_VAULT, dropping the sorted tail', async () => {
+    const logs: string[] = []
+    const fs = new MemFs()
+    for (let index = 0; index < MAX_FILES_PER_VAULT + 3; index += 1) {
+      const name = `f${String(index).padStart(4, '0')}`
+      fs.add(`/vault/markdown/${name}.md`, `# ${name}\n\nBody ${index}.\n`, index + 1)
+    }
+    const writer = stubWriter()
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer: writer.writer,
+      fs,
+      watchFactory: () => null,
+      log: (message) => logs.push(message),
+    })
+
+    const summary = await indexer.reindex()
+
+    expect(summary.indexed).toBe(MAX_FILES_PER_VAULT)
+    expect(summary.errors).toBe(0)
+    const state = filesOf(fs.state())
+    expect(Object.keys(state)).toHaveLength(MAX_FILES_PER_VAULT)
+    expect(state['markdown/f1999.md']).toBeDefined()
+    expect(state['markdown/f2000.md']).toBeUndefined()
+    expect(state['markdown/f2002.md']).toBeUndefined()
+    expect(logs.some((line) => line.includes(`exceeds cap ${MAX_FILES_PER_VAULT}`))).toBe(true)
+  })
+
   it('IndexerManager reindexes every vault and aggregates progress', async () => {
     const fs = new MemFs()
     fs.add('/vaults/one/markdown/a.md', ALPHA_NOTE, 1)
@@ -619,6 +655,58 @@ describe('caps and manager', () => {
     fs.add('/vaults/one/markdown/a.md', `${ALPHA_NOTE}\nWrite-through\n`, 5)
     expect(await manager.indexFile('/vaults/one', 'markdown/a.md')).toBe(true)
     expect(await manager.indexFile('/vaults/none', 'markdown/a.md')).toBe(false)
+  })
+
+  // TASK-025 carry-over #3: the service only ever drives the manager's
+  // start/stop pair, so the fan-out (watchers armed, background scans run,
+  // watchers closed, queued dirt dropped) is asserted here, not per-vault.
+  it('start arms every vault watcher and scan; stop closes watchers and drops queued dirt', async () => {
+    vi.useFakeTimers()
+    const fs = new MemFs()
+    fs.add('/vaults/one/markdown/a.md', ALPHA_NOTE, 1)
+    fs.add('/vaults/two/markdown/b.md', BETA_NOTE, 2)
+    const writer = stubWriter()
+    const listeners: WatchListener[] = []
+    let closedWatches = 0
+    const manager = new IndexerManager({
+      vaults: [
+        { path: '/vaults/one', mode: 'shared' },
+        { path: '/vaults/two', mode: 'shared' },
+      ],
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer: writer.writer,
+      fs,
+      watchFactory: (_path, listener) => {
+        listeners.push(listener)
+        return { close(): void { closedWatches += 1 } }
+      },
+      log: () => undefined,
+    })
+
+    manager.start()
+    await settle()
+
+    expect(listeners).toHaveLength(2)
+    expect(closedWatches).toBe(0)
+    expect(manager.progress().indexed).toBe(2)
+    expect(manager.vaultProgress('/vaults/two')!.indexed).toBe(1)
+
+    // Dirty two files, then stop before the debounce window closes: the
+    // queued work must be dropped, and events after stop must be ignored.
+    fs.add('/vaults/one/markdown/a.md', `${ALPHA_NOTE}\nedit\n`, 7)
+    fs.add('/vaults/two/markdown/b.md', `${BETA_NOTE}\nedit\n`, 8)
+    listeners[0]!('a.md')
+    listeners[1]!('b.md')
+    const before = writer.calls.length
+
+    manager.stop()
+    listeners[0]!('a.md')
+    vi.advanceTimersByTime(2_000)
+    await settle()
+
+    expect(writer.calls.length).toBe(before)
+    expect(closedWatches).toBe(2)
+    expect(manager.progress().pending).toBe(0)
   })
 })
 
@@ -689,5 +777,343 @@ describe('insert clamps to the schema column widths', () => {
     }
     // The chunkId input and the vault column agree on the same stored path.
     expect(rows[0]![MILVUS_FIELDS.vault]).toBe('/vault')
+  })
+})
+
+/**
+ * TASK-060: the run-loop error accounting the "offline, retry on the next
+ * run" contract leans on. Each failure mode must count errors, keep the
+ * state dirty (so the next diff re-dirties the file), and never lose data
+ * the Milvus write path refused.
+ */
+describe('run-loop failure accounting', () => {
+  // MemFs whose state writes fail (EIO): the vault is on a dying disk.
+  class FailOnWriteFs extends MemFs {
+    override writeFile(): void {
+      throw new Error('EIO: state write failed')
+    }
+  }
+
+  function embedderWrapper(
+    options: { throwOn?: string; shortBy?: boolean },
+  ): Embedder {
+    const inner = fakeEmbedder({ vectorDim: 8 })
+    return {
+      modelId: inner.modelId,
+      dim: inner.dim,
+      embedPassages: async (texts) => {
+        if (options.throwOn !== undefined && texts.some((text) => text.includes(options.throwOn!))) {
+          throw new Error('embedder: onnx session died')
+        }
+        const vectors = await inner.embedPassages(texts)
+        return options.shortBy === true ? vectors.slice(1) : vectors
+      },
+      embedQuery: inner.embedQuery,
+    }
+  }
+
+  it('counts a per-file embedder failure, retries it on the next run', async () => {
+    const fs = new MemFs()
+    seedVault(fs)
+    const writer = stubWriter()
+    let broken = true
+    const flaky: Embedder = {
+      modelId: 'fake-deterministic-embedder',
+      dim: 8,
+      embedPassages: async (texts) => {
+        if (broken && texts.some((text) => text.includes('Beta flags'))) {
+          throw new Error('embedder: onnx session died')
+        }
+        return await fakeEmbedder({ vectorDim: 8 }).embedPassages(texts)
+      },
+      embedQuery: (text) => fakeEmbedder({ vectorDim: 8 }).embedQuery(text),
+    }
+    const logs: string[] = []
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: flaky,
+      writer: writer.writer,
+      fs,
+      log: (message) => logs.push(message),
+    })
+
+    const first = await indexer.reindex()
+
+    expect(first.indexed).toBe(1)
+    expect(first.errors).toBe(1)
+    expect(filesOf(fs.state())['markdown/sub/b.md']).toBeUndefined()
+    expect(logs.some((line) => line.includes('markdown/sub/b.md failed'))).toBe(true)
+
+    broken = false
+    const second = await indexer.reindex()
+
+    expect(second.indexed).toBe(1)
+    expect(filesOf(fs.state())['markdown/sub/b.md']).toBeDefined()
+  })
+
+  it('keeps a removed file dirty when its stale delete fails, purging next run', async () => {
+    let deleteFailures = 1
+    const memFs = new MemFs()
+    seedVault(memFs)
+    const calls: WriterCall[] = []
+    const ok = { status: { error_code: 'Success', code: 0, reason: '' } }
+    const writer: IndexWriter = {
+      async insert(request) {
+        calls.push({ method: 'insert', request })
+        return ok
+      },
+      async delete(request) {
+        calls.push({ method: 'delete', request })
+        if (deleteFailures > 0) {
+          deleteFailures -= 1
+          throw new Error('milvus delete: 14 UNAVAILABLE')
+        }
+        return ok
+      },
+    }
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer,
+      fs: memFs,
+      log: () => undefined,
+    })
+    await indexer.reindex()
+    const betaIds = filesOf(memFs.state())['markdown/sub/b.md']!.chunkIds
+    memFs.remove('/vault/markdown/sub/b.md')
+
+    const first = await indexer.reindex()
+
+    expect(first.errors).toBe(1)
+    expect(first.purged).toBe(0)
+    expect(filesOf(memFs.state())['markdown/sub/b.md']).toBeDefined()
+
+    const second = await indexer.reindex()
+
+    expect(second.purged).toBe(1)
+    expect(filesOf(memFs.state())['markdown/sub/b.md']).toBeUndefined()
+    expect(calls.filter((call) => call.method === 'delete').at(-1)!.request.ids).toEqual(betaIds)
+  })
+
+  it('keeps the archived file dirty when its purge delete fails', async () => {
+    const memFs = new MemFs()
+    seedVault(memFs)
+    let deleteFailures = 1
+    const calls: WriterCall[] = []
+    const ok = { status: { error_code: 'Success', code: 0, reason: '' } }
+    const writer: IndexWriter = {
+      async insert(request) {
+        calls.push({ method: 'insert', request })
+        return ok
+      },
+      async delete(request) {
+        calls.push({ method: 'delete', request })
+        if (deleteFailures > 0) {
+          deleteFailures -= 1
+          throw new Error('milvus delete: 14 UNAVAILABLE')
+        }
+        return ok
+      },
+    }
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer,
+      fs: memFs,
+      log: () => undefined,
+    })
+    await indexer.reindex()
+    const alphaIds = filesOf(memFs.state())['markdown/a.md']!.chunkIds
+    memFs.add('/vault/markdown/a.md', ALPHA_NOTE.replace('archive: false', 'archive: true'), 4444)
+
+    const summary = await indexer.reindex()
+
+    expect(summary.errors).toBe(1)
+    expect(summary.purged).toBe(0)
+    // State kept the old chunk ids: the next run retries the purge.
+    expect(filesOf(memFs.state())['markdown/a.md']!.chunkIds).toEqual(alphaIds)
+
+    const retry = await indexer.reindex()
+
+    expect(retry.purged).toBe(1)
+    expect(filesOf(memFs.state())['markdown/a.md']!.chunkIds).toEqual([])
+  })
+
+  it('fails a file when the embedder returns the wrong vector count', async () => {
+    const memFs = new MemFs()
+    seedVault(memFs)
+    const writer = stubWriter()
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: embedderWrapper({ shortBy: true }),
+      writer: writer.writer,
+      fs: memFs,
+      log: () => undefined,
+    })
+
+    const summary = await indexer.reindex()
+
+    expect(summary.indexed).toBe(0)
+    expect(summary.errors).toBe(2)
+    expect(writer.calls.filter((call) => call.method === 'insert')).toHaveLength(0)
+    expect(filesOf(memFs.state())).toEqual({})
+  })
+
+  it('surfaces a background reindex failure from start() as a counted error, not a crash', async () => {
+    const logs: string[] = []
+    const fs = new FailOnWriteFs()
+    fs.add('/vault/markdown/a.md', ALPHA_NOTE, 1)
+    const writer = stubWriter()
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer: writer.writer,
+      fs,
+      watchFactory: () => null,
+      log: (message) => logs.push(message),
+    })
+
+    indexer.start()
+    await settle()
+    indexer.stop()
+
+    // The per-file saveState throws first: the file is counted failed and
+    // the run itself never stamps. Either way start() swallowed the throw.
+    expect(indexer.progress.errors).toBeGreaterThan(0)
+    expect(logs.some((line) => line.includes('file markdown/a.md failed'))).toBe(true)
+  })
+
+  it('catches and logs a reindex rejection raised after the file loop', async () => {
+    const logs: string[] = []
+    const fs = new FailOnWriteFs()
+    // No markdown files at all: the loop never errors, so the only
+    // saveState left is the run-end stamp, and its throw rejects the
+    // whole reindex — the exact shape start()'s background catch exists
+    // for.
+    const writer = stubWriter()
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer: writer.writer,
+      fs,
+      watchFactory: () => null,
+      log: (message) => logs.push(message),
+    })
+
+    indexer.start()
+    await settle()
+    indexer.stop()
+
+    expect(indexer.progress.errors).toBe(1)
+    expect(logs.some((line) => line.includes('background reindex failed'))).toBe(true)
+  })
+
+  it('logs and counts a rejected watcher indexFile without throwing', async () => {
+    vi.useFakeTimers()
+    const { fs, indexer, listeners } = makeFixture({ embedder: embedderWrapper({ throwOn: 'Watcher edit' }) })
+    indexer.start()
+    await settle()
+
+    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nWatcher edit\n`, 6666)
+    listeners[0]!('a.md')
+    vi.advanceTimersByTime(1_500)
+    await settle()
+
+    expect(indexer.progress.errors).toBe(1)
+    indexer.stop()
+  })
+
+  it('treats a null (unattributable) watch event as a whole-vault rescan', async () => {
+    vi.useFakeTimers()
+    const { fs, writer, indexer, listeners } = makeFixture()
+    indexer.start()
+    await settle()
+    const baseline = writer.calls.length
+
+    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nUnattributed change\n`, 7777)
+    listeners[0]!(null)
+    vi.advanceTimersByTime(1_500)
+    await settle()
+
+    expect(writer.calls.slice(baseline).map((call) => call.method)).toEqual(['delete', 'insert'])
+    indexer.stop()
+  })
+})
+
+describe('state file and path guards', () => {
+  it('starts fresh when the state file is unreadable', async () => {
+    const { fs, indexer } = makeFixture()
+    fs.add(`/vault/metadata/${STATE_FILE_NAME}`, '{not json', 5)
+
+    const summary = await indexer.reindex()
+
+    expect(summary.indexed).toBe(2)
+    expect(summary.errors).toBe(0)
+    expect(Object.keys(filesOf(fs.state())).sort()).toEqual(['markdown/a.md', 'markdown/sub/b.md'])
+  })
+
+  it('forces a full re-embed when the state file predates the schema version', async () => {
+    const { fs, writer, indexer } = makeFixture()
+    await indexer.reindex()
+    // Downgrade the stamp on disk: same hashes, old schema version. A
+    // freshly built indexer (the service restart shape) must treat every
+    // file as unproven, not content-diff its way to a no-op.
+    const state = fs.files.get(`/vault/metadata/${STATE_FILE_NAME}`)!
+    const parsed = JSON.parse(state.content) as { version: number }
+    state.content = JSON.stringify({ ...parsed, version: 0 })
+    const before = writer.calls.length
+    const restarted = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer: writer.writer,
+      fs,
+      log: () => undefined,
+    })
+
+    const summary = await restarted.reindex()
+
+    expect(summary.indexed).toBe(2)
+    expect(writer.calls.length).toBeGreaterThan(before)
+    expect((JSON.parse(fs.files.get(`/vault/metadata/${STATE_FILE_NAME}`)!.content) as { version: number }).version)
+      .toBe(1)
+  })
+
+  it('normalizes away dotfile and reserved names on the write-through hook', async () => {
+    const { fs, indexer } = makeFixture()
+    await indexer.reindex()
+    const stateBefore = JSON.stringify(fs.state())
+
+    await indexer.indexFile('/vault/markdown/.INTENTS.md')
+    await indexer.indexFile('markdown/DREAMS.md')
+    await indexer.indexFile('markdown/topic_history.md')
+
+    expect(JSON.stringify(fs.state())).toBe(stateBefore)
+  })
+})
+
+describe('nodeIndexerFs over real disk', () => {
+  it('lists, reads, writes, renames, stats, and mkdirps through node:fs', () => {
+    const base = mkdtempSync(join(tmpdir(), 'mem-indexerfs-'))
+    try {
+      const nested = join(base, 'deep', 'er')
+      nodeIndexerFs.mkdirp(nested)
+      expect(nodeIndexerFs.listDirectory(nested)).toEqual([])
+      expect(nodeIndexerFs.listDirectory(join(base, 'missing'))).toBeNull()
+
+      const file = join(nested, 'note.md')
+      nodeIndexerFs.writeFile(file, '# hi\n')
+      expect(nodeIndexerFs.readFile(file)).toBe('# hi\n')
+      expect(nodeIndexerFs.readFile(join(nested, 'gone.md'))).toBeNull()
+      expect(nodeIndexerFs.stat(file)!.mtimeMs).toBeGreaterThan(0)
+      expect(nodeIndexerFs.stat(join(nested, 'gone.md'))).toBeNull()
+
+      const moved = join(nested, 'moved.md')
+      nodeIndexerFs.rename(file, moved)
+      expect(readFileSync(moved, 'utf8')).toBe('# hi\n')
+      writeFileSync(file, 'again\n')
+      expect(nodeIndexerFs.readFile(file)).toBe('again\n')
+    } finally {
+      rmSync(base, { recursive: true, force: true })
+    }
   })
 })

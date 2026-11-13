@@ -1,5 +1,7 @@
 # TASK-043 Think-stream intercept
 
+Status: done
+
 Depends: TASK-040, TASK-024. `packages/events/src/thinkIntercept.ts`.
 
 ## Scope

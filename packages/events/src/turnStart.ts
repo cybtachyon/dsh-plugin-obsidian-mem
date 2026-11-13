@@ -28,7 +28,7 @@ import { describeError } from '../../service/lib/errors.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
 import type { HookLogger, LiveAgent, MemoryEventsService, PreStepListener, StepMessage } from './host.js'
 import { firstUserText, makeNoticeMessage } from './host.js'
-import { sourceKeyFor, type SessionRegistry } from './sessions.js'
+import { sourceKeyFor, wakeTermsForSource, type SessionRegistry } from './sessions.js'
 
 /** Node ManifestFs over sync fs reads; unreadable paths answer null (skip). */
 export const nodeManifestFs: ManifestFs = {
@@ -132,7 +132,7 @@ async function runTurnStartRecall(
   const query = [firstUserText(messages), manifest === null ? '' : manifestQueryText(manifest)]
     .filter((part) => part !== '')
     .join('\n\n')
-  const kept: Array<{ key: string, block: string, fingerprint: string }> = []
+  const kept: Array<{ key: string, block: string, fingerprint: string, terms: string[] }> = []
   if (query !== '') {
     let results: MemorySearchResult[]
     try {
@@ -154,7 +154,7 @@ async function runTurnStartRecall(
         break
       }
       used += cost
-      kept.push({ key, block, fingerprint })
+      kept.push({ key, block, fingerprint, terms: wakeTermsForSource(result) })
     }
   }
 
@@ -162,6 +162,7 @@ async function runTurnStartRecall(
   for (const item of kept) {
     injectedTokens += inject(newId(), 'obsidian-mem: turn-start recall', item.block)
     registry.markInjected(sessionId, item.key, item.fingerprint)
+    registry.noteWakeTerms(sessionId, item.terms)
   }
   if (manifest !== null) {
     const guidance = guidanceLine(manifest)

@@ -31,6 +31,7 @@ import { describeError } from '../../service/lib/errors.js'
 import type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope } from './host.js'
 import { installReadIntercept } from './readIntercept.js'
 import { SESSIONS_FILE_NAME, SessionRegistry } from './sessions.js'
+import { installThinkIntercept } from './thinkIntercept.js'
 import { installTurnStart } from './turnStart.js'
 
 export const name = 'obsidian-mem-events'
@@ -111,7 +112,10 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
         ...(options.newMessageId === undefined ? {} : { newMessageId: options.newMessageId }),
       }
       const handle = agent.ctx.effect(() => {
-        const disposers = [installTurnStart(deps)]
+        const disposers = [
+          installTurnStart(deps),
+          installThinkIntercept(deps),
+        ]
         return () => {
           for (const dispose of disposers) {
             dispose()
@@ -166,6 +170,7 @@ export {
   SESSIONS_LRU_MAX,
   SessionRegistry,
   sourceKeyFor,
+  wakeTermsForSource,
 } from './sessions.js'
 export type {
   InjectedSourceRecord,
@@ -188,3 +193,10 @@ export {
   installReadIntercept,
 } from './readIntercept.js'
 export type { ReadInterceptDeps } from './readIntercept.js'
+export {
+  extractCompletedThinkBlocks,
+  installThinkIntercept,
+  THINK_QUERY_MAX_CHARS,
+  THINK_SEARCH_TOP_K,
+} from './thinkIntercept.js'
+export type { ThinkInterceptDeps } from './thinkIntercept.js'

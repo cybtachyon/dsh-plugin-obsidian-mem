@@ -42,6 +42,10 @@ export interface AgentSessionHeader {
 export interface AgentHostContext {
   /** Registers a listener owned by the agent's own fiber. */
   on(name: 'agent/pre-step', listener: PreStepListener): () => boolean
+  /** Registers the emit-style assistant-stream observer on the agent's fiber. */
+  on(name: 'agent/assistant-stream', listener: (payload: AssistantStreamPayload) => void): () => boolean
+  /** Registers the serial turn-stopping observer on the agent's fiber. */
+  on(name: 'agent/turn-stopping', listener: (payload: TurnStoppingPayload) => void): () => boolean
   /** Registers a cleanup-aware effect on the agent's fiber; answers a disposer. */
   effect(execute: () => (() => void) | void, label?: string): EffectDisposer
 }
@@ -58,6 +62,13 @@ export interface LiveAgent {
   readonly ctx: AgentHostContext
   /** Queues model-facing context for the next step boundary without waking. */
   inject(message: InjectedUserMessage): void
+  /**
+   * Admits a message into the live turn and keeps that turn open (AGENTS.md
+   * Event Facts; the turn-end reminder's channel). A steer during
+   * `agent/turn-stopping` runs another step, so the caller needs the
+   * once-per-turn guard or the turn loops open.
+   */
+  steer(message: InjectedUserMessage): void
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +130,58 @@ export type PreStepListener = (
   next: () => Promise<PreStepDecision>,
 ) => Promise<PreStepDecision>
 
+// ---------------------------------------------------------------------------
+// Assistant-stream mirror. Verified against the live cordis 4.1.0 Event
+// catalog: `agent/assistant-stream` is emit with
+// `(this: Scoped<Agent>, payload: { agent: Agent; frame: AssistantStreamFrame })`
+// — the frame union is the ordered start/chunk/end publications of one
+// attempt, and a chunk frame's `chunk` is the StreamChunk union
+// (block-start | text-delta | reasoning-delta | tool-call-delta | block-end
+// | usage | finish). Reasoning arrives on the native `reasoning-delta` /
+// reasoning `block-end` channel, so a reasoning close is a completed think
+// block in its own right (TASK-043). Only the text-bearing members are read,
+// and every field access is type-guarded: emit dispatch runs the listener
+// raw, so a poisoned payload may never throw out of it.
+
+/** A streamed content block at close; `type` discriminates the block union. */
+export interface ContentBlockMirror {
+  readonly type: string
+  /** Text- and reasoning blocks carry the full block text at close. */
+  readonly text?: string
+}
+
+export type StreamChunkMirror =
+  | { readonly type: 'block-start'; readonly index: number; readonly blockType?: string }
+  | { readonly type: 'text-delta'; readonly index: number; readonly text?: string }
+  | { readonly type: 'reasoning-delta'; readonly index: number; readonly text?: string }
+  | { readonly type: 'tool-call-delta'; readonly index: number; readonly argumentsDelta?: string }
+  | { readonly type: 'block-end'; readonly index: number; readonly block?: ContentBlockMirror }
+  | { readonly type: 'usage' }
+  | { readonly type: 'finish' }
+
+export interface AssistantStreamFrameMirror {
+  readonly type: 'start' | 'chunk' | 'end'
+  readonly attemptId: string
+  readonly revision?: number
+  /** start frame only: the turn the attempt streams in (per-turn budget hint). */
+  readonly turn?: number
+  readonly chunk?: StreamChunkMirror
+  /** end frame only: committed vs abandoned attempt. */
+  readonly outcome?: { readonly kind?: string }
+}
+
+export interface AssistantStreamPayload {
+  readonly agent: LiveAgent
+  readonly frame: AssistantStreamFrameMirror
+}
+
+/** Turn-stopping payload (serial; steer inside keeps the turn open). */
+export interface TurnStoppingPayload {
+  readonly agent: LiveAgent
+  readonly turn: number
+  readonly signal?: AbortSignal
+}
+
 /** The `tools/result` execution slice (name, parsed arguments, caller agent). */
 export interface ToolExecutionMirror {
   readonly name: string
@@ -150,6 +213,10 @@ declare module '@deepseek-ai/cordis' {
       exec: ToolExecutionMirror,
       result: ToolResultMirror,
     ): undefined
+    /** Emit; Scoped<Agent>: fires on the agent ctx, not the plugin ctx. */
+    'agent/assistant-stream'(this: unknown, payload: AssistantStreamPayload): void
+    /** Serial; Scoped<Agent>: a steer here keeps the turn open (TASK-044). */
+    'agent/turn-stopping'(this: unknown, payload: TurnStoppingPayload): undefined | Promise<undefined>
   }
 }
 

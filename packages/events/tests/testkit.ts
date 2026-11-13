@@ -20,14 +20,17 @@ import type {
 import type {
   AgentCreatedPayload,
   AgentDisposedPayload,
+  AssistantStreamPayload,
   InjectedUserMessage,
   MemoryEventsScope,
   MemoryEventsService,
   PreStepDecision,
   PreStepPayload,
   StepMessage,
+  StreamChunkMirror,
   ToolExecutionMirror,
   ToolResultMirror,
+  TurnStoppingPayload,
 } from '../src/host.ts'
 
 // ---------------------------------------------------------------------------
@@ -188,9 +191,14 @@ export interface FakeAgent {
   id: string
   session: { header: Record<string, unknown> }
   injected: InjectedUserMessage[]
+  steered: InjectedUserMessage[]
   agentHandlers: Map<string, Array<(payload: never, next?: never) => unknown>>
   agentEffects: Array<{ label: string, dispose: () => unknown }>
   emitPreStep(payload: PreStepPayload, inner: () => Promise<PreStepDecision>): Promise<PreStepDecision[]>
+  /** Fire the emit-style assistant-stream at the agent-ctx listeners. */
+  emitAssistantStream(payload: AssistantStreamPayload): void
+  /** Fire the serial turn-stopping at the agent-ctx listeners, in order. */
+  emitTurnStopping(payload: TurnStoppingPayload): Promise<void>
   asCreated(): AgentCreatedPayload
   asDisposed(): AgentDisposedPayload
   asToolCaller(name: string, args: unknown): ToolExecutionMirror
@@ -198,6 +206,7 @@ export interface FakeAgent {
 
 export function fakeAgent(options: FakeAgentOptions): FakeAgent {
   const injected: InjectedUserMessage[] = []
+  const steered: InjectedUserMessage[] = []
   const agentHandlers = new Map<string, Array<(payload: never, next?: never) => unknown>>()
   const agentEffects: Array<{ label: string, dispose: () => unknown }> = []
   const agent = {
@@ -210,6 +219,7 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
       },
     },
     injected,
+    steered,
     agentHandlers,
     agentEffects,
     ctx: {
@@ -234,6 +244,7 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
       },
     },
     inject: (message: InjectedUserMessage) => { injected.push(message) },
+    steer: (message: InjectedUserMessage) => { steered.push(message) },
     async emitPreStep(payload, inner) {
       const decisions: PreStepDecision[] = []
       // Compose the registered listeners around the inner next(), the way
@@ -252,11 +263,71 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
       decisions.push(await next())
       return decisions
     },
+    emitAssistantStream(payload) {
+      // Emit dispatch: listeners run raw, in registration order.
+      for (const listener of [...(agentHandlers.get('agent/assistant-stream') ?? [])]) {
+        ;(listener as (p: AssistantStreamPayload) => void)(payload)
+      }
+    },
+    async emitTurnStopping(payload) {
+      // Serial dispatch: awaited in registration order.
+      for (const listener of [...(agentHandlers.get('agent/turn-stopping') ?? [])]) {
+        await (listener as (p: TurnStoppingPayload) => unknown)(payload)
+      }
+    },
     asCreated: () => ({ agent: agent as never, source: 'startup' }),
     asDisposed: () => ({ agent: agent as never }),
     asToolCaller: (name, args) => ({ name, arguments: args, agent: agent as never }),
   }
   return agent as unknown as FakeAgent
+}
+
+// ---------------------------------------------------------------------------
+// Assistant-stream fixtures (faithful to the live frame union).
+
+/** One `start` frame for an attempt streaming in `turn`. */
+export function streamStart(attemptId = 'attempt-1', turn = 1): AssistantStreamPayload['frame'] {
+  return { type: 'start', attemptId, revision: 0, turn, step: 1 }
+}
+
+/** One `end` frame; kind is the attempt outcome. */
+export function streamEnd(
+  attemptId = 'attempt-1',
+  kind: 'committed' | 'abandoned' = 'committed',
+): AssistantStreamPayload['frame'] {
+  return { type: 'end', attemptId, revision: 0, index: 99, outcome: { kind } }
+}
+
+function chunkFrame(
+  attemptId: string,
+  chunk: StreamChunkMirror,
+  index = 0,
+): AssistantStreamPayload['frame'] {
+  return { type: 'chunk', attemptId, revision: 0, index, time: 0, chunk }
+}
+
+/** A text-delta chunk frame carrying `text`. */
+export function textDelta(text: string, attemptId = 'attempt-1'): AssistantStreamPayload['frame'] {
+  return chunkFrame(attemptId, { type: 'text-delta', index: 0, text })
+}
+
+/** A native reasoning-delta chunk frame. */
+export function reasoningDelta(text: string, attemptId = 'attempt-1', index = 0): AssistantStreamPayload['frame'] {
+  return chunkFrame(attemptId, { type: 'reasoning-delta', index, text }, index)
+}
+
+/** A reasoning block-end close frame; block text absent uses the deltas. */
+export function reasoningEnd(text?: string, attemptId = 'attempt-1', index = 0): AssistantStreamPayload['frame'] {
+  return chunkFrame(
+    attemptId,
+    { type: 'block-end', index, block: { type: 'reasoning', ...(text === undefined ? {} : { text }) } },
+    index,
+  )
+}
+
+/** Wrap a frame for the agent-ctx payload. */
+export function streamPayload(agent: FakeAgent, frame: AssistantStreamPayload['frame']): AssistantStreamPayload {
+  return { agent: agent as never, frame }
 }
 
 /** The tool result envelope the intercept observes. */

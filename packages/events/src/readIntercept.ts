@@ -39,7 +39,7 @@ import type {
   ToolResultMirror,
 } from './host.js'
 import { boundSummary, makeNoticeMessage } from './host.js'
-import { sourceKeyFor, type SessionRegistry } from './sessions.js'
+import { sourceKeyFor, wakeTermsForSource, type SessionRegistry } from './sessions.js'
 
 /** The harness Read tool's registry name (verified live: `read`). */
 export const HARNESS_READ_TOOL_NAME = 'read'
@@ -180,14 +180,19 @@ async function runExactRecall(
     return
   }
 
-  const fresh: Array<{ key: string, block: string, fingerprint: string }> = []
+  const fresh: Array<{ key: string, block: string, fingerprint: string, terms: string[] }> = []
   for (const item of results) {
     const key = sourceKeyFor(item)
     const fingerprint = String(item.updated_at)
     if (!registry.shouldInject(sessionId, key, fingerprint)) {
       continue
     }
-    fresh.push({ key, block: wrapRecalled(item.source_path, item.chunk_text), fingerprint })
+    fresh.push({
+      key,
+      block: wrapRecalled(item.source_path, item.chunk_text),
+      fingerprint,
+      terms: wakeTermsForSource(item),
+    })
   }
   if (fresh.length === 0) {
     return
@@ -212,6 +217,7 @@ async function runExactRecall(
   )
   for (const item of fresh) {
     registry.markInjected(sessionId, item.key, item.fingerprint)
+    registry.noteWakeTerms(sessionId, item.terms)
   }
   registry.noteReadInjection(sessionId, dir)
   registry.addRecallTokens(sessionId, injectedTokens)

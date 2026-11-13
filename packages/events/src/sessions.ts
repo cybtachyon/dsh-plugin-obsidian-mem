@@ -19,7 +19,7 @@
  * @module dsh-plugin-obsidian-mem/events/sessions
  */
 
-import { dirname } from 'node:path'
+import { basename, dirname } from 'node:path'
 import type { ServiceFs } from '../../service/lib/index.js'
 import { nodeServiceFs } from '../../service/lib/index.js'
 
@@ -47,6 +47,50 @@ export const READ_INJECTION_THROTTLE_MS = 15_000
 
 /** Read-intercept injections per session, a cap independent of the Think budget. */
 export const READ_INJECTION_CAP_PER_SESSION = 6
+
+/** Wake terms one injected source contributes to the Think vocabulary. */
+const SOURCE_TERMS_MAX = 32
+
+// A wake term is a lower-cased token; the same shape discipline the
+// wake_keywords collection column applies, kept local to the ledger.
+const TERM_PATTERN = /^[a-z0-9][a-z0-9.+*#-]*$/
+const TERM_MIN_LENGTH = 2
+const TERM_MAX_LENGTH = 64
+
+/** IsWakeTerm tests the lower-cased token shape shared by every term source. */
+export function isWakeTerm(term: string): boolean {
+  return term.length >= TERM_MIN_LENGTH
+    && term.length <= TERM_MAX_LENGTH
+    && TERM_PATTERN.test(term)
+}
+
+/**
+ * WakeTermsForSource returns the deterministic header terms one injected
+ * source contributes to the session's Think vocabulary: the file stem (plus
+ * its -/_ parts) and the section-header tokens. The true wake_keywords live
+ * only in the collection (no live enumeration exists), so these header
+ * terms stand in for "wake_keywords of memories injected in this session"
+ * (TASK-043 task file).
+ */
+export function wakeTermsForSource(result: {
+  source_path: string
+  section_header?: string | null
+}): string[] {
+  const stem = basename(result.source_path).replace(/\.[A-Za-z0-9]+$/, '')
+  const terms = new Set<string>()
+  const rawTerms = [
+    ...stem.split(/[-_\s]+/),
+    stem,
+    ...(result.section_header ?? '').split(/\s+/),
+  ]
+  for (const raw of rawTerms) {
+    const term = raw.trim().toLowerCase()
+    if (term.length >= TERM_MIN_LENGTH && term.length <= TERM_MAX_LENGTH && TERM_PATTERN.test(term)) {
+      terms.add(term)
+    }
+  }
+  return [...terms].slice(0, SOURCE_TERMS_MAX)
+}
 
 /** What one injected source remembers: when, and the content it was injected for. */
 export interface InjectedSourceRecord {
@@ -76,6 +120,15 @@ export interface SessionRecord {
   readonly coveredDirs: Set<string>
   /** Files already observed by the Read intercept in the current turn. */
   readonly readPathsThisTurn: Set<string>
+  /**
+   * Wake terms of memories injected into this session (TASK-043's Think
+   * vocabulary: "wake_keywords of memories injected in this session").
+   * The indexed wake_keywords never leave the collection, so the intercepts
+   * store the deterministic note-header terms (file stem + section header)
+   * of every source they inject; the Think intercept unions them with the
+   * INTENT_MARKERS and the shared vault's recorded `.INTENTS.md` entries.
+   */
+  readonly wakeTerms: Set<string>
   subagent: boolean
   readonly createdAt: number
   updatedAt: number
@@ -178,6 +231,7 @@ export class SessionRegistry {
         lastReadInjectionAt: 0,
         coveredDirs: new Set(),
         readPathsThisTurn: new Set(),
+        wakeTerms: new Set(),
         subagent: persisted?.subagent ?? false,
         createdAt: persisted?.createdAt ?? this.now(),
         updatedAt: persisted?.updatedAt ?? this.now(),
@@ -327,6 +381,26 @@ export class SessionRegistry {
     record.lastReadInjectionAt = this.now()
     record.coveredDirs.add(dir)
     this.touch(record)
+  }
+
+  /**
+   * NoteWakeTerms records the header terms of one injected source for
+   * TASK-043's Think vocabulary. Session-lifetime: a term stays eligible
+   * for later turns' Think blocks (the sources themselves stay injected).
+   */
+  noteWakeTerms(sessionId: string, terms: readonly string[]): void {
+    if (terms.length === 0) {
+      return
+    }
+    const record = this.ensure(sessionId)
+    for (const term of terms) {
+      record.wakeTerms.add(term)
+    }
+  }
+
+  /** WakeTermsFor snapshots the session's injected-source terms. */
+  wakeTermsFor(sessionId: string): ReadonlySet<string> {
+    return new Set(this.ensure(sessionId).wakeTerms)
   }
 
   /** DisposeSession drops the live record on agent teardown; the persisted

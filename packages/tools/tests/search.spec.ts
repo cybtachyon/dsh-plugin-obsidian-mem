@@ -19,7 +19,7 @@ function sectionRows(): MemorySearchResult[] {
   return [
     {
       chunk_id: 'chunk-1',
-      source_path: '/vaults/shared/markdown/deploys.md',
+      source_path: '/vaults/shared/deploys.md',
       section_header: 'Friday checklist',
       chunk_text: `${'release steps. '.repeat(10)}tail`,
       scope: 'global',
@@ -30,7 +30,7 @@ function sectionRows(): MemorySearchResult[] {
     },
     {
       chunk_id: 'chunk-2',
-      source_path: '/vaults/ro/markdown/legacy.md',
+      source_path: '/vaults/ro/legacy.md',
       section_header: 'Old host names',
       chunk_text: 'app.example.com fronts the API.',
       scope: 'reference',
@@ -62,7 +62,7 @@ describe('memory_search execution', () => {
     if (value.kind !== 'search') return
     expect(value.count).toBe(2)
     expect(value.sections[0]).toEqual({
-      path: '/vaults/shared/markdown/deploys.md',
+      path: '/vaults/shared/deploys.md',
       section_header: 'Friday checklist',
       scope: 'global',
       vault: '/vaults/shared',
@@ -153,18 +153,18 @@ describe('memory_search rendering', () => {
   it('numbers sections with their retrieval identifiers and scores', async () => {
     const value = await search(makeService(), { query: 'deploy checklist' })
     const text = renderTool(value)
-    expect(text).toContain(`1. /vaults/shared/markdown/deploys.md # ${'Friday checklist'}`)
+    expect(text).toContain(`1. /vaults/shared/deploys.md # ${'Friday checklist'}`)
     expect(text).toContain('score 0.8125')
     expect(text).toContain('vault /vaults/shared [shared]')
     expect(text).toContain('[section snippet truncated]')
-    expect(text).toContain('2. /vaults/ro/markdown/legacy.md')
+    expect(text).toContain('2. /vaults/ro/legacy.md')
   })
 
   it('omits the header separator when a note has no section header', async () => {
     const headerless = [{ ...sectionRows()[0]!, section_header: '' }]
     const value = await search(makeService(headerless), { query: 'deploy' })
     const text = renderTool(value)
-    expect(text).toContain('1. /vaults/shared/markdown/deploys.md\n')
+    expect(text).toContain('1. /vaults/shared/deploys.md\n')
     expect(text).not.toContain('deploys.md #')
   })
 

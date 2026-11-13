@@ -60,11 +60,11 @@ describe('once-per-session injection rule', () => {
   it('injects a source once: second ask is refused', () => {
     const { file } = tempFile()
     const registry = makeRegistry(file)
-    expect(registry.shouldInject('s1', 'vaultA\u0000markdown/a.md')).toBe(true)
-    registry.markInjected('s1', 'vaultA\u0000markdown/a.md')
-    expect(registry.shouldInject('s1', 'vaultA\u0000markdown/a.md')).toBe(false)
+    expect(registry.shouldInject('s1', 'vaultA\u0000a.md')).toBe(true)
+    registry.markInjected('s1', 'vaultA\u0000a.md')
+    expect(registry.shouldInject('s1', 'vaultA\u0000a.md')).toBe(false)
     // A different session keeps its own ledger.
-    expect(registry.shouldInject('s2', 'vaultA\u0000markdown/a.md')).toBe(true)
+    expect(registry.shouldInject('s2', 'vaultA\u0000a.md')).toBe(true)
   })
 
   it('re-admits a source whose content fingerprint changed after injection', () => {

@@ -111,7 +111,7 @@ Ordered list; every task is defined in its own file.
 
 ### Phase 4 — Ship
  - [x] [TASK-011-docs-layout-wording](docs/PLAN-VAULT-LAYOUT-TASK-011-docs-layout-wording.md)
- - [ ] [TASK-012-full-quality-gate](docs/PLAN-VAULT-LAYOUT-TASK-012-full-quality-gate.md)
+ - [x] [TASK-012-full-quality-gate](docs/PLAN-VAULT-LAYOUT-TASK-012-full-quality-gate.md)
  - [ ] [TASK-013-live-vault-migration](docs/PLAN-VAULT-LAYOUT-TASK-013-live-vault-migration.md)
 
 ## Dependencies

@@ -87,7 +87,7 @@ describe('error envelope handling', () => {
   })
 
   it('passes the parsed answer through on success', async () => {
-    const vault = { path: '/home/test/vault', mode: 'shared', source: 'card' }
+    const vault = { path: '/home/test/vault', mode: 'shared', globalFile: 'GLOBAL.md', source: 'card' }
     const calls = stubFetch([{ status: 201, body: vault }])
     await expect(addVault({ path: '/home/test/vault', mode: 'shared' })).resolves.toEqual(vault)
     expect(calls[0]!.url).toBe('/obsidian-mem/vaults')

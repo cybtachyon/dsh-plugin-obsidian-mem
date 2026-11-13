@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import {
   classifyPath,
   contentHash,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   parseNote,
   serializeNoteWithRaw,
 } from '../../core/lib/index.js'
@@ -46,9 +47,19 @@ export function makeTempTree(files: Record<string, string>): { root: string, cle
   }
 }
 
-/** VaultConfig entries tagged with the source VaultEntry requires. */
-export function vaultEntries(...vaults: VaultConfig[]): VaultEntry[] {
-  return vaults.map((vault) => ({ ...vault, source: 'settings' as const }))
+/**
+ * VaultEntry rows from registry-shaped config rows: rows that omit
+ * globalFile get the resolved default, mirroring resolveVaults so a
+ * fixture can name only the knobs its spec exercises.
+ */
+export function vaultEntries(
+  ...vaults: (Omit<VaultConfig, 'globalFile'> & Partial<Pick<VaultConfig, 'globalFile'>>)[]
+): VaultEntry[] {
+  return vaults.map((vault) => ({
+    globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+    ...vault,
+    source: 'settings' as const,
+  }))
 }
 
 /** The knobs one fake service run needs. */

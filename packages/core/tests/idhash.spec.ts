@@ -23,7 +23,7 @@ function mulberry32(seed: number): () => number {
 function baseParts(overrides: Partial<ChunkIdParts> = {}): ChunkIdParts {
   return {
     vault: 'default',
-    source_path: 'markdown/typescript-style.md',
+    source_path: 'typescript-style.md',
     header_hash: '0123456789abcdef',
     part: 0,
     modelId: 'Xenova/multilingual-e5-small',
@@ -58,7 +58,7 @@ describe('chunkId', () => {
     for (let index = 0; index < 10_000; index += 1) {
       seen.add(chunkId({
         vault: pick(['default', 'work', 'research', 'vault-a']),
-        source_path: `markdown/note-${Math.floor(random() * 5000)}.md`,
+        source_path: `note-${Math.floor(random() * 5000)}.md`,
         header_hash: Math.floor(random() * Number.MAX_SAFE_INTEGER)
           .toString(16)
           .padStart(16, '0'),
@@ -83,7 +83,7 @@ describe('chunkId', () => {
     const original = chunkId(baseParts())
     const mutated = [
       baseParts({ vault: 'work' }),
-      baseParts({ source_path: 'markdown/other.md' }),
+      baseParts({ source_path: 'other.md' }),
       baseParts({ header_hash: 'fedcba9876543210' }),
       baseParts({ part: 1 }),
       baseParts({ modelId: 'other/model' }),

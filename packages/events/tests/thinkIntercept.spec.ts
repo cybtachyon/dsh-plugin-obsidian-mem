@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { VaultEntry } from '../../service/lib/index.js'
+import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import type { AssistantStreamFrameMirror, HookLogger } from '../src/host.ts'
 import { mountLifecycle } from '../src/index.ts'
@@ -36,7 +37,12 @@ import {
 
 const QUIET_LOGGER: HookLogger = { info: () => {}, warn: () => {}, debug: () => {} }
 
-const SHARED_VAULT: VaultEntry = { path: '/vault/shared', mode: 'shared', source: 'card' }
+const SHARED_VAULT: VaultEntry = {
+  path: '/vault/shared',
+  mode: 'shared',
+  globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+  source: 'card',
+}
 
 let idSeq = 0
 function messageIds(): () => string {
@@ -45,7 +51,7 @@ function messageIds(): () => string {
 }
 
 const topic = memoryResult({
-  source_path: 'markdown/milvus-ops.md',
+  source_path: 'milvus-ops.md',
   section_header: 'Milvus Ops',
   chunk_text: 'compaction cadence and why it stalls',
 })
@@ -104,7 +110,7 @@ function freshSources(h: Harness): void {
   h.memory.search = async (request) => {
     h.memory.searchRequests.push(request)
     shots += 1
-    return [memoryResult({ source_path: `markdown/src-${String(shots)}.md`, chunk_text: `fact ${String(shots)}` })]
+    return [memoryResult({ source_path: `src-${String(shots)}.md`, chunk_text: `fact ${String(shots)}` })]
   }
 }
 
@@ -152,7 +158,7 @@ describe('think-stream recall', () => {
     expect(h.agent.injected).toHaveLength(1)
     const blocks = h.agent.injected[0]?.content.map((block) => block.text) ?? []
     expect(blocks[0]).toContain('terms: why')
-    expect(blocks[1]).toContain('<recalled_memory source="markdown/milvus-ops.md">')
+    expect(blocks[1]).toContain('<recalled_memory source="milvus-ops.md">')
     expect(h.registry.recallTokensUsed('session-1')).toBeGreaterThan(0)
     expect(h.memory.ensureCalls).toBe(1)
   })

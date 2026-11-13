@@ -111,7 +111,7 @@ export function fakeMemory(options: FakeMemoryOptions): FakeMemoryService {
 export function memoryResult(overrides: Partial<MemorySearchResult> = {}): MemorySearchResult {
   return {
     chunk_id: 1,
-    source_path: 'markdown/topic.md',
+    source_path: 'topic.md',
     section_header: 'Topic',
     chunk_text: 'the fact, stated plainly',
     scope: 'global',

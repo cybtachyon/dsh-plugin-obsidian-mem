@@ -12,6 +12,9 @@
 
 import { describe, expect, it } from 'vitest'
 
+import type { VaultEntry } from '../../service/lib/index.js'
+import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
+import type { VaultMode } from '../../core/lib/index.js'
 import type { HookLogger } from '../src/host.ts'
 import { mountLifecycle } from '../src/index.ts'
 import { SessionRegistry } from '../src/sessions.ts'
@@ -27,6 +30,11 @@ import {
 } from './testkit.ts'
 
 const QUIET_LOGGER: HookLogger = { info: () => {}, warn: () => {}, debug: () => {} }
+
+/** One VaultEntry row; globalFile carries the registry-resolved default. */
+function vaultRow(path: string, mode: VaultMode = 'shared'): VaultEntry {
+  return { path, mode, globalFile: GLOBAL_MEMORY_FILE_DEFAULT, source: 'settings' }
+}
 
 /** The task-file checklist transcribed line-for-line, path hole filled. */
 function expectedReminder(vaultPath: string): string {
@@ -100,8 +108,8 @@ describe('turn-end reminder delivery', () => {
   it('steers once with the byte-exact checklist and the first shared vault path', async () => {
     const h = unit({
       vaults: [
-        { path: '/v/readonly-one', mode: 'read-only', source: 'settings' },
-        { path: '/v/shared-two', mode: 'shared', source: 'settings' },
+        vaultRow('/v/readonly-one', 'read-only'),
+        vaultRow('/v/shared-two'),
       ],
     })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
@@ -131,7 +139,7 @@ describe('turn-end reminder delivery', () => {
   })
 
   it('falls back to the default vault path when no shared vault is registered', async () => {
-    const h = unit({ vaults: [{ path: '/v/readonly-one', mode: 'read-only', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/readonly-one', 'read-only')] })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
     await h.stopTurn(1)
     expect(h.agent.steered).toHaveLength(1)
@@ -168,7 +176,7 @@ describe('turn-end reminder delivery', () => {
 
 describe('once-per-turn guard (steer keeps the turn open)', () => {
   it('survives repeated turn-stopping fires in the same turn without looping', async () => {
-    const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/shared')] })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
     // A steer keeps the turn open: the machine re-reads its inbox and the
     // listener re-fires. The guard must answer with exactly one steer.
@@ -179,7 +187,7 @@ describe('once-per-turn guard (steer keeps the turn open)', () => {
   })
 
   it('fires again on the next turn, still once per turn', async () => {
-    const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/shared')] })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
     await h.stopTurn(1)
     await h.stopTurn(1)
@@ -203,14 +211,14 @@ describe('once-per-turn guard (steer keeps the turn open)', () => {
 
 describe('skip conditions', () => {
   it('subagent sessions never get the reminder', async () => {
-    const h = unit({ subagent: true, vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ subagent: true, vaults: [vaultRow('/v/shared')] })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
     await h.stopTurn(1)
     expect(h.agent.steered).toHaveLength(0)
   })
 
   it('a turn that used a memory_* tool is skipped', async () => {
-    const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/shared')] })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
     h.useMemoryTool('memory_search')
     await h.stopTurn(1)
@@ -219,13 +227,13 @@ describe('skip conditions', () => {
 
   it('every memory tool name qualifies, other tools do not', async () => {
     for (const name of ['memory_read', 'memory_search', 'memory_write', 'memory_dream', 'memory_audit']) {
-      const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+      const h = unit({ vaults: [vaultRow('/v/shared')] })
       h.registry.noteTurn('session-1', 1, WORK_TEXT)
       h.useMemoryTool(name)
       await h.stopTurn(1)
       expect(h.agent.steered, name).toHaveLength(0)
     }
-    const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/shared')] })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
     h.useMemoryTool('read')
     await h.stopTurn(1)
@@ -233,7 +241,7 @@ describe('skip conditions', () => {
   })
 
   it('the memory-tool flag resets on a new turn', async () => {
-    const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/shared')] })
     h.registry.noteTurn('session-1', 1, WORK_TEXT)
     h.useMemoryTool('memory_audit')
     await h.stopTurn(1)
@@ -253,19 +261,19 @@ describe('skip conditions', () => {
     expect(isTrivialTurn('fix the `spec.ts` run')).toBe(false) // code tick
     expect(isTrivialTurn('C:\\dsh\\logs path')).toBe(false) // windows separator
 
-    const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/shared')] })
     h.registry.noteTurn('session-1', 1, 'thanks!')
     await h.stopTurn(1)
     expect(h.agent.steered).toHaveLength(0)
 
-    const exempt = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const exempt = unit({ vaults: [vaultRow('/v/shared')] })
     exempt.registry.noteTurn('session-1', 1, 'look at /tmp please')
     await exempt.stopTurn(1)
     expect(exempt.agent.steered).toHaveLength(1)
   })
 
   it('a turn whose first user text never surfaced stays quiet', async () => {
-    const h = unit({ vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }] })
+    const h = unit({ vaults: [vaultRow('/v/shared')] })
     await h.stopTurn(1)
     expect(h.agent.steered).toHaveLength(0)
   })
@@ -287,7 +295,7 @@ describe('mount wiring', () => {
     const tmp = tempDbPath()
     const memory = fakeMemory({
       dbPath: tmp.dir,
-      vaults: [{ path: '/v/shared', mode: 'shared', source: 'settings' }],
+      vaults: [vaultRow('/v/shared')],
     })
     const ctx = fakeEventsCtx(memory)
     mountLifecycle(ctx.scope)

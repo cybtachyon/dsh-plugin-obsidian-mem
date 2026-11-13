@@ -21,12 +21,12 @@ function planFixture(over: Partial<DreamPlan> = {}): DreamPlan {
     generatedAt: 1730000000000,
     lastDreamAt: 1729000000000,
     prompt: '# dreaming protocol\nbudget 1500\n',
-    plan: '1. Compact global note /v/markdown/a.md.\n2. Global budget headroom: 1800 of 1500 tokens used.',
+    plan: '1. Compact global note /v/a.md.\n2. Global budget headroom: 1800 of 1500 tokens used.',
     candidates: [
       {
-        path: '/v/markdown/a.md',
+        path: '/v/a.md',
         vaultPath: '/v',
-        rel: 'markdown/a.md',
+        rel: 'a.md',
         mode: 'shared',
         reasons: ['never-read', 'global-over-budget'],
         readCount: 0,
@@ -34,7 +34,7 @@ function planFixture(over: Partial<DreamPlan> = {}): DreamPlan {
         sizeBytes: 2048,
       },
     ],
-    clusters: [['/v/markdown/a.md', '/v/markdown/b.md']],
+    clusters: [['/v/a.md', '/v/b.md']],
     stats: { notes: 4, globalNotes: 2, oversized: 1, staleOrUnread: 2, totalBytes: 8192 },
     budget: {
       budgetTokens: 1500,
@@ -42,8 +42,8 @@ function planFixture(over: Partial<DreamPlan> = {}): DreamPlan {
       measured: true,
       overBudget: true,
       globalNoteCount: 2,
-      globalNotePaths: ['/v/markdown/a.md', '/v/markdown/b.md'],
-      compactableGlobalNotePaths: ['/v/markdown/a.md', '/v/markdown/b.md'],
+      globalNotePaths: ['/v/a.md', '/v/b.md'],
+      compactableGlobalNotePaths: ['/v/a.md', '/v/b.md'],
     },
     skipped: [],
     ...over,
@@ -73,7 +73,7 @@ describe('memory_dream execute', () => {
     expect(value.generated_at).toBe(new Date(1730000000000).toISOString())
     expect(value.last_dream_at).toBe(new Date(1729000000000).toISOString())
     expect(value.candidates[0]).toEqual({
-      path: '/v/markdown/a.md',
+      path: '/v/a.md',
       vault_path: '/v',
       mode: 'shared',
       reasons: ['never-read', 'global-over-budget'],
@@ -81,7 +81,7 @@ describe('memory_dream execute', () => {
       last_read_at: '',
       size_bytes: 2048,
     })
-    expect(value.clusters).toEqual([['/v/markdown/a.md', '/v/markdown/b.md']])
+    expect(value.clusters).toEqual([['/v/a.md', '/v/b.md']])
     await executeDream(service, { operation: 'run', model: 'some/model' })
     expect(service.dreamRequests[1]).toEqual({ operation: 'run', model: 'some/model' })
   })
@@ -145,9 +145,9 @@ describe('memory_dream render', () => {
     const text = renderDream(await executeDream(service, {}))
     expect(text).toContain('last dream: 2024-10-15')
     expect(text).toContain('2 stale or never-read')
-    expect(text).toContain('1. Compact global note /v/markdown/a.md.')
+    expect(text).toContain('1. Compact global note /v/a.md.')
     expect(text).toContain('OVER BUDGET: 1800 of 1500 tokens used')
-    expect(text).toContain('- /v/markdown/a.md [shared] (never-read, global-over-budget; never read)')
+    expect(text).toContain('- /v/a.md [shared] (never-read, global-over-budget; never read)')
     expect(text).toContain('omitted here')
   })
 

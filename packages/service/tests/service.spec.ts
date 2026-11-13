@@ -215,7 +215,7 @@ function stubClient(options: { existingDim?: number | null } = {}) {
         ...ok,
         results: [{
           chunk_id: 7,
-          source_path: 'markdown/topic.md',
+          source_path: 'topic.md',
           section_header: 'Topic',
           chunk_text: 'the fact, stated plainly',
           scope: 'global',
@@ -903,13 +903,13 @@ old body
       seedDirs: ['/ro', '/shared'],
     })
     await h.service.ensureMemoryAccess()
-    await expect(h.service.applyWrite('/ro/markdown/x.md', meta, 'b')).rejects.toThrow(/read-only vault/)
+    await expect(h.service.applyWrite('/ro/x.md', meta, 'b')).rejects.toThrow(/read-only vault/)
     await expect(h.service.applyWrite('/shared/.obsidian-mem/x.md', meta, 'b'))
       .rejects.toThrow(/outside the indexed note tree/)
     await expect(h.service.applyWrite('/shared/.INTENTS.md', meta, 'b'))
       .rejects.toThrow(/reserved non-indexed/)
     await expect(h.service.write({
-      path: '/shared/markdown/x.md', meta: { ...meta, index_description: '' }, body: 'b',
+      path: '/shared/x.md', meta: { ...meta, index_description: '' }, body: 'b',
     })).rejects.toThrow(/index_description/)
   })
 

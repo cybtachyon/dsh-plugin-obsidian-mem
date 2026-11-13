@@ -32,7 +32,7 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
       archivedCount: 0,
       totalBytes: 4096,
       vaultUsage: [{ vault: '/v', notes: 2, bytes: 4096 }],
-      oversizedNotes: ['/v/markdown/big.md'],
+      oversizedNotes: ['/v/big.md'],
       hugeNotReadNotes: [],
       malformedNotes: [],
       indexer: { indexed: 5, pending: 0, errors: 0, llmErrors: 0 },
@@ -42,8 +42,8 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
       dreamingSchedules: 0,
     },
     rows: [
-      { path: '/v/markdown/a.md', sizeBytes: 2048, mtimeMs: 1700000000000, readCount: 3, lastReadAt: '2026-11-01', archived: false, indexed: true, flaggedNotRead: false, oversized: false },
-      { path: '/v/markdown/unread.md', sizeBytes: 512, mtimeMs: 1700000000000, readCount: 0, lastReadAt: '', archived: false, indexed: false, flaggedNotRead: false, oversized: false },
+      { path: '/v/a.md', sizeBytes: 2048, mtimeMs: 1700000000000, readCount: 3, lastReadAt: '2026-11-01', archived: false, indexed: true, flaggedNotRead: false, oversized: false },
+      { path: '/v/unread.md', sizeBytes: 512, mtimeMs: 1700000000000, readCount: 0, lastReadAt: '', archived: false, indexed: false, flaggedNotRead: false, oversized: false },
     ],
     totalRows: 2,
     budget: {
@@ -52,8 +52,8 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
       measured: true,
       overBudget: true,
       globalNoteCount: 2,
-      globalNotePaths: ['/v/markdown/unread.md', '/v/markdown/a.md'],
-      compactableGlobalNotePaths: ['/v/markdown/unread.md', '/v/markdown/a.md'],
+      globalNotePaths: ['/v/unread.md', '/v/a.md'],
+      compactableGlobalNotePaths: ['/v/unread.md', '/v/a.md'],
     },
     ...over,
   }
@@ -139,7 +139,7 @@ describe('memory_audit render', () => {
     const issueLines = lines.filter((line) => line.startsWith('- [ISSUE]') || line.startsWith('- [INFO]'))
     expect(issueLines[0]).toContain('vault.writable')
     expect(text).toContain('OVER BUDGET: run memory_dream')
-    expect(text.indexOf('/v/markdown/unread.md')).toBeLessThan(text.indexOf('/v/markdown/a.md'))
+    expect(text.indexOf('/v/unread.md')).toBeLessThan(text.indexOf('/v/a.md'))
     expect(text).toContain('never read')
     expect(text).toContain('not indexed')
   })

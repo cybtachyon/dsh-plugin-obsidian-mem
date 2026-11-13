@@ -3,7 +3,7 @@
  * against REAL dependencies. Nothing here is faked:
  *
  * - transformers.js loads `Xenova/multilingual-e5-small` (q8) from the
- *   warm cache at `$HOME/.dsh/obsidian-mem/models` (see README "Model
+ *   warm cache at `$HOME/.dsh/obsidian-mem-db/models` (see README "Model
  *   download and offline use"); asserts dim 384, ‖v‖≈1 (the
  *   normalize-vs-`normalization` trap, findings §6.1), the e5
  *   query/passage prefix alignment, and related>unrelated ranking for
@@ -25,7 +25,7 @@
  * @module dsh-plugin-obsidian-mem/service/tests/integration/live-pipeline
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir as osHomedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -34,6 +34,7 @@ import type { MilvusClient } from '@zilliz/milvus2-sdk-node'
 
 import {
   DEFAULT_MODEL_ID,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   MILVUS_COLLECTION,
   VECTOR_DIM_DEFAULT,
   chunkMarkdown,
@@ -41,7 +42,7 @@ import {
   parseNote,
 } from '../../../core/lib/index.js'
 import { createEmbedder } from '../../src/embedder.ts'
-import { IndexerManager } from '../../src/indexer.ts'
+import { IndexerManager, indexStatePath } from '../../src/indexer.ts'
 import type { IndexWriter } from '../../src/indexer.ts'
 import { MilvusLauncher, MILVUS_LITE_VERSION } from '../../src/milvus/launcher.ts'
 import { dropCollection, ensureCollection, rebuildCollection } from '../../src/milvus/schema.ts'
@@ -137,12 +138,13 @@ describeLive('live embedder: multilingual-e5-small through the real pipeline (RU
 })
 
 // ---------------------------------------------------------------------------
-// Full pipeline fixtures. Real files on disk: six notes (two archived), a
-// reserved .INTENTS.md at the vault root, reserved/dotfile/non-md decoys
-// inside markdown/, frontmatter variety incl. a keywords: override.
+// Full pipeline fixtures. Real files on disk: six notes (two archived) at
+// the vault root (the root IS the note tree), a reserved .INTENTS.md, and
+// reserved/dotfile/non-md decoys at the root too, frontmatter variety incl.
+// a keywords: override.
 
 const ACTIVE_NOTES = {
-  'markdown/memory-leak.md': [
+  'memory-leak.md': [
     '---',
     'index_title: Memory leak in the daemon',
     'index_description: How the long-running daemon leaked file handles and how it was fixed.',
@@ -163,7 +165,7 @@ const ACTIVE_NOTES = {
     'exporter stream in a finally block released them deterministically.',
     '',
   ].join('\n'),
-  'markdown/milvus-keepalive.md': [
+  'milvus-keepalive.md': [
     '---',
     'index_title: milvus-lite keepalive GOAWAY',
     'index_description: gRPC keepalive pings make milvus-lite answer GOAWAY ENHANCE_YOUR_CALM.',
@@ -183,7 +185,7 @@ const ACTIVE_NOTES = {
     '```',
     '',
   ].join('\n'),
-  'markdown/petrichor-garden.md': [
+  'petrichor-garden.md': [
     '---',
     'index_title: Petrichor in the garden log',
     'index_description: What petrichor is and which soil notes mention it.',
@@ -200,7 +202,7 @@ const ACTIVE_NOTES = {
     'of the giants from Greek myth.',
     '',
   ].join('\n'),
-  'markdown/http-cache.md': [
+  'http-cache.md': [
     '---',
     'index_title: HTTP cache headers',
     'index_description: s-maxage and stale-while-revalidate usage for the CDN edge.',
@@ -221,7 +223,7 @@ const ACTIVE_NOTES = {
 } as const
 
 const ARCHIVED_NOTES = {
-  'markdown/deprecated-login.md': [
+  'deprecated-login.md': [
     '---',
     'index_title: Deprecated login flow',
     'index_description: The retired password-only login; kept for audit only.',
@@ -236,7 +238,7 @@ const ARCHIVED_NOTES = {
     'The legacy flow accepted password-only logins before the 2FA rollout.',
     '',
   ].join('\n'),
-  'markdown/old-billing.md': [
+  'old-billing.md': [
     '---',
     'index_title: Old billing notes',
     'index_description: Retired billing notes; centavo rounding details.',
@@ -258,18 +260,18 @@ const ARCHIVED_NOTES = {
 const NEVER_INDEXED = {
   // vault-root-joined keys below
   '.INTENTS.md': '# Intents\n\nintentmarker sections live here for the recall router.\n',
-  'markdown/billing_history.md': '# Billing history\n\nobol-era invoices were archived.\n',
-  'markdown/.draft-note.md': '# Draft\n\nobol in a dotfile too.\n',
-  'markdown/notes.txt': 'obol inside a non-markdown file.\n',
+  'billing_history.md': '# Billing history\n\nobol-era invoices were archived.\n',
+  '.draft-note.md': '# Draft\n\nobol in a dotfile too.\n',
+  'notes.txt': 'obol inside a non-markdown file.\n',
 } as const
 
 function seededNotes(): Record<string, string> {
   return {
     ...ACTIVE_NOTES,
     ...ARCHIVED_NOTES,
-    'markdown/billing_history.md': NEVER_INDEXED['markdown/billing_history.md'],
-    'markdown/.draft-note.md': NEVER_INDEXED['markdown/.draft-note.md'],
-    'markdown/notes.txt': NEVER_INDEXED['markdown/notes.txt'],
+    'billing_history.md': NEVER_INDEXED['billing_history.md'],
+    '.draft-note.md': NEVER_INDEXED['.draft-note.md'],
+    'notes.txt': NEVER_INDEXED['notes.txt'],
   }
 }
 
@@ -325,7 +327,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     vaultDir = mkdtempSync(join(tmpdir(), 'mem-live-vault-'))
     dbDir = mkdtempSync(join(tmpdir(), 'mem-live-db-'))
 
-    mkdirSync(join(vaultDir, 'markdown'), { recursive: true })
+    // The vault root IS the note tree: notes and decoys land at the root.
     for (const [rel, text] of Object.entries(seededNotes())) {
       writeFileSync(join(vaultDir, rel), text, 'utf8')
     }
@@ -403,7 +405,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
 
     // The keyword-only probe: 'petrichor' exists in exactly one live note.
     const hits = await service!.search({ query: 'petrichor', topK: 5 })
-    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/petrichor-garden.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('petrichor-garden.md')
     expect(hits[0]!.source_path.startsWith(`${vaultDir}/`)).toBe(true)
 
     // Archived-only tokens: hybrid search always answers nearest rows,
@@ -419,12 +421,12 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     // Reserved/dotfile/non-markdown decoys never enter the index.
     for (const token of ['obol', 'intentmarker']) {
       const decoyHits = await service!.search({ query: token, topK: 10 })
-      expect(decoyHits.map((hit) => relOf(hit.source_path)), token).not.toContain('markdown/billing_history.md')
-      expect(decoyHits.map((hit) => relOf(hit.source_path)), token).not.toContain('markdown/.draft-note.md')
+      expect(decoyHits.map((hit) => relOf(hit.source_path)), token).not.toContain('billing_history.md')
+      expect(decoyHits.map((hit) => relOf(hit.source_path)), token).not.toContain('.draft-note.md')
     }
 
     const state = JSON.parse(
-      readFileSync(join(vaultDir, 'metadata', 'obsidian-mem-state.json'), 'utf8'),
+      readFileSync(indexStatePath(vaultDir), 'utf8'),
     ) as { files: Record<string, { chunkIds: number[] }>; modelId: string; vectorDim: number }
     // Every candidate note has a state entry (archived ones with empty
     // chunkIds, the diff bookkeeping), while reserved/dotfile/non-md
@@ -445,7 +447,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
       topK: 5,
     })
 
-    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/memory-leak.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('memory-leak.md')
   }, 180_000)
 
   it('hybrid search: paraphrase query ranks the keepalive note first (mixed routes)', async () => {
@@ -454,7 +456,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
       topK: 5,
     })
 
-    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/milvus-keepalive.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('milvus-keepalive.md')
   }, 180_000)
 
   it('scalar filters: ARRAY trigger extension, wake keywords, and scope partition routing', async () => {
@@ -462,7 +464,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     const extHits = await service!.search({ query: 'keepalive ping channel', ext: '.ts', topK: 10 })
     expect(extHits.length).toBeGreaterThan(0)
     expect(new Set(extHits.map((hit) => relOf(hit.source_path)))).toEqual(
-      new Set(['markdown/milvus-keepalive.md']),
+      new Set(['milvus-keepalive.md']),
     )
 
     // ARRAY_CONTAINS_ANY on wake_keywords: the keywords: frontmatter
@@ -474,7 +476,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     })
     expect(keywordHits.length).toBeGreaterThan(0)
     expect(new Set(keywordHits.map((hit) => relOf(hit.source_path)))).toEqual(
-      new Set(['markdown/http-cache.md']),
+      new Set(['http-cache.md']),
     )
 
     // Scope partition: domain scope answers with the leak note alone.
@@ -482,7 +484,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     expect(domainHits.length).toBeGreaterThan(0)
     for (const hit of domainHits) {
       expect(hit.scope).toBe('domain')
-      expect(relOf(hit.source_path)).toBe('markdown/memory-leak.md')
+      expect(relOf(hit.source_path)).toBe('memory-leak.md')
     }
 
     // The result rows carry the registry-resolved vault mode.
@@ -490,31 +492,31 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
   }, 180_000)
 
   it('write-through: applyWrite makes fresh text searchable without a manual reindex', async () => {
-    const notePath = join(vaultDir, 'markdown', 'petrichor-garden.md')
+    const notePath = join(vaultDir, 'petrichor-garden.md')
     const note = parseNote(readFileSync(notePath, 'utf8'))
     const updatedBody = `${note.body}\n## Reblooming\n\nThe greenhouse now runs a zephyrline misting loop.\n`
 
     const result = await service!.applyWrite(notePath, note.meta, updatedBody)
     expect(result.created).toBe(false)
-    expect(result.relPath).toBe(join('markdown', 'petrichor-garden.md'))
+    expect(result.relPath).toBe('petrichor-garden.md')
 
     // Strong consistency + the write-through hook: the fresh token must
     // answer without waiting on the watcher or the stat sweep.
     const hits = await service!.search({ query: 'zephyrline misting loop', topK: 5 })
-    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/petrichor-garden.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('petrichor-garden.md')
     expect(hits[0]!.source_path.startsWith(`${vaultDir}/`)).toBe(true)
     expect(hits[0]?.chunk_text).toContain('zephyrline')
 
     const state = JSON.parse(
-      readFileSync(join(vaultDir, 'metadata', 'obsidian-mem-state.json'), 'utf8'),
+      readFileSync(indexStatePath(vaultDir), 'utf8'),
     ) as { files: Record<string, { chunkIds: number[] }> }
-    expect(state.files['markdown/petrichor-garden.md']!.chunkIds.length).toBeGreaterThan(1)
+    expect(state.files['petrichor-garden.md']!.chunkIds.length).toBeGreaterThan(1)
   }, 180_000)
 
   it('delete-archived: archiving a note purges its rows and the count drops', async () => {
     const before = await rowCount()
-    const cacheChunks = chunkCount('markdown/http-cache.md', ACTIVE_NOTES['markdown/http-cache.md'])
-    const notePath = join(vaultDir, 'markdown', 'http-cache.md')
+    const cacheChunks = chunkCount('http-cache.md', ACTIVE_NOTES['http-cache.md'])
+    const notePath = join(vaultDir, 'http-cache.md')
     const note = parseNote(readFileSync(notePath, 'utf8'))
 
     await service!.applyWrite(notePath, { ...note.meta, archive: true }, note.body)
@@ -524,7 +526,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     }, { timeout: 60_000, interval: 500 })
 
     const hits = await service!.search({ query: 's-maxage stale-while-revalidate', topK: 10 })
-    expect(hits.map((hit) => relOf(hit.source_path))).not.toContain('markdown/http-cache.md')
+    expect(hits.map((hit) => relOf(hit.source_path))).not.toContain('http-cache.md')
   }, 180_000)
 
   it('dim drift: ensureCollection reports {needsRebuild} against the live 384-d collection; rebuild + reindex restores', async () => {
@@ -540,9 +542,9 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     expect(rebuilt).toEqual({ created: true, needsRebuild: false, storedDim: VECTOR_DIM_DEFAULT })
     expect(await rowCount()).toBe(0)
 
-    rmSync(join(vaultDir, 'metadata', 'obsidian-mem-state.json'), { force: true })
+    rmSync(indexStatePath(vaultDir), { force: true })
     const fresh = new IndexerManager({
-      vaults: [{ path: vaultDir, mode: 'shared' }],
+      vaults: [{ path: vaultDir, mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT }],
       embedder: liveEmbedder,
       writer: client as unknown as IndexWriter,
       watchFactory: () => null,
@@ -553,9 +555,9 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     // The two archived notes stay out of the restored count; the
     // write-through edit to the garden note is part of the baseline.
     const expectedAfterArchive = expectedChunks
-      + chunkCount('markdown/petrichor-garden.md', readFileSync(join(vaultDir, 'markdown', 'petrichor-garden.md'), 'utf8'))
-      - chunkCount('markdown/petrichor-garden.md', ACTIVE_NOTES['markdown/petrichor-garden.md'])
-      - chunkCount('markdown/http-cache.md', ACTIVE_NOTES['markdown/http-cache.md'])
+      + chunkCount('petrichor-garden.md', readFileSync(join(vaultDir, 'petrichor-garden.md'), 'utf8'))
+      - chunkCount('petrichor-garden.md', ACTIVE_NOTES['petrichor-garden.md'])
+      - chunkCount('http-cache.md', ACTIVE_NOTES['http-cache.md'])
     expect(await rowCount()).toBe(expectedAfterArchive)
     // The service's own (still-live) manager observed the vault work it
     // did before the rebuild: its counters stay the progress source the

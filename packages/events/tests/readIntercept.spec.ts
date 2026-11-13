@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { VaultEntry } from '../../service/lib/index.js'
+import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import {
   dirSignalsOf,
@@ -46,7 +47,12 @@ function readHarness(options: HarnessOptions = {}) {
   cleanups.push(tmp.cleanup)
   const memory = fakeMemory({
     dbPath: tmp.dir,
-    vaults: [{ path: VAULT_PATH, mode: 'readonly', source: 'settings' }] satisfies VaultEntry[],
+    vaults: [{
+      path: VAULT_PATH,
+      mode: 'read-only',
+      globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+      source: 'settings',
+    }] satisfies VaultEntry[],
     notice: 'Obsidian Mem: using the default memory vault at /home/test/.dsh/obsidian-mem',
     ...(options.exactResults === undefined ? {} : { exactResults: options.exactResults }),
     ...(options.exactError === undefined ? {} : { exactError: options.exactError }),
@@ -93,14 +99,14 @@ async function settled(): Promise<void> {
 
 const sectionA = memoryResult({
   chunk_id: 1,
-  source_path: 'markdown/react.md',
+  source_path: 'react.md',
   chunk_text: 'components stay pure here',
   updated_at: 1_700_000_000_555,
 })
 
 const sectionB = memoryResult({
   chunk_id: 2,
-  source_path: 'markdown/vite.md',
+  source_path: 'vite.md',
   chunk_text: 'builds go through vite here',
   updated_at: 1_700_000_000_999,
 })
@@ -125,7 +131,7 @@ describe('tools/result filter matrix', () => {
 
   it('never fires for files inside a registered vault (the loop guard)', async () => {
     const { agent, memory, read } = readHarness({ exactResults: [sectionA] })
-    read({ arguments: { file_path: `${VAULT_PATH}/markdown/react.md` } })
+    read({ arguments: { file_path: `${VAULT_PATH}/react.md` } })
     await settled()
     expect(memory.exactRequests).toHaveLength(0)
     expect(agent.injected).toHaveLength(0)
@@ -230,7 +236,7 @@ describe('request wiring and injected envelope', () => {
     expect(blocks).toHaveLength(2)
     expect(blocks[0]!.text).toContain('your read of /work/project/src/App.tsx')
     expect(blocks[1]!.text).toBe(
-      '<recalled_memory source="markdown/react.md">\ncomponents stay pure here\n</recalled_memory>',
+      '<recalled_memory source="react.md">\ncomponents stay pure here\n</recalled_memory>',
     )
     expect(registry.injectedSources('agent-1').has(sourceKeyFor(sectionA))).toBe(true)
     expect(registry.readDirCovered('agent-1', '/work/project/src')).toBe(true)

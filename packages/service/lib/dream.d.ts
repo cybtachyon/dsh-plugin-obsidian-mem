@@ -9,7 +9,10 @@
  * `AgentOptions` (model precedence: per-run override, then config
  * `dreaming.model`, then the host default model; the provider comes only
  * from the host default, so a model override never changes the provider
- * route), followup then whenIdle then dispose, and a deterministic
+ * route), followup then whenIdle then a failed-turn scan of the session's
+ * own records (agent-loop contains turn errors and whenIdle resolves
+ * anyway, so a `turn/end` with `reason.kind === 'error'` throws before the
+ * stamp and the post-pass; TASK-003), then dispose, and a deterministic
  * post-pass that re-scores relevancy purely from frontmatter read
  * evidence, THEN stamps lastDreamAt (order load-bearing).
  *
@@ -140,6 +143,19 @@ export interface DreamAgentHandle {
     agent: {
         followup(message: unknown): unknown;
         whenIdle(): Promise<void>;
+        /**
+         * Structural slice of the live agent's `readonly session: Session`
+         * (`@deepseek-ai/dsh-agent` runtime-types): `ownEvents()` returns this
+         * session's records. Declared optional because the runtime may not
+         * carry it; a missing slice logs a warning, never a silent pass
+         * (dream-launch TASK-003).
+         */
+        session?: {
+            ownEvents(): readonly {
+                type: string;
+                data?: unknown;
+            }[];
+        };
     };
     dispose(): Promise<void> | void;
 }
@@ -238,6 +254,7 @@ export declare class DreamOrchestrator {
     private readRelevancy;
     private writeRelevancy;
     private seedDreamsDiary;
+    private assertNoFailedTurn;
     private drive;
 }
 /** RenderPromptTunables substitutes the {{PLACEHOLDER}}s from live config. */

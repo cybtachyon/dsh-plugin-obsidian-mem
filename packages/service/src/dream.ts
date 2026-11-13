@@ -9,7 +9,10 @@
  * `AgentOptions` (model precedence: per-run override, then config
  * `dreaming.model`, then the host default model; the provider comes only
  * from the host default, so a model override never changes the provider
- * route), followup then whenIdle then dispose, and a deterministic
+ * route), followup then whenIdle then a failed-turn scan of the session's
+ * own records (agent-loop contains turn errors and whenIdle resolves
+ * anyway, so a `turn/end` with `reason.kind === 'error'` throws before the
+ * stamp and the post-pass; TASK-003), then dispose, and a deterministic
  * post-pass that re-scores relevancy purely from frontmatter read
  * evidence, THEN stamps lastDreamAt (order load-bearing).
  *
@@ -208,6 +211,16 @@ export interface DreamAgentHandle {
   agent: {
     followup(message: unknown): unknown
     whenIdle(): Promise<void>
+    /**
+     * Structural slice of the live agent's `readonly session: Session`
+     * (`@deepseek-ai/dsh-agent` runtime-types): `ownEvents()` returns this
+     * session's records. Declared optional because the runtime may not
+     * carry it; a missing slice logs a warning, never a silent pass
+     * (dream-launch TASK-003).
+     */
+    session?: {
+      ownEvents(): readonly { type: string, data?: unknown }[]
+    }
   }
   dispose(): Promise<void> | void
 }
@@ -343,6 +356,34 @@ function cosine(a: readonly number[], b: readonly number[]): number {
 /** FirstNonEmpty returns the first non-empty string argument, else undefined. */
 function firstNonEmpty(...values: readonly (string | undefined)[]): string | undefined {
   return values.find((value) => value !== undefined && value !== '')
+}
+
+/** AsRecord narrows unknown session-event payload to a field bag. */
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined
+}
+
+/**
+ * FailedTurnMessage returns the first `turn/end` record whose
+ * `data.reason.kind` is 'error' as its `data.reason.error.message`
+ * (empty or absent message reads as 'unknown error'); undefined when no
+ * turn failed. The `turn/end` reason is a closed union whose error variant
+ * always carries `{ message, code }`; the session slice here is
+ * structural, so every hop is checked.
+ */
+function failedTurnMessage(events: readonly { type: string, data?: unknown }[]): string | undefined {
+  for (const event of events) {
+    if (event.type !== 'turn/end') {
+      continue
+    }
+    const reason = asRecord(asRecord(event.data)?.reason)
+    if (reason?.kind !== 'error') {
+      continue
+    }
+    const message = asRecord(reason.error)?.message
+    return typeof message === 'string' && message !== '' ? message : 'unknown error'
+  }
+  return undefined
 }
 
 /**
@@ -628,6 +669,26 @@ export class DreamOrchestrator {
     ].join('\n'))
   }
 
+  // AssertNoFailedTurn fails the run on the session log's own evidence:
+  // any `turn/end` record whose `data.reason.kind` is 'error' throws with
+  // its error message. agent-loop contains turn errors inside kick() and
+  // whenIdle() still resolves, so without this scan a dead agent records
+  // as success (dream-launch TASK-003). When the structural session slice
+  // is absent at runtime the check is impossible: log a warning naming the
+  // missing slice rather than silently passing.
+  private assertNoFailedTurn(id: string, agent: DreamAgentHandle['agent']): void {
+    const session = agent.session
+    if (session === undefined || typeof session.ownEvents !== 'function') {
+      const missing = session === undefined ? 'agent.session' : 'agent.session.ownEvents'
+      this.deps.log(`dream ${id}: failed-turn check skipped, ${missing} is missing on the agent`)
+      return
+    }
+    const message = failedTurnMessage(session.ownEvents())
+    if (message !== undefined) {
+      throw new Error(`dream agent turn failed: ${message}`)
+    }
+  }
+
   private async drive(id: string, model: string | undefined): Promise<DreamRunSummary> {
     const startedAt = Date.now()
     const finish = (
@@ -674,6 +735,10 @@ export class DreamOrchestrator {
       try {
         handle.agent.followup({ content: [{ type: 'text', text: launchText }], source: { kind: 'user' } })
         await handle.agent.whenIdle()
+        // Inside the try, before the seed/stamp/post-pass: a failed turn
+        // throws through the existing catch so nothing is recorded as
+        // success (TASK-003).
+        this.assertNoFailedTurn(id, handle.agent)
       } finally {
         await handle.dispose()
       }

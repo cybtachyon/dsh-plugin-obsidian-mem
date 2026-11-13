@@ -5,10 +5,13 @@
  * await, the ext launch sequence (session dream-<uuid> with resolved
  * provider/model AgentOptions, followup, whenIdle, dispose), the
  * provider/model precedence and blocked resolution (dream-launch
- * TASK-001), and the load-bearing scoring order (relevancy scored against
- * the PREVIOUS stamp, THEN lastDreamAt written). Everything external is a
- * fake: ServiceFs in memory, inventories as data, a fake agents gateway,
- * a fake host default-model route, faked vectors.
+ * TASK-001), the host agentDefaultModel route (TASK-002), failed-turn
+ * detection from the session log (TASK-003), and the load-bearing scoring
+ * order (relevancy scored against the PREVIOUS stamp, THEN lastDreamAt
+ * written). Everything external is a fake: ServiceFs in memory,
+ * inventories as data, a fake agents gateway (whose agent double answers
+ * ownEvents with a scripted transcript), a fake host default-model route,
+ * faked vectors.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -16,7 +19,7 @@ import { describe, expect, it } from 'vitest'
 import { GLOBAL_MEMORY_FILE_DEFAULT, NOTE_TIMELINE_BYTES } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import { DEFAULT_DREAM_PROMPT, DreamBlockedError, DreamBusyError, DreamOrchestrator, renderPromptTunables } from '../src/dream.ts'
-import type { DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
+import type { DreamAgentHandle, DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
 import type { AuditedNote, VaultInventory } from '../src/audit.ts'
 import type { ResolvedObsidianMemConfig } from '../src/config.ts'
 import type { ServiceFs } from '../src/service.ts'
@@ -169,7 +172,31 @@ interface GatewayRecorder {
   disposed: number
 }
 
-function fakeGateway(options: { whenIdle?: () => Promise<void> } = {}): GatewayRecorder {
+type SessionRecord = { type: string; data?: unknown }
+
+// A real clean dream turn closes with reason kind 'completed' (verified
+// against ~/.dsh/sessions transcripts); the double answers ownEvents with
+// this unless a test scripts its own transcript.
+const CLEAN_TRANSCRIPT: SessionRecord[] = [
+  { type: 'turn/start', data: { turn: 1 } },
+  { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+]
+
+function turnEndRecord(reason: Record<string, unknown>): SessionRecord {
+  return { type: 'turn/end', data: { turn: 1, reason } }
+}
+
+function failedTurnError(message: string): SessionRecord {
+  return turnEndRecord({ kind: 'error', error: { message, code: 'UNKNOWN' } })
+}
+
+function fakeGateway(options: {
+  whenIdle?: () => Promise<void>
+  /** Transcript the agent double's ownEvents answers with; defaults to a clean one. */
+  sessionEvents?: SessionRecord[]
+  /** Replaces the whole session slice; null omits it (TASK-003 defensive path). */
+  session?: DreamAgentHandle['agent']['session'] | null
+} = {}): GatewayRecorder {
   const recorder: GatewayRecorder = {
     created: [],
     followups: [],
@@ -181,18 +208,22 @@ function fakeGateway(options: { whenIdle?: () => Promise<void> } = {}): GatewayR
     async create(createOptions) {
       recorder.created.push(createOptions)
       recorder.calls.push('create')
-      return {
-        agent: {
-          followup: (message: unknown) => {
-            recorder.calls.push('followup')
-            recorder.followups.push(message)
-            return undefined
-          },
-          whenIdle: async () => {
-            recorder.calls.push('whenIdle')
-            await (options.whenIdle?.() ?? Promise.resolve())
-          },
+      const agent: DreamAgentHandle['agent'] = {
+        followup: (message: unknown) => {
+          recorder.calls.push('followup')
+          recorder.followups.push(message)
+          return undefined
         },
+        whenIdle: async () => {
+          recorder.calls.push('whenIdle')
+          await (options.whenIdle?.() ?? Promise.resolve())
+        },
+      }
+      if (options.session !== null) {
+        agent.session = options.session ?? { ownEvents: () => options.sessionEvents ?? CLEAN_TRANSCRIPT }
+      }
+      return {
+        agent,
         dispose: async () => {
           recorder.calls.push('dispose')
           recorder.disposed += 1
@@ -581,5 +612,67 @@ describe('run: single flight and the launch sequence', () => {
     const before = fs.mutations.length
     await new DreamOrchestrator(deps({ fs, inventories, gateway: fakeGateway().gateway })).startRun().done
     expect(fs.mutations.slice(before).filter((entry) => entry.includes('DREAMS.md'))).toEqual([])
+  })
+})
+
+describe('run: failed-turn detection from the session log (TASK-003)', () => {
+  // The exact failure that killed every dream session since 2026-11-08:
+  // agent-loop contains the turn error, whenIdle still resolves, and only
+  // the transcript shows the dead agent.
+  it('rejects the run on a turn/end error record, stamping nothing and running no post-pass', async () => {
+    const fs = stampedFs()
+    const inventories = [inventory(SHARED, 'shared', [
+      note(SHARED, 'touched', { meta: { read_count: 2, last_read_at: '2026-11-01' } }),
+    ])]
+    const message = 'prompt variable "{{model}}" has no value for this assembly (section "deployment:persona-prefix")'
+    const recorder = fakeGateway({ sessionEvents: [failedTurnError(message)] })
+    const orchestrator = new DreamOrchestrator(deps({ fs, inventories, gateway: recorder.gateway }))
+    const handle = orchestrator.startRun()
+    await expect(handle.done).rejects.toThrow(`dream agent turn failed: ${message}`)
+    expect(orchestrator.lastSummary?.ok).toBe(false)
+    expect(orchestrator.lastSummary?.error).toContain(message)
+    expect(orchestrator.busy).toBe(false)
+    // The scan ran before dispose, and dispose still ran.
+    expect(recorder.calls).toEqual(['create', 'followup', 'whenIdle', 'dispose'])
+    // Failed run: previous stamp untouched, no relevancy sidecar, no diary seed.
+    expect(orchestrator.lastDreamAt()).toBe(Date.parse(LAST_DREAM_ISO))
+    expect(fs.files.has(`${DB}/state/relevancy.json`)).toBe(false)
+    expect(fs.mutations.some((entry) => entry.includes('DREAMS.md'))).toBe(false)
+  })
+
+  it('falls back to "unknown error" when the error record carries no message', async () => {
+    const recorder = fakeGateway({ sessionEvents: [turnEndRecord({ kind: 'error', error: {} })] })
+    const orchestrator = new DreamOrchestrator(deps({ gateway: recorder.gateway }))
+    await expect(orchestrator.startRun().done).rejects.toThrow('dream agent turn failed: unknown error')
+    expect(orchestrator.lastSummary?.ok).toBe(false)
+  })
+
+  it('runs the post-pass and stamps on a clean transcript (turn/end reason kind "completed")', async () => {
+    const fs = stampedFs()
+    const inventories = [inventory(SHARED, 'shared', [
+      note(SHARED, 'touched', { meta: { read_count: 2, last_read_at: '2026-11-01' } }),
+    ])]
+    const orchestrator = new DreamOrchestrator(deps({ fs, inventories, gateway: fakeGateway().gateway }))
+    const summary = await orchestrator.startRun().done
+    expect(summary.ok).toBe(true)
+    expect(summary.bumped).toBe(1)
+    const state = JSON.parse(fs.files.get(`${DB}/state/state.json`) ?? '{}') as { lastDreamAt: number }
+    expect(state.lastDreamAt).toBeGreaterThan(Date.parse(LAST_DREAM_ISO))
+    expect(fs.files.has(`${DB}/state/relevancy.json`)).toBe(true)
+  })
+
+  it('completes with a warning naming the slice when session or ownEvents is absent', async () => {
+    const noSession = fakeGateway({ session: null })
+    const noLogs: string[] = []
+    const noSessionRun = await new DreamOrchestrator(deps({ gateway: noSession.gateway, logs: noLogs })).startRun().done
+    expect(noSessionRun.ok).toBe(true)
+    expect(noLogs.some((entry) => entry.includes('failed-turn check skipped') && entry.includes('agent.session'))).toBe(true)
+
+    // A session object that lacks ownEvents is the second runtime lie.
+    const hollowSession = fakeGateway({ session: { ownEvents: undefined } as never })
+    const hollowLogs: string[] = []
+    const hollowRun = await new DreamOrchestrator(deps({ gateway: hollowSession.gateway, logs: hollowLogs })).startRun().done
+    expect(hollowRun.ok).toBe(true)
+    expect(hollowLogs.some((entry) => entry.includes('failed-turn check skipped') && entry.includes('agent.session.ownEvents'))).toBe(true)
   })
 })

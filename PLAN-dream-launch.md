@@ -54,7 +54,7 @@ surfaces the failure in the card.
 
 ### Phase B: honest run outcomes
 
-- [ ] [TASK-003-failed-turn-detection](docs/PLAN-dream-launch-TASK-003-failed-turn-detection.md)
+- [x] [TASK-003-failed-turn-detection](docs/PLAN-dream-launch-TASK-003-failed-turn-detection.md)
 - [ ] [TASK-004-card-last-run-error](docs/PLAN-dream-launch-TASK-004-card-last-run-error.md)
 
 ### Phase C: consolidation

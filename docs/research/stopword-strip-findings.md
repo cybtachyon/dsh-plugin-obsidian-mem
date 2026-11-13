@@ -4,7 +4,9 @@ Stack under test: the LIVE production collection `obsidian_mem`
 (`milvus_lite-3.2.2`, 206 rows at run time 2026-11-13; `dense_vector`
 FloatVector dim 384 HNSW/COSINE, `sparse` SparseFloatVector filled by the
 `bm25` Function from `chunk_text` through the default analyzer, no jieba).
-Dispatch shape: `split-rrf` at the production knobs — dense COSINE radius
+Dispatch shape: `split-rrf` at the then-production knobs (TASK-006 later
+raised the sparse floor; the constant's note and radius-tuning-findings
+carry the current value) — dense COSINE radius
 0.78 range_filter 1.0 ef 64, client-side BM25 floor `-score >= 2.5`, client
 RRF(60), topK 6, oversample 2, no fused floor (`--min-score` unset). The A/B
 lever is the single `--keep-stopwords` flag
@@ -13,7 +15,10 @@ text on the BM25 route, ON sends `sparseQueryText(query)` (the shipped
 `packages/service/src/search.ts` strip, eng 108 + zho 78, Han split per
 codepoint). Embeddings come from the production embedder
 (`Xenova/multilingual-e5-small`, q8, `query:` prefix), 17 embed calls per
-run. Runs were read-only per scripts/eval/README.md. Reproduce with:
+run. Runs were read-only per scripts/eval/README.md. Reproduce the pair
+with the knobs as shipped at run time (2026-11-13, before TASK-006 moved
+the sparse floor to 5.0; the pinned commands below are what regenerate
+these two byte-exact artifacts, not current-knob examples):
 
 ```
 node scripts/eval/recall-eval.mjs --mode split-rrf --keep-stopwords \
@@ -234,7 +239,8 @@ description-grammar-rules.md`, `stopword-3-1-5-api-shape-and-zh-list-
 limits.md`), verified by a read-only `chunk_text like` projection. One
 hand-written probe: `智能体的共享记忆` (phrased on the plugin's own Chinese
 README copy, which the first note documents). BM25 searches (limit 12,
-floorless, read-only; raw dump `/tmp/t005-zh-probe.json`, not committed):
+floorless, read-only; the raw `/tmp/t005-zh-probe.json` dump of that run
+was not committed):
 
 | search text | form | hits |
 | --- | --- | --- |
@@ -247,6 +253,20 @@ floorless, read-only; raw dump `/tmp/t005-zh-probe.json`, not committed):
 | `智能体` | whole Han run | 1 (chinese-copy, rel 0.63) |
 | `的共享记忆` | the run as the note stores it | 1 (chinese-copy, rel 0.92) |
 | `共享记忆` | substring of `的共享记忆`, not a stored token | 0 |
+
+The probe is committed and re-runnable as
+`docs/research/probes/zh-analyzer-probe.mjs` (TASK-008 watch item (a)):
+read-only RPCs only (getVersion, count, two `chunk_text like` LOCATE
+lookups, BM25 searches), pinned split forms as fixed strings plus a
+`shipped-strip-out` line computed through the lib-imported
+`sparseQueryText`, so it follows the shipped rule. Re-run 2026-11-13
+(207-row collection) confirms the mechanism unchanged; the hit SET has
+drifted exactly along the junk-hit class this section names: the
+`stopword-3-1-5` note re-indexed (new chunk ids) and one of its chunks
+quotes the split forms, so isolated-codepoint lookups (`记`, `忆`, `的`)
+hit it while `substr-共享记忆` still answers 0 and every whole-run search
+still hits both notes. Hit chunks are corpus-dependent between runs; the
+mechanism (maximal Han runs stored; substring != token) is not.
 
 Mechanism, settled: the default analyzer (enabled in `schema.ts`, no jieba)
 tokenizes Han as MAXIMAL RUNS of Han codepoints on both index and query

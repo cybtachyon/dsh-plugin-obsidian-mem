@@ -228,7 +228,7 @@ function stubClient(options: { existingDim?: number | null } = {}) {
           scope: 'global',
           vault: '/home/test/.dsh/obsidian-mem',
           updated_at: 1700000000000,
-          score: dense ? 0.91 : -3.0,
+          score: dense ? 0.91 : -6.0,
         }],
       }
     },

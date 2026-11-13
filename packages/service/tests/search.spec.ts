@@ -429,18 +429,18 @@ describe('client RRF fusion', () => {
 })
 
 describe('sparse BM25 client cutoff on -score', () => {
-  it('keeps a hit whose -score equals the 2.5 floor and drops one below it', async () => {
+  it('keeps a hit whose -score equals the 5.0 floor and drops one below it', async () => {
     const { client } = stubMilvus({
       denseResults: [],
       sparseResults: [
-        row({ [MILVUS_FIELDS.chunkId]: 1, score: -2.5 }),
-        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: -2.4999 }),
+        row({ [MILVUS_FIELDS.chunkId]: 1, score: -5.0 }),
+        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: -4.9999 }),
       ],
     })
 
     const results = await hybridSearch(deps(client), { query: 'x' })
 
-    // -(-2.5) == 2.5 survives; -(-2.4999) < 2.5 drops.
+    // -(-5.0) == 5.0 survives; -(-4.9999) < 5.0 drops.
     expect(results.map((result) => result.chunk_id)).toEqual([1])
     expect(results[0]!.score).toBe(1 / 61)
   })

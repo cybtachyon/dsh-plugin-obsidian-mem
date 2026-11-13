@@ -209,8 +209,18 @@ export declare const DENSE_RANGE_MAX = 1;
  * upper bound, not a floor. A hit survives when
  * `-score >= SPARSE_SEARCH_RADIUS`; raising it raises required
  * relevancy and has no ceiling.
+ *
+ * TASK-006 strip-on re-sweep (2026-11-13, docs/research/stopword-
+ * strip-findings.md §"Sparse floor re-sweep (TASK-006)"): the old 2.5
+ * was INERT on the post-strip page (trimmed 0 of 193 fetched-window
+ * candidates; the stop-word strip shifted BM25 mass −15.6%), so it
+ * enforced no gate. The sweep knee is 5.0: engaged (trims 19/193),
+ * forbidden rows 21 -> 19 (forbidden-rate 0.266 -> 0.250), P@k
+ * 0.241 -> 0.250, and label-granularity recall unchanged at 14/22
+ * with an identical missed-label set at every grid point. 5.5 trims
+ * further (23/193) with zero page movement, so 5.0 is the knee.
  */
-export declare const SPARSE_SEARCH_RADIUS = 2.5;
+export declare const SPARSE_SEARCH_RADIUS = 5;
 /**
  * FUSED_SCORE_FLOOR is the default FUSED-score floor hybridSearch applies
  * when the request carries no minScore (TASK-009 rule, TASK-014 reach,
@@ -231,6 +241,16 @@ export declare const SPARSE_SEARCH_RADIUS = 2.5;
  * labeled set, the offline floor sweep knee sits at 1/(k+2):
  * recall-of-labeled 0.625 -> 0.667 and forbidden rows 12 -> 16. One
  * step looser, 1/(k+3), adds zero recall and +8 forbidden rows.
+ *
+ * TASK-006 re-check on the strip-on page (2026-11-13, re-labeled
+ * 22-label set, docs/research/stopword-strip-findings.md §"Fused-floor
+ * re-check (TASK-006)"): value re-confirmed. Loosening to 1/(k+3)
+ * still adds zero recall and +6 forbidden rows; the only label a
+ * looser floor could recover sits at single-route BM25 rank 4 (fused
+ * 1/64), so no 1/(k+2)-adjacent value reaches it. Tightening to
+ * 1/(k+1) loses no label hit on today's pages (the extra row it cuts
+ * is a duplicate chunk of an already-recalled note), but it re-opens
+ * the single-route rank-2 floor-out the live-loop probe above caught.
  */
 export declare const FUSED_SCORE_FLOOR: number;
 /**

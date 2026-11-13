@@ -181,18 +181,24 @@ Header note: "Row order carries no load semantics — activation is service-avai
 **Service Definition + seam** (`packages/service/src/index.ts`):
 ```ts
 declare module '@deepseek-ai/cordis' { interface Context { engramoryExt: EngramoryExt } }  // :70-74
-export class EngramoryExt extends Service<Context> {
-  static [Symbol.from] = (ctx: Context) => new EngramoryExt(ctx)   // :101
-  static service = ENGRAMORY_EXT_SEAM                              // :102  ('engramoryExt', core/src/index.ts:26)
-  constructor(ctx: Context) { super(ctx); ... }                    // construction touches NO disk
-  [Service.init]() { ... }                                         // :232 — cordis lifecycle hook; the ONLY place ensureRepo() + fs.watch start
+export class EngramoryExt extends Service {                        // :102
+  static Config = MemoryExtConfig                                  // :104 — cordis validates the mounted row config, hands apply a complete value
+  constructor(ctx: Context, config: MemoryExtConfig = {}, hooks: ServiceHooks = {}) {
+    super(ctx, ENGRAMORY_EXT_SEAM)                                 // :125 — seam id from core ('engramoryExt', core/src/index.ts:26)
+    this.config = resolveConfig(config, os.homedir())              // construction touches NO disk (:126-150)
+  }
+  [Service.init](): Promise<void> { return this.enable() }         // :158 — cordis lifecycle hook; the ONLY place ensureRepo() + fs.watch start
+  enable(): Promise<void> { this.enablePromise ??= this.startAutoCommit(); return … }  // :171-174, idempotent; teardown registers as a scope effect
+  get tracking(): MemoryTracking { … }                             // :194-199 — sidecar built lazily on first use ("a profile that never reads a note never sees the dataDir appear")
+  get dream(): DreamOrchestrator { … }                             // :211-223 — single instance ⇒ the single-flight lock "holds across callers (the tool, the UI button, and a scheduled task all converge here)"
+  async commitNow(message: string) { return await this.git.commitAll(message) }  // :232-234 — "never touches the watcher or the coalescer's commit stamp"
 }
 ```
-Activation discipline (`:13-22`): "`enable()` stays a no-op when `autoCommit: false` or when the memory root does not exist, so mounting the plugin against a fresh or absent store never runs `git init`."
+Activation discipline (`:13-22`): "`enable()` stays a no-op when `autoCommit: false` or when the memory root does not exist, so mounting the plugin against a fresh or absent store never runs `git init`"; a failing `ensureRepo` logs and leaves the watcher off (`:162-170`).
 
-**Scoped (reactive) injects** — the static `inject: []` stays empty so a row loads inertly when a dependency is disabled; the mount happens inside `ctx.inject([...], scope => …)` (`packages/tool/src/index.ts:142-147` comment; code at `:155, 183, 194, 203, 321`; `packages/ui/src/index.ts:99, 120`; `packages/client/src/plugin.ts:133`):
-- `ctx.inject([ENGRAMORY_EXT_SEAM, 'tools'], …)` → register 4 tools
-- `ctx.inject([ENGRAMORY_EXT_SEAM, 'systemPrompt'], …)` → index + dream sections
+**Scoped (reactive) injects** — the static `inject: []` stays empty so a row loads inertly when a dependency is disabled; the mount happens inside `ctx.inject([...], scope => …)` (`packages/tool/src/index.ts:141-143` comment; code at `:205, 217, 228, 321`; `packages/ui/src/index.ts:99, 120`; `packages/client/src/plugin.ts:133`):
+- `ctx.inject([ENGRAMORY_EXT_SEAM, 'systemPrompt'], …)` ×2 → index section (`tool/index.ts:205`) + dream-guidance section (`:217`)
+- `ctx.inject([ENGRAMORY_EXT_SEAM, 'tools'], …)` → register 4 tools (`:228`)
 - `ctx.inject([ENGRAMORY_EXT_SEAM, 'tools', 'agents'], …)` → turn reminder only "where live agents exist"
 - `ctx.inject(['webServer', 'connection', ENGRAMORY_EXT_SEAM], …)` (data routes) and a second one adding `'subprocess'` (desktop routes)
 - `ctx.inject(['slots'], …)` (client card)
@@ -206,21 +212,24 @@ Activation discipline (`:13-22`): "`enable()` stays a no-op when `autoCommit: fa
 
 ## 2.3 Tool registration
 
-Pattern (`packages/tool/src/index.ts:155-324`):
+Pattern (`packages/tool/src/index.ts:228-318`, verified against all four registrations):
 ```ts
 scope.tools.register(defineTool({
-  name: 'read_memory',                    // stable string, exported const
-  description,                            // rebuilt per registration from resolved config (maxLines, root name, indexFile) — :156-163
-  parameters: READ_MEMORY_PARAMETERS,     // { name: { type, required?, enum?, description } } (plain spec objects)
-  value: MEMORY_AUDIT_OUTPUT,             // canonical output schema: closed `oneOf` discriminated on `kind` (schema.ts:55-110)
-  async execute(args, exec) {             // exec = { agent, signal }; returns the canonical value, never throws for expected failures
-    const state = exec.agent ? turnStates.get(exec.agent) : undefined
-    if (state) state.readMemoryUsed = true
-    return readMemory(scope.engramoryExt, scope, args, exec.signal)
+  name: READ_MEMORY_TOOL_NAME,              // stable exported const
+  description,                              // long contract prose, rebuilt per registration from resolved config (e.g. audit names the limit default; remember names the configured rememberProvider)
+  parameters: READ_MEMORY_PARAMETERS,       // { name: { type, required?, enum?, description } } plain spec objects
+  output: {                                 // rendering contract (:234-237)
+    schema: READ_MEMORY_OUTPUT,             // canonical output schema: closed `oneOf` discriminated on `kind` (schema.ts:55-110)
+    render: (_args, value) => [{ type: 'text', text: renderReadMemory(value) }],
   },
-  presentCall: (args) => ({ card: 'generic', kind: 'execute', title: name, rawInput: args }),
-  renderTextOutput: (value) => render…(value),   // model/host-UI rendering hook (remember at :214)
-  timeout: 300_000,                       // per-registration timeout — only memory_dream_remember needs it (dream-tool default vs remember :286-292)
+  timeoutMs: resolved.timeoutMs,            // per-registration: fast tools 10_000 (DEFAULT_TIMEOUT_MS :149); memory_dream_remember 300_000 (:301-303 — "a defineTool timeout is per registration")
+  async execute(args, exec) {               // exec = { agent, signal }; returns the canonical value; expected failures are values, never throws
+    return await readMemory(scope.engramoryExt, { maxLines: resolved.maxLines }, args, exec.signal)
+  },                                        // audit/dream execute takes only (args) — no exec (:260, :281)
+  presentCall: (args) => ({
+    card: 'generic', kind: 'read',          // 'read' for read/audit; 'execute' for dream run/sync (`kind: args.operation === 'run' … ? 'execute' : 'read'`, :286) and remember
+    title: `read_memory ${args.path}`, rawInput: args,
+  }),
 }))
 ```
 - Params are model-facing text where the *contract* lives: e.g. read_memory's `path` description says verbatim what comes back for an escaping pointer (`schema.ts:28-35`); `positiveInt` clamp is shared by both numeric tools (`schema.ts:123-125`).
@@ -229,9 +238,9 @@ scope.tools.register(defineTool({
 
 ## 2.4 System-prompt injection (contents, per your ask — do not need to copy style)
 
-Two sections via `scope.systemPrompt.section({ name, order, content: { text: provider | string, interpolate: false } })`:
+Two sections via `scope.systemPrompt.section({ name, order, interpolate: false, text: providerFn })` (index section, `tool/index.ts:209-214`) and `scope.systemPrompt.section({ name, order, text: STATIC_STRING })` (dream guidance, `:221-225`):
 
-**`engramory:index`** (`tool/src/index-prompt.ts`, order **1450**, registered `tool/index.ts:183-192`):
+**`engramory:index`** (`tool/src/index-prompt.ts`, order **1450**, registered `tool/index.ts:205-215`):
 - Freshness: "`PromptSection.text` accepts a provider that `assemble()` evaluates per assembly… so the provider re-reads `MEMORY.md` from disk each time and the section is never stale" — no watcher, no snapshot; and it stays in the *system message* "instead of the runtime context, which renders as sourced user-role snapshots in model history" (`index-prompt.ts:7-15`).
 - `interpolate: false` — "keeps any `{{...}}` in user content literal; the assembler interpolates contributed text by default and throws on unknown or malformed groups" (`:14-15`).
 - Contents (small — 3 fragments + the verbatim index, `:37-51, 93-113`):
@@ -249,13 +258,16 @@ Two sections via `scope.systemPrompt.section({ name, order, content: { text: pro
 ## 2.5 Session/turn tracking and once-per-X mechanics (`packages/tool/src/turn-reminder.ts`)
 
 There is **no session-id tracking and no once-per-session injection** in this plugin — the "session-ish" machinery is per-turn, per-agent:
-- `turnStates = new WeakMap<Agent, AgentTurnState>()` keyed by the **agent handle** (`:90-93`) — GC-safe, no id bookkeeping.
-- **`ctx.on('agent/pre-step', ({ agent }, { messages }) => …)`** (`:121-129`): for each new `UserMessage`, replace the turn record wholesale `{ turnSubject, readMemoryUsed: false, reminderFired: false }`. Subject = first text block, trimmed, capped at `TURN_SUBJECT_MAX_CHARS = 120` (`:51, 174-179`).
-- **`ctx.on('tools/post-execute', ({ agent }, { toolName }) => …)`** (`:133-138`): a `read_memory` call silences the reminder for the turn. (The base adapter's `tools.guard` is the pre-execute counterpart; ext itself never intercepts pre-execute.)
-- **`ctx.on('agent/turn-stopping', ({ agent }), () => …)`** (`:144-171`): at the stop boundary, if unused and non-trivial → set `reminderFired = true` and `agent.steer(createUserMessage({...}))`. Contract per `@deepseek-ai/dsh-agent`: "a listener that steers keeps the turn open (the machine re-reads its inbox)… The per-turn `reminderFired` guard makes the steer once-per-turn, so the turn can never be looped open forever: the next boundary finds the guard set and lets the turn close" (`:7-14`).
-- Rejected alternative, recorded: `tools/post-execute` `additionalContexts` (the repeat-tool-reminder shape) "was rejected because a turn that calls no tools produces no post-execute hook, and a purely conversational turn is exactly the case the reminder exists for" (`:14-19`).
-- Trivial-turn gate: `DEFAULT_REMINDER_TRIVIAL_MAX_CHARS = 24`; subject ≤ 24 chars, lowercase, in a frozen greeting list (`TRIVIAL_TURN_SUBJECT_WORDS`, `:62-66`) skips the reminder **unless it matches `WORK_MARKER = /[/\\`]/`** (names a path or code span = real work, whatever its length) (`:68-70, 108-115`).
-- Steer message shape: `createUserMessage({ content:[{type:'text',text}], source: { kind: 'plugin:engramory-ext', form: 'notice', summary: boundContextSummary(...) } })` with a `declare module '@deepseek-ai/dsh-llm/message' { interface MessageSourceMap { 'engramory-ext': { kind: 'plugin:engramory-ext' } & ContextFormed } }` augmentation — "Session format v4 retired the v3 `kind:'plugin'` wrapper, so the producer declares its own kind" (`:31-45, 149-171`).
+- `const states = new WeakMap<object, AgentTurnState>()` keyed by the **live Agent object** — "Keying the WeakMap on the live Agent object (the repeat-tool-reminder precedent) lets the record die with the agent, so no disposal listener" (`:134-137`).
+- **`ctx.on('agent/pre-step', ({ agent, messages }, next) => { … return next() })`** — middleware-style with `next` (`:139-145`): finds the first message with `message.source.kind === 'user'` and **replaces the turn record wholesale** `{ readMemoryUsed: false, reminderFired: false, turnSubject: subjectOf(firstUser) }`. Subject = first text block, trimmed, capped at `TURN_SUBJECT_MAX_CHARS = 120` (`:51, 174-179`); a textless (image-only) prompt captures nothing.
+- **`ctx.on('tools/post-execute', (exec, _result, next) => …)`** (`:147-154`): when `exec.name === 'read_memory'` and `exec.agent` exists, marks `state.readMemoryUsed = true` (a turn that never opened with user text has no record — "the absence is already the silence this rule wants").
+- **`ctx.on('agent/turn-stopping', ({ agent }) => { … })`** — **not** middleware (no `next`) (`:156-171`): if unused, not yet fired, subject worth a memory check → set `reminderFired = true` and `agent.steer(createUserMessage({ content: [{ type: 'text', text: turnReminderText(subject) }], source: { kind: 'plugin:engramory-ext', form: 'notice', summary: boundContextSummary(…) } }))`.
+- Contract per `@deepseek-ai/dsh-agent` (doc `:7-14`): "a listener that steers keeps the turn open (the machine re-reads its inbox)… The per-turn `reminderFired` guard makes the steer once-per-turn, so the turn can never be looped open forever: the next boundary finds the guard set and lets the turn close."
+- Rejected alternative, recorded (`:14-19`): `tools/post-execute` `additionalContexts` (the repeat-tool-reminder shape) "was rejected because a turn that calls no tools produces no post-execute hook, and a purely conversational turn is exactly the case the reminder exists for."
+- Trivial-turn gate (`isTrivialTurnSubject :98-104`): undefined/empty subject or in the frozen greeting list `TRIVIAL_TURN_SUBJECT_WORDS` (`:62-66`) → trivial; else trivial iff `length <= maxChars (default 24)` **and not matching `WORK_MARKER = /[/\\`]/`** (names a path or code span = real work, whatever its length).
+- Steer message body, verbatim (`turnReminderText :115-122`, "kept under sixty words… It never demands"): `Turn about "<subject>" closed without a read_memory call. Check the MEMORY.md index hooks for notes relevant to that subject; read_memory any that match; if a memory contradicts what you concluded or did, adjust them; otherwise continue. This is an advisory reminder, not a gate.`
+- Message-source typing: `createUserMessage` + `boundContextSummary` from `@deepseek-ai/dsh-llm/message`; `declare module '@deepseek-ai/dsh-llm/message' { interface MessageSourceMap { 'engramory-ext': { kind: 'plugin:engramory-ext' } & ContextFormed } }` — "Session format v4 retired the v3 `kind:'plugin'` wrapper, so the producer declares its own kind" (`:31-45`).
+- Reminder is config-gated and seam-gated: `if (resolved.enableReminder) ctx.inject([ENGRAMORY_EXT_SEAM, 'tools', 'agents'], () => installTurnReminder(ctx, …))` — "so a profile without live agents loads the row inertly" (`tool/index.ts:320-324`).
 
 Single-flight (dream) and `warnOnce` (index prompt) are the other "once" mechanisms (§2.6, §2.4).
 
@@ -268,36 +280,48 @@ Owner: `packages/service/src/dream-orchestrator.ts` (541 lines); protocol text `
 2. Web card Dream-now `POST /engramory-ext/dream` → `startDream` (`ui/dream.ts:42-66`).
 3. A real DSH **Automation Task** created via `ctx.get('schedule')` with the fixed title `'engramory-ext dream'` and prompt (verbatim, `ui/shared.ts:60-67`): *"Scheduled memory dream: call the memory_dream tool with operation `run` … Do not await the run in this turn …"* — min interval `ENGRAMORY_EXT_SCHEDULE_MIN_INTERVAL_SECONDS = 60`; timing fields mirror `schedule_create` (`after_seconds, at, every_seconds, daily, weekly, cron`, exactly one required; `shared.ts:74-97`).
 4. `memory_dream` `operation: 'sync'` alone (pre-sync without dreaming).
-Blocked condition: no `agents` seam ⇒ `{ blocked: 'no-agents' }` reported by `status()`, 409 from the route (`dream-orchestrator.ts:165-167`, `ui/dream.ts:46-49`).
+Blocked condition: no `agents` service on the host ⇒ `status().blocked = 'the host provides no agents service, so no dream agent can run (mount dsh-agent and an agent driver)'` (`dream-orchestrator.ts:470-475`); the route reads `status().blocked` **first** and answers 409 before attempting `run()` (`ui/dream.ts:46-49` — "a dream that can never launch is a refusal, not a doomed start").
 
-### Lifecycle & single flight
-`DreamState = 'idle' | 'syncing' | 'merging' | 'running'` (`:66`). One run at a time: `run()` throws `'a dream run is already in flight (state: …)'` if `state !== 'idle'` (`:316-318`); callers classify a throw by re-reading status (non-idle ⇒ already-running, else run-failed) (`dream-tool.ts:231-238`, `ui/dream.ts:52-58`).
-`run()` returns `{ id, done }` **synchronously through the git pre-sync** and settles asynchronously; the dream agent's session id is `DREAM_SESSION_PREFIX + id` = **`dream-<randomUUID>`** (`:62-63, 322-327`). Tool and route attach a **swallowing logging catch** on `done` and never await it ("`done` rethrows; a dropped or unhandled rejection is not an option… awaiting re-blocks the call the orchestrator made non-blocking on purpose") (`:331-334`, `dream-tool.ts:239-245`, `ui/dream.ts:59-64`).
-
-### Step 0 pre-sync (code-owned; `syncNow`, `:187-247`)
-- Freshness probe `syncStatus()` (`:171-185`): a configured `remoteUrl` is **replaced on the repo before probing** (`git remote set-url origin …` then `fetch`, so a stale/changed URL never blocks the dream); without a remote, "git only reports a gap when a remote exists" ⇒ always `inSync` from local state.
-- Gap = `behindAhead()` + `status().conflicted` (`:232`). If conflicts exist: `resolveConflictsWithAgent()` — **never a code auto-resolve** ("merging markdown memory is a semantic judgement… code auto-resolve would silently flatten two agents' edits" — README:129-131). Bounded by `maxDreamMergeAttempts` (default 3): loop `pull(remoteUrl)` → classify conflicts → launch one merge agent with `mergeResolutionPrompt(paths)` (`:534-541`, verbatim gist: read both sides, "Where the two sides disagree and the right merge is ambiguous, **preserve both sides**… Do not discard either side with a wholesale checkout, reset, or delete") → re-probe; exhaustion returns `{ inSync:false, conflicted, unresolved:true }` and **dream refuses to start**.
-- Every git failure degrades to an unprovable-sync answer, never a false "in sync" (`:234-247` comment).
-
-### The dream session (`runNow`, `:423-497`)
+### Lifecycle & single flight (`DreamOrchestrator`, `dream-orchestrator.ts`)
+`DreamState = 'idle' | 'syncing' | 'merging' | 'running'` (`:66`). `run(options = { model? })` (`:247-254`): `assertIdle()` then `randomUUID()` then `const done = this.drive(id, options.model)` — "drive() **arms the state synchronously before its first await**, so a second run() can never slip past the guard while the first is queued"; returns `{ id, done }` immediately. `assertIdle` throw text: `engramory-ext dream: a dream is already in progress (state: <state>)` (`:276-280`). State lives on the instance — "the single-flight guard needs no lockfile" (`:176-181`); one orchestrator per profile, built lazily by the seam (`service/index.ts:211-223`).
+`status()` (`:218-227`) answers `{ state, blocked?, lastResult?, lastDreamAt? }`: `blocked` from `launcher.blockedReason()` (production: `'the host provides no agents service, so no dream agent can run (mount dsh-agent and an agent driver)'`, `:470-475`); `lastDreamAt` (epoch ms) read from the sidecar. `previewPrompt()` = `prompt.load()` — same text a dream would get, tunables rendered from *this store's resolved caps*; it still performs the first-load seed of the editable copy under dataDir but "writes nothing to the memory root" (`:229-239`).
+The full cycle, `drive()` (`:290-320`, verified):
 ```ts
-const session = agents.create({ sessionId: `dream-${id}`, ...(model ? { agentOptions: { model } } : {}) })
-if (model && !session[Symbol.for('cordis.service.capability')].has('agentOptions')) → throw        // :430-436 capability probe
-// pause auto-commit BEFORE any git call (see below); try/catch around the whole flow
-await session.whenIdle(30_000, async () => { throw new Error('the dream agent never went idle') }) // :450 — 30s idle grace
-await session.followup({
-  messages: [{ role: 'user', content: prompt }],           // rendered protocol text is the opening message
-  meta: { label: 'engramory-ext dream', purpose: 'memory consolidation' },
-  maxDepth: 0,                                              // dream agent delegates nothing (except the remember tool's own depth-1 child)
-  timeoutMs: 30 * 60 * 1000,                                // 30 min whole-dream budget
-})
-// catch: session?.dispose(); finally: agent.dispose(); state='idle'; lastResult; this.stamp = setLastDream(now)
+this.state = 'syncing'
+const blocked = this.launcher.blockedReason(); if (blocked) throw new Error(blocked)
+const model = this.resolveModel(modelOverride)      // per-run model ?? config.dreamModel; '' ⇒ undefined ⇒ host default (:322-330)
+await this.runSync(id, model)                        // Step 0, below
+const prompt = this.prompt.load()                    // editable copy + rendered {{tunables}}
+this.state = 'running'
+await this.launcher.launch({ sessionId: `dream-${id}`, prompt, ...(model ? { model } : {}) })
+this.seedDreamsDiary()                               // diary fallback, below
+const scoring = this.applyDreamScoring()             // deterministic bump + degrade, below
+this.tracking().setLastDream(Date.now())             // stamp moves AFTER scoring ("scoring measures against the previous stamp")
+const hash = await this.commitNow(`engramory-ext: dream ${at}`)   // seam commitNow = git.commitAll; never touches the watcher (:310-311)
+// summary: `${hash ?? 'nothing to commit'}; bumped <n>, degraded <n>`; state = 'idle'
+// catch: recordFailure → state 'idle', lastResult {ok:false, at, summary: errorText}, rethrow
 ```
-- **Model**: per-run `model` argument > config `dreamModel` (empty ⇒ host default) (`:321`).
-- **Commit-pause guard**: `pauseAutoCommit = true` before sync, restored in `finally` with `coalescerFlush()` (drains the pending burst before `commitNow`); a throw before the flush must not let the watcher commit a half-written dream or double-commit the whole one (`:441-448, 390-391, 493-495`; README:128-130).
-- **Prompt**: from `DreamPrompt.load()` — first call copies shipped `src/dream/prompt.md` (path resolved `import.meta.url`-relative `../src/dream/prompt.md`, identically true in workspace/lib/installed layouts — `:48-60`) to `<dataDir>/dream-prompt.md`; every later load re-reads the **editable copy fresh** ("the next dream picks up your edits") and renders `{{NAME}}` tunables from core constants via `defaultDreamTunables()`; unknown placeholders stay literal; no other interpolation (`core/dream-prompt.ts:98-156`). `DREAM_STEP_HEADINGS` (`:51-57`) is the contract the orchestrator and the prompt-lint test share.
-- **Fallback diary** (`:500-518`): if the agent never touched `DREAMS.md`, the orchestrator appends `## <ISO date> Dream <id>` + "The dream agent finished without updating this diary." + the file paths it reported changing (from `lastFileNames()`) — "the plugin never invents what changed semantically."
-- **Closing commit**: `commitNow('engramory-ext: dream <ISO ts>')` — a throw fails the whole run; a null from nothing-to-commit still counts complete (`:475-480`).
+`sync()` (`:256-273`) runs `runSync(\`sync-${randomUUID()}\`, …)` alone under the same single-flight guard; "never edits memory files itself".
+
+### Step 0 pre-sync (code-owned; `runSync`, `:332-406`)
+- No remote (`git.hasRemote()` false) → `{ synced: false, skipped: 'no remote configured' }`. **Note:** `git.hasRemote()` gates on the repo's own `origin`, not the config field — `config.remoteUrl` has *no consumer in any `packages/*/src`* (grep-verified; `MemoryGit.setRemote(url)` — add / `set-url` / remove-on-blank — exists in `core/memory-git.ts:301-317` but nothing shipped calls it). The README's "With `remoteUrl` set…" is config intent the code does not yet execute.
+- `fetch` first ("`behindAhead` only answers after a successful fetch"); then, **only if the tree is not already conflicted**, `git pull --ff-only origin main` — "`--ff-only` keeps the memory history linear; a divergent tree stops the merge with conflicted paths that `status` surfaces for the sync flow" (`memory-git.ts:320-333`). A pull that **throws with zero conflicts left rethrows** ("there is nothing an agent can fix", `:341-360`).
+- `readGap()` = `behindAhead()`, degrading to absent when git can't answer ("a fresh remote with no branch yet… never blocks a dream", `:362-373`).
+- Conflicts (left by pull or predating it) → `resolveConflicts()` loop (`:375-406`): **bounded at `maxDreamMergeAttempts` agent launches** — state `'merging'`, launch a merge-resolution agent with session id **`dream-<runId>-merge-<attempt>`** and `mergeResolutionPrompt(remainingPaths)` (`:528-541`: "read both sides of each file and merge the content. Where the two sides disagree and the right merge is ambiguous, preserve both sides in the file rather than picking one. Stage each resolved file and complete the merge commit. Do not discard either side with a wholesale checkout, reset, or delete."), then re-read `status().conflicted` and repeat. Exhaustion throws `dream pre-sync left N unresolved conflicted path(s) after M merge-resolution attempt(s): <paths>` — "The orchestrator NEVER auto-resolves a conflict in code" (also README:129-131: "merging markdown memory is a semantic judgement… code auto-resolve would silently flatten two agents' edits").
+
+### The dream agent launch (`HostAgentsLauncher`, `:452-499`)
+```ts
+const agents = this.ctx.get('agents') as DreamAgentsGateway | undefined   // reflection; never hard-injected, headless profile loads inertly
+const handle = await agents.create({ sessionId: options.sessionId, ...(model ? { agentOptions: { model } } : {}) })
+try {
+  handle.agent.followup({ content: [{ type: 'text', text: options.prompt }], source: { kind: 'user' } })  // fire-forget
+  await handle.agent.whenIdle()
+} finally { await handle.dispose() }
+```
+"The spawn follows the `@deepseek-ai/dsh-agent` README: `create({ sessionId, agentOptions })`, `agent.followup(...)` the prompt as a user-role turn, await `agent.whenIdle()`, then `handle.dispose()`" (`:459-462`). No idle timeout, no whole-dream deadline, and no `maxDepth` are passed at this layer (REM-child depth is pinned separately, §2.6b); `blockedReason()` is the only pre-launch gate. **The auto-commit watcher is never paused during a dream** — the prompt itself tells the agent "The plugin keeps the store under git and commits automatically while you edit" (`src/dream/prompt.md:6-8`); the closing dream commit goes through the seam's `commitNow`, "the explicit counterpart to the debounced path… never touches the watcher or the coalescer's commit stamp" (`service/index.ts:225-234`).
+
+### Diary fallback (`seedDreamsDiary`, `:408-426`)
+If the agent left no `<memoryRoot>/DREAMS.md`, write `# Dream Diary` + `## <YYYY-MM-DD> Dream` + "The dreaming agent recorded no diary sections for this run." — created **only when absent** ("an existing file is never touched"; the point is the audit's DREAMS.md exclusion has its file and "the diary's existence is the store invariant the protocol states").
 
 ### The four-step protocol (`src/dream/prompt.md`, verbatim structure)
 Ground rules (`:10-24`): never delete a live memory without archiving first (move to `archive/` + remove its `MEMORY.md` line; only already-archived files may be deleted, and only in Step 4); resolve contradictions toward the newer, more relevant memory keeping older info as background; the Step 2 subagent is reasoning-only, must not touch files; append a dated section to `DREAMS.md` after each step; keep each index line within `{{INDEX_LINE_MAX_BYTES}}`.
@@ -311,19 +335,38 @@ Ground rules (`:10-24`): never delete a live memory without archiving first (mov
 
 ### Deterministic scoring (code, not the model) — order is load-bearing
 ```ts
-// runNow :453-462 — bump and degrade measure against the PREVIOUS dream stamp (this.stamp), so they run BEFORE setLastDream moves the baseline
-const bumped = tracking.bumpRecentlyAccessed(lastDreamMs)      // tracking.ts:316-329 — every path with lastAccessAt >= lastDreamAt (or ever, when null) gets score = RELEVANCY_BUMP_TARGET (1.0)
-const degraded = tracking.degradeUnaccessed(lastDreamMs, DEGRADATION_STEP)  // :337-355 — score = max(0, (score ?? 0) - 0.1) for paths unaccessed since the stamp; untracked/unaccessed paths untouched
-const stressors = tracking.churnStressors(churnByPath(commits, DEFAULT_CHURN_WINDOW_COMMITS), DEFAULT_CHURN_THRESHOLD)  // :368-393 — churn = commitsTouching(path)/window; stressor when churn > 0.5 over last 8 commits
-// then: this.stamp = tracking.setLastDream(now)
+// applyDreamScoring :428-449 — "applying them here, once, keeps the scoring deterministic instead of model-dependent"
+const before = tracking.snapshot()
+tracking.bumpRecentlyAccessed()    // tracking.ts:313-325 — no-arg; since = state.lastDreamAt ?? 0 ("An unset lastDreamAt means epoch 0", i.e. the first dream credits every path the log has seen);
+                                   // every path with lastAccessAt > since (strict) gets score = RELEVANCY_BUMP_TARGET (1.0)
+tracking.degradeUnaccessed()       // :327-341 — no-arg; tracked paths (access fold ∪ relevancy map) with no access > since: score = max(0, (score ?? 0) - DEGRADATION_STEP (0.1)); untracked stays absent/scoreless
+const changes = diffSnapshots(before, tracking.snapshot())   // :226-260 — one {path, before, after} per moved score (unscored reads as 0)
+return { bumped: changes.filter(c => c.after > c.before).length, degraded: changes.filter(c => c.after < c.before).length }  // counts reach the run summary only
+// THEN the caller moves the baseline: this.tracking().setLastDream(Date.now())   (:307-310 — bump/degrade measure against the PREVIOUS stamp)
+// stressors (audit view): tracking.churnStressors(churnByPath(commits, window), threshold) — churn = commitsTouching(path)/window over the last 8 commits;
+// a path "sitting exactly at the bar is not a stressor" (strict >, tracking.ts:206-224)
 ```
-Relevancy lives **only** in the sidecar (outside the memory tree — "the Q3 decision") so "a reader of the dream commit sees the diary and note edits only" (`:20-25`). `lastDreamAt: null` before the first dream = "score by the whole access history" (`:296-299`).
+Relevancy lives **only** in the sidecar (outside the memory tree — "the Q3 decision") so "a reader of the dream commit sees the diary and note edits only" / "the commit below captures the diary and note edits, never the relevancy figures" (`:20-25, 307-309`).
 
 ### dream/prompt.md vs the base dream idea
 No relation to Repo 1's §6 compaction beyond shared constants: Repo 1 has no "dream"; the ext plugin imported Engramory's caps/line-budget/note-timeline figures as tunables (`dream-prompt.ts:78-91`).
 
 ## 2.6b `memory_dream_remember` (REM child) — `tool/src/remember-tool.ts`
-- `ctx.get('subagents')` gateway → `subagents.startActivation({ text, delivery: 'caller', maxDepth: REM_CHILD_MAX_DEPTH = 1, model? })`; awaits `activation.output` (async text chunks) then `activation.result.stopReason` (`:133-150, 240-261`). `delivery:'caller'` "so no completion notice duplicates this blocking call"; timeout `DEFAULT_REMEMBER_TIMEOUT_MS = 300_000` per-registration (dream-tool's own registration keeps the default) (`:30-36`).
+- `ctx.get('subagents')` gateway (`RememberSubagentGateway`: `getProvider(name)` + `startActivation`, `:127-143`); missing provider ⇒ `{ kind: 'unavailable', reason: 'no subagent provider "<p>" is registered… (set the tool row's rememberProvider to a mounted provider name)' }` (`:222-227`). Actual call (`:229-241`):
+  ```ts
+  activation = await gateway.startActivation({
+    provider, label: 'engramory dream reflection',
+    request: {
+      prompt: [{ type: 'text', text: buildRememberPrompt(args) }],   // scenario + memory texts INLINE
+      parent, signal,
+      maxDepth: REM_CHILD_MAX_DEPTH,          // 1 — "a depth-0 dream agent's REM child sits at depth 1, and depth 1 is the whole budget, so the child cannot delegate the reflection onward" (:38-43)
+      ...(args.model ? { agentOptions: { model: args.model } } : {}),
+    },
+    signal, delivery: 'caller',               // "so no completion notice duplicates this blocking call" (:4)
+  })
+  result = await activation.result            // :244-249 — { output: content blocks, stopReason, diagnostic? }
+  ```
+  `joinTextBlocks` keeps only text blocks; `stopReason !== 'completed'` ⇒ `child-incomplete` (partial text + diagnostic included). Blocking registration timeout `DEFAULT_REMEMBER_TIMEOUT_MS = 300_000` (`:30-36`; used at `tool/index.ts:301-303` — "a defineTool timeout is per registration").
 - Scenario + memory texts travel **inline**; "this tool never writes, and a failed, cancelled, or absent child can only ever produce a value, never an edit" (`:7-21`).
 - Honest isolation limit (rung b): `startActivation` has "no per-request tool restriction, and this plugin cannot declare the zero-tool agent preset the restriction would need. So the child's toolset is **NOT** enforced read-only" — only `maxDepth` is pinned (`:11-20`).
 - Outcomes: `reflected | child-incomplete | unavailable | failed` (`:66-…`).
@@ -332,16 +375,16 @@ No relation to Repo 1's §6 compaction beyond shared constants: Repo 1 has no "d
 
 - Read-only merge of **four sources**: filesystem listing of the memory root, `MemoryTracking` snapshot, `MemoryGit` history, parsed `MEMORY.md` structure (`:3-8`). "Nothing here writes: no `recordRead`, no commits, no file is opened for content (the pointer guard resolves; the listing only stats)" (`:11-13`).
 - Params (`:64-82`): `view ∈ {full, topStressors, oldestUnaccessed}` (default `full`), `limit` (default `DEFAULT_AUDIT_LIMIT = 50`; "the limit only bounds the rows the model reads at once" — rollups always cover the whole store), `window` (churn window, default `DEFAULT_CHURN_WINDOW_COMMITS = 8`).
-- Output `kind: 'audit'` (`:111-232`): rollups `noteCount, indexedCount, orphanCount, index {lines,bytes,status: ok|soft|hard}, brokenPointers[], overlongIndexLines (> 200 B prose — INFO only), oversizedNotes (> 12288 B — INFO only), dream {lastDreamAt, stressors[]}, git {headHash, clean, behind?, ahead?, error?}`; per-note rows `{ path, indexed, lastAccessAt (0 = never), accessCount, relevancy (null while unscored), churn (0.0 with no commits), lastModified }` (semantics spelled out at `:234-272`).
-- Note enumeration (`:277-314`): recursive, excludes `archive/` ("the one reserved subdirectory… never a live memory"; `ARCHIVE_DIR_NAME` `core/index-file.ts:19-24`), `.git`, `.`, the config's `indexFile`, and `RESERVED_NON_NOTE_FILES = ['DREAMS.md']` (`core/dream-prompt.ts:39-48`); pointer name via `pointerFileName` (posix-root-relative, or `null` when the pointer escapes).
+- Output `kind: 'audit'` (`MEMORY_AUDIT_OUTPUT`, `:96-180`; `auditMemory` `:226-290`): rollups `noteCount, indexedCount, orphanCount, index {lines,bytes,status: ok|soft|hard}, brokenPointers[], overlongIndexLines (:142, :262 — > 200 B prose, INFO only), oversizedNotes (> 12288 B — INFO only), dream {lastDreamAt, stressors[]}, git {headHash, clean, behind?, ahead?, error?}`, `indexError` (`:178`) when the index degraded; per-note rows `{ path, indexed, lastAccessAt (0 = never), accessCount, relevancy (null while unscored), churn (0.0 with no commits), lastModified }`.
+- Note enumeration (`listStoreNotes`, `:302-340`): walks the memory root once; reserved = `[indexFile, ...RESERVED_NON_NOTE_FILES]` (`:317`), anything whose first segment is `ARCHIVE_DIR_NAME` is counted separately, not listed (`:333`); also skips `.git` and dot-dirs. Pointer matching via `pointerFileName` (posix-root-relative, or `null` when the pointer escapes).
 - Orphan = on-disk note with zero index pointers; broken pointers = guard rejections (`empty|url|absolute|invalid|outside-root`) plus `'missing'` (`POINTER_FAILURES`, `:62`).
 - Sorting (`sortRows :475-483`): `topStressors` → churn desc then path; `oldestUnaccessed` → lastAccessAt asc (never-accessed = epoch 0 first); `full` → path.
-- Churn (`tracking.churnByPath :368-393`): `commitsTouching(path) / window` over the last N `git log` commits — "A path touched by no commit inside the window has churn 0.0; with no commits at all every path has 0.0 (there is nothing to measure)."
+- Churn (`tracking.churnByPath :188-204`; `churnStressors :206-224`): `commitsTouching(path) / window` over the last N `git log` commits — "A path touched by no commit inside the window has churn 0.0; with no commits at all every path has 0.0 (there is nothing to measure)."
 - Degradation: bad index ⇒ index-dependent rollups null + `indexError` note (table stays path-based); git refusal ⇒ only `git.error`, churn 0.0 (`:151-232`).
 - Rendering: `audit-render.ts` table; UI state route: `ui/src/state.ts`.
 
 ## 2.8 `read_memory` — `tool/src/read-memory.ts` + `render.ts`
-- Pipeline: `resolveMemoryPath` guard → `stat` (triples as missing-file check, dir check, mtime source) → read → `trackingKey` (realpath'd root-relative posix key) → **snapshot before `recordRead`** ("the decoration shows the prior access while accessCount adds this one") → window slice (`offset` 1-based; `limit = Math.min(config maxLines=200, requested)`) → return canonical value; refusals record nothing (`:56-98`).
+- Pipeline: `resolveMemoryPath` guard → `stat` (triples as missing-file check, dir check, mtime source) → read → `trackingKey` (realpath'd root-relative posix key) → **snapshot before `recordRead`** ("the decoration shows the prior access while accessCount adds this one") → window slice (`offset` 1-based; `limit = Math.min(config maxLines, requested)`, `DEFAULT_MAX_LINES = 2000` — `tool/index.ts:146`) → return canonical value; refusals record nothing (`:56-98`).
 - Output union `found | broken-pointer(reason ∈ POINTER_REJECTIONS) | not-found | not-a-file` (`schema.ts:55-110`).
 - Render: fenced block
   ```
@@ -356,7 +399,7 @@ No relation to Repo 1's §6 compaction beyond shared constants: Repo 1 has no "d
 
 ## 2.9 Config schema pattern — `core/src/config.ts`
 
-One schemastery `z.object` with defaults + `z.natural()`; every field optional so `{}` is a complete config (`:31-37`); resolved shape is an interface (`ResolvedMemoryExtConfig`) declared once; `resolveConfig()` is the *only* place defaults apply and the only place `~`-expansion/absolutization happens (`:97-143`). Slices (`IndexSizingConfig = Pick<…>`) are re-declared by consumers (index section, audit) instead of re-picking fields (`:67-76`). Tool row adds its own config (`maxLines=200`, `enableDreamTool=true`, `enableReminder=true`, `reminderTrivialMaxChars=24`) with load-time `assertPositiveInteger` (`tool/index.ts:111-133`). Defaults table:
+One schemastery `z.object` with defaults + `z.natural()`; every field optional so `{}` is a complete config (`:31-37`); resolved shape is an interface (`ResolvedMemoryExtConfig`) declared once; `resolveConfig()` is the *only* place defaults apply and the only place `~`-expansion/absolutization happens (`:97-143`). Slices (`IndexSizingConfig = Pick<…>`) are re-declared by consumers (index section, audit) instead of re-picking fields (`:67-76`). Tool row adds its own config (`maxLines=2000`, `timeoutMs=10000`, `enableReminder=true`, `reminderTrivialMaxChars=24`, `rememberProvider='spawn'` — `tool/index.ts:145-175`) with load-time `assertPositiveInteger` on the three numeric fields plus a non-empty `rememberProvider` check (`:198-203, 327-332`). Defaults table:
 
 | Key | Default | Where |
 |---|---|---|
@@ -369,8 +412,10 @@ One schemastery `z.object` with defaults + `z.natural()`; every field optional s
 | `autoCommitDebounceMs` | `5000` | `config.ts:26` |
 | `dreamModel` | `''` (host default) | `config.ts:93` |
 | `maxDreamMergeAttempts` | `3` | `config.ts:29` |
-| `maxLines` (tool) | `200` | `tool/index.ts:128` |
-| `reminderTrivialMaxChars` | `24` | `tool/index.ts:131` |
+| `maxLines` (tool) | `2000` | `tool/index.ts:146` |
+| `timeoutMs` (tool) | `10000` (fast tools) | `tool/index.ts:149` |
+| `rememberProvider` (tool) | `'spawn'` | `tool/index.ts:174` |
+| `reminderTrivialMaxChars` | `24` | `turn-reminder.ts:54` |
 
 ## 2.10 Tracking sidecar — `core/src/tracking.ts`
 
@@ -413,7 +458,8 @@ Client card (`client/src/plugin.ts`): registers into slot `plugins.bundle.config
 - **Provider must never throw during prompt assembly**; degrade to empty text + warn-once (`index-prompt.ts:60-100`).
 - **Non-blocking hand-off**: `done` rethrows; tool and route attach the same swallowing catch, never await, never drop (`dream-tool.ts:239-245`, `ui/dream.ts:59-64`).
 - **Scoring order is load-bearing** — bump/degrade before `setLastDream` (`dream-orchestrator.ts:20-25`).
-- **Pause the auto-commit watcher around a dream** or the debounce "can commit a half-written dream" / double-commit it (`:441-448`); sidecar churn must never reach the memory tree (Q3 decision; `auto-commit.ts:74-79`, `service/index.ts:265-277`).
+- **The auto-commit watcher is never paused during a dream** — the prompt relies on it ("The plugin keeps the store under git and commits automatically while you edit", `src/dream/prompt.md:6-8`); the dream's closing commit uses the seam's explicit `commitNow`, "the explicit counterpart to the debounced path… never touches the watcher or the coalescer's commit stamp" (`service/index.ts:225-234`). Sidecar churn must never reach the memory tree (Q3 decision; `auto-commit.ts:74-79`, `service/index.ts:265-277`).
+- **Config field with no consumer**: `remoteUrl` is resolved (`config.ts:46, 85`) and `MemoryGit.setRemote` exists (`memory-git.ts:301-317`), but nothing in `packages/*/src` calls it — Step-0 gates on the repo's own `git.hasRemote()`, so the README's "With `remoteUrl` set, the dream's Step 0 pre-sync fetches and pulls" (README:31-33) describes intent the shipped code does not execute. (Grep-verified 2026-11-12.)
 - **No code-side merge resolution** for markdown memory — semantic judgement, agent-bounded only (`README.md:129-131`).
 - **Dream agent side effects land in its session, not the tool result** → `run` is non-blocking by design (`README.md:127-128`).
 - **Self-healing persistence**: corrupt sidecar files start empty with a warn rather than killing the plugin; torn JSONL line dropped (`tracking.ts:17-23`).
@@ -452,11 +498,11 @@ Auto-commit is "a `fs.watch` debounce: it does not capture every change when fil
 | Relevancy bump / degrade | 1.0 / 0.1 (floor 0) | `tracking.ts:54-57` |
 | Churn window / stressor threshold | 8 commits / > 0.5 | `tracking.ts:60-63` |
 | Access log rotation | 64 KiB | `tracking.ts:51` |
-| `read_memory` line cap | config `maxLines = 200`, 1-based offset | `tool/index.ts:128`; `read-memory.ts:79-83` |
+| `read_memory` line cap | config `maxLines = 2000` (`DEFAULT_MAX_LINES`), 1-based offset | `tool/index.ts:146`; `read-memory.ts:79-83` |
 | `memory_audit` default limit | 50 rows | `audit.ts:53` |
 | Turn subject cap / trivial gate / work marker | 120 chars / 24 chars + word list / `/[/\\`]/` | `turn-reminder.ts:51-70` |
-| Dream idle grace / timeout / session prefix / maxDepth | 30 s / 30 min / `dream-<uuid>` / 0 (REM child pinned to 1) | `dream-orchestrator.ts:63,450,459-462`; `remember-tool.ts:43` |
-| REM child timeout | 300 000 ms | `remember-tool.ts:36` |
+| Dream session ids / REM child depth | `dream-<uuid>`; merge agent `dream-<uuid>-merge-<n>`; REM child `maxDepth: 1` (no dream deadline / no idle timeout passed) | `dream-orchestrator.ts:63,249,300,399`; `remember-tool.ts:43,238` |
+| Tool timeouts | fast tools 10 000 ms; REM child registration 300 000 ms | `tool/index.ts:149,303`; `remember-tool.ts:36` |
 | Prompt section orders | index 1450, dream guidance 1460 (between TOOL_GLOB 1400 and TOOL_GREP 1500) | `index-prompt.ts:35`; `dream-guidance.ts:21` |
 | Schedule ownership title / min interval | `'engramory-ext dream'` / 60 s | `ui/shared.ts:60,97` |
 | Route body ceiling | 64 KiB | `ui/route.ts:62` |
@@ -473,7 +519,7 @@ Auto-commit is "a `fs.watch` debounce: it does not capture every change when fil
 | `memory_read` | ext `read_memory` (§2.8) | copy the guard + snapshot-before-record + output-union pattern |
 | `memory_search` | **none** | both repos are index-only ("no vector store, no embeddings"); your Milvus-Lite index is net-new; mirror their "index = pointers, content in files" so embeddings index the *files*, and keep search results honest about `broken-pointer` |
 | `memory_write` | ext has **no write tool** (writes are the agent's own file tools; ext only enforces caps — base adapter's `ctx.tools.guard`, §1.11) | decide: enforce caps via `tools.guard` (monotonic refusal, deny only growth) vs a write tool doing validation |
-| `memory_dream` | ext §2.6 (canonical) | single-flight, non-blocking handle, agent-run protocol + deterministic scoring after, editable prompt with `{{tunables}}`, DREAMS.md + fallback, commit-pause discipline, bounded agent merge |
+| `memory_dream` | ext §2.6 (canonical) | single-flight, non-blocking handle, agent-run protocol + deterministic scoring after, editable prompt with `{{tunables}}`, DREAMS.md + fallback, bounded agent merge, explicit `commitNow` at dream end |
 | `memory_audit` | ext §2.7 (canonical) + engramory doctor §1.7 | merge sources, per-degradation, INFO vs ISSUE split, bounded/fenced reads |
 | Turn-start recall injection | ext does recall via **systemPrompt provider** (re-read per assembly), *not* a turn-start event | `agent/pre-step` exists (§2.5) if you want per-turn injection; fence injected store text as untrusted data (codex hook, §1.3) |
 | Turn-end audit reminder | ext `agent/turn-stopping` + `agent.steer`, once-per-turn guard (§2.5) | the rejected `tools/post-execute` alternative matters for you (a tool-less turn is the point) |
@@ -483,5 +529,5 @@ Auto-commit is "a `fs.watch` debounce: it does not capture every change when fil
 | Workspace manifests | closest: `cordis.patch.yml` row configs + marked `AGENTS.md` blocks (`BEGIN/END ENGRAMORY …`) | |
 | Intent markers | **none** (§1.9) | |
 | Obsidian integration | ext has Open-in-Obsidian only (`/engramory-ext/open-obsidian`, desktop+SSH gating, `ui/open.ts`) | vault launching only |
-| Git versioning of vaults | ext §2.11 wholesale | keep `execFile` argv discipline; debounce + reserved-name filters; dream commit-pause |
+| Git versioning of vaults | ext §2.11 wholesale | keep `execFile` argv discipline; debounce + reserved-name filters; explicit dream-end commit separate from the debounced path |
 | Scheduled dreaming | ext `ctx.get('schedule')` gateway + title-as-ownership (§2.12) | gateway-read keeps profiles without the schedule service alive |

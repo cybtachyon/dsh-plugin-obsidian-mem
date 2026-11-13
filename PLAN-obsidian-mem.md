@@ -148,3 +148,23 @@ task file lists explicit cross-phase prerequisites.
   seam: `service.ensureMemoryAccess()` (idempotent; provisions default vault + .INTENTS.md
   + dbDir + Milvus + collection + indexer on first call and returns a one-time `notice`
   string with the path). Tasks affected: 011, 030..034, 041, 063.
+- 2026-11-12 **Canonical ext patterns adopted** (docs/research/engramory-and-ext-findings.md
+  is the dreaming/audit canon): turn-end reminder via `agent/turn-stopping` +
+  `agent.steer` with once-per-turn guard (NOT session/event+followup); dreaming =
+  single-flight `plan`/`run` orchestrator with editable seeded prompt, `DREAMS.md` diary
+  (reserved non-indexed), frontmatter read-stats for bump/degrade (no git-churn); audit
+  strictly read-only, bounded/fenced reads, ISSUE-vs-INFO; tool outputs closed `oneOf` by
+  `kind` (failures are values); static `inject: []` + scoped `ctx.inject` + reflection
+  gateways; one webServer route record per path; system-prompt `interpolate:false`,
+  never-throw providers. Tasks 030/031/034/035/036/043/044/050 + AGENTS.md event facts.
+- 2026-11-12 **Verified-stack corrections** (docs/research/milvus-transformers-findings.md):
+  e5-small is 384-d (spec's "768" was wrong; Q2 intent = no lossy truncation ⇒ default 384;
+  `model.id` switch to e5-base is the true-768 path); bootstrap is
+  `uvx --with pymilvus --from milvus-lite==3.2.2 milvus-lite server --data-dir <dir>
+  --host 127.0.0.1 --port <p>` (no --config-file exists); memory.db is a DIRECTORY in
+  lite 3.x (pin version; no migration); model download ~135 MB not ~30; transformers.js
+  v4 options `{pooling:'mean', normalize:true, dtype:'q8'}` (`normalization` silently
+  ignored); SDK 3.0.6: `hybridSearch` + `data[]` sub-requests, assertOk on every response
+  (no throws), explicit BM25 metric_type, `WeightedRanker([w1,w2])`, negative BM25 scores
+  ⇒ RRF only, writes serialized in TS, `getLoadState` unreliable ⇒ loadCollectionSync
+  after create. Partition-key + ARRAY filters + BM25 Function VERIFIED on lite.

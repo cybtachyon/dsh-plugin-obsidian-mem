@@ -190,40 +190,36 @@ const DEFAULT_BINDING_RE = /^import\s+([A-Za-z_$][\w$]*)/;
  */
 export function fileTokensOf(absPath, snippet) {
     const tokens = new Set();
-    const addWord = (word) => {
-        // Camel/underscore split BEFORE lowering, then the shared shape guard.
-        for (const part of word.split(/[_\s]+|(?=[A-Z])/)) {
+    // Split BEFORE lowering (camel humps vanish in the lower case), then the
+    // one shared wake-term shape guard decides.
+    const addParts = (word, split) => {
+        for (const part of word.split(split)) {
             const term = part.toLowerCase();
             if (isWakeTerm(term)) {
                 tokens.add(term);
             }
         }
     };
-    for (const part of basename(absPath).replace(/\.[^.]*$/, '').split(/[-_\s]+/)) {
-        const term = part.toLowerCase();
-        if (isWakeTerm(term)) {
-            tokens.add(term);
-        }
-    }
+    addParts(basename(absPath).replace(/\.[^.]*$/, ''), /[-_\s]+/);
     for (const signal of dirSignalsOf(absPath)) {
-        addWord(signal);
+        addParts(signal, /[_\s]+|(?=[A-Z])/);
     }
     for (const line of snippet.split('\n')) {
         const specifier = IMPORT_SPECIFIER_RE.exec(line);
         if (specifier !== null) {
             for (const chunk of (specifier[1] ?? specifier[2] ?? '').split(/[^\p{L}\p{N}]+/u)) {
-                addWord(chunk);
+                addParts(chunk, /[_\s]+|(?=[A-Z])/);
             }
         }
         const braced = BRACED_BINDINGS_RE.exec(line);
         if (braced !== null) {
             for (const binding of braced[1].split(/[\s,]+/)) {
-                addWord(binding);
+                addParts(binding, /[_\s]+|(?=[A-Z])/);
             }
         }
         const named = DEFAULT_BINDING_RE.exec(line);
         if (named !== null) {
-            addWord(named[1]);
+            addParts(named[1], /[_\s]+|(?=[A-Z])/);
         }
     }
     return [...tokens].slice(0, FILE_TOKENS_MAX);

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { ManifestFs } from '../../core/lib/index.js'
+import type { GlobalMemorySource } from '../../service/lib/index.js'
 import {
   guidanceLine,
   mountLifecycle,
@@ -59,6 +60,8 @@ interface HarnessOptions {
   globalMemoryTokens?: number
   /** null answers no provisioning notice on the first ensure call. */
   notice?: string | null
+  /** The shared vaults' global memory files the seam answers (TASK-014). */
+  globalSources?: GlobalMemorySource[]
 }
 
 function turnStartHarness(options: HarnessOptions = {}) {
@@ -70,6 +73,7 @@ function turnStartHarness(options: HarnessOptions = {}) {
     dbPath: tmp.dir,
     ...(options.searchResults === undefined ? {} : { searchResults: options.searchResults }),
     ...(options.searchError === undefined ? {} : { searchError: options.searchError }),
+    ...(options.globalSources === undefined ? {} : { globalMemorySources: options.globalSources }),
     ...(notice === null ? {} : { notice }),
     budgets: {
       ...(options.turnStartRecallTokens === undefined
@@ -415,5 +419,131 @@ describe('global memory budget switch', () => {
     const texts = agent.injected.map((message) => message.content[0]!.text)
     expect(texts[0]).toBe(DEFAULT_NOTICE)
     expect(texts[1]).toContain('memory_dream')
+  })
+
+  it('the over-budget pointer returns before the global files are even fetched', async () => {
+    const { agent, memory, preStep, registry } = turnStartHarness({
+      searchResults: [factA],
+      globalSources: [globalAnchor],
+      globalMemoryTokens: 100,
+      notice: null,
+    })
+    registry.addRecallTokens('agent-0', 101)
+    await preStep(1, 1)
+    await settled()
+    expect(memory.globalMemorySourcesCalls).toBe(0)
+    const texts = agent.injected.map((message) => message.content[0]!.text)
+    expect(texts).toHaveLength(1)
+    expect(texts[0]).toContain('memory_dream')
+  })
+})
+
+// TASK-014: each shared vault's globalFile is pinned into the session after
+// the budget gate and before the search recall, capped at the remaining
+// global budget and marked injected so the session's search recall skips it.
+const globalAnchor: GlobalMemorySource = {
+  vaultPath: '/home/test/vault',
+  path: '/home/test/vault/GLOBAL.md',
+  content: 'the pinned anchor facts',
+}
+
+describe('pinned global memory injection', () => {
+  it('injects notice, pinned global file, search recall, then guidance, once per session', async () => {
+    const { agent, memory, preStep } = turnStartHarness({
+      searchResults: [factA],
+      globalSources: [globalAnchor],
+    })
+    await preStep(1, 1, ['Do we have a deploy note?'])
+    await settled()
+    const blocks = agent.injected.map((message) => message.content[0]!.text)
+    expect(blocks).toHaveLength(4)
+    expect(blocks[0]).toBe(DEFAULT_NOTICE)
+    expect(blocks[1]).toBe(
+      '<recalled_memory source="/home/test/vault/GLOBAL.md">\nthe pinned anchor facts\n</recalled_memory>',
+    )
+    expect(blocks[2]).toContain('markdown/deploy.md')
+    expect(blocks[3]).toContain('memory_search')
+    expect(agent.injected[1]!.source.summary).toBe('obsidian-mem: pinned global memory')
+    // Once per session: a later turn neither refires the flow nor refetches.
+    await preStep(2, 1)
+    await settled()
+    expect(memory.globalMemorySourcesCalls).toBe(1)
+  })
+
+  it('marks the pinned source so the session search recall never injects it twice', async () => {
+    const sameFile = memoryResult({
+      chunk_id: 5,
+      source_path: '/home/test/vault/GLOBAL.md',
+      vault: '/home/test/vault',
+      chunk_text: 'the pinned anchor facts',
+      updated_at: 1_700_000_000_333,
+    })
+    const { agent, registry, preStep } = turnStartHarness({
+      searchResults: [sameFile],
+      globalSources: [globalAnchor],
+    })
+    await preStep(1, 1)
+    await settled()
+    const recalled = recalledBlocks(agent)
+    expect(recalled).toHaveLength(1)
+    expect(recalled[0]).toContain('source="/home/test/vault/GLOBAL.md"')
+    // A fingerprint-less mark is the session-wide block: search recall
+    // carries the indexed updated_at, and even a rewritten note stays out.
+    const key = sourceKeyFor({ vault: '/home/test/vault', source_path: '/home/test/vault/GLOBAL.md' })
+    expect(registry.shouldInject('agent-1', key, String(sameFile.updated_at))).toBe(false)
+    expect(registry.shouldInject('agent-1', key, 'rewritten')).toBe(false)
+    // Another session has its own ledger and sees the file fresh.
+    expect(registry.shouldInject('agent-2', key)).toBe(true)
+  })
+
+  it('clamps a global file to the remaining global budget', async () => {
+    const wide = { ...globalAnchor, content: 'X'.repeat(200) }
+    const { agent, registry, preStep } = turnStartHarness({
+      searchResults: [],
+      globalSources: [wide],
+      globalMemoryTokens: 50,
+      notice: null,
+    })
+    // 40 of the 50-token global budget is already used: 10 tokens * 4 chars
+    // cut the 200-character file.
+    registry.addRecallTokens('agent-0', 40)
+    await preStep(1, 1)
+    await settled()
+    const recalled = recalledBlocks(agent)
+    expect(recalled).toHaveLength(1)
+    const body = recalled[0]!.split('\n').slice(1, -1).join('\n')
+    expect(body).toBe('X'.repeat(40))
+  })
+
+  it('skips pinned files when the global budget has nothing left, keeping search recall', async () => {
+    const { agent, memory, preStep, registry } = turnStartHarness({
+      searchResults: [factA],
+      globalSources: [globalAnchor],
+      globalMemoryTokens: 100,
+      notice: null,
+    })
+    // Usage exactly at the cap still gets fresh search recall (the strictly-
+    // over gate), but the remaining budget is zero and the pin is skipped.
+    registry.addRecallTokens('agent-0', 100)
+    await preStep(1, 1)
+    await settled()
+    const recalled = recalledBlocks(agent)
+    expect(recalled).toHaveLength(1)
+    expect(recalled[0]).toContain('markdown/deploy.md')
+    expect(memory.globalMemorySourcesCalls).toBe(1)
+  })
+
+  it('accounts the pinned injections into the session and global usage', async () => {
+    const { agent, registry, preStep } = turnStartHarness({
+      searchResults: [factA],
+      globalSources: [globalAnchor],
+    })
+    await preStep(1, 1)
+    await settled()
+    const expected = agent.injected
+      .flatMap((message) => message.content)
+      .reduce((total, block) => total + Math.ceil(block.text.length / 4), 0)
+    expect(registry.recallTokensUsed('agent-1')).toBe(expected)
+    expect(registry.totalRecallTokensUsed()).toBe(expected)
   })
 })

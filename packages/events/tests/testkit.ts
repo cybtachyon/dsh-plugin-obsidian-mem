@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { SessionRegistryView, VaultEntry } from '../../service/lib/index.js'
+import type { GlobalMemorySource, SessionRegistryView, VaultEntry } from '../../service/lib/index.js'
 import type {
   ExactSectionRequest,
   MemorySearchResult,
@@ -45,6 +45,8 @@ export interface FakeMemoryOptions {
   exactResults?: MemorySearchResult[]
   exactError?: Error
   vaults?: VaultEntry[]
+  /** The shared vaults' global memory files the seam answers (TASK-014). */
+  globalMemorySources?: GlobalMemorySource[]
   budgets?: Partial<MemoryEventsService['config']['budgets']>
 }
 
@@ -53,6 +55,7 @@ export interface FakeMemoryService extends MemoryEventsService {
   searchRequests: SearchRequest[]
   exactRequests: ExactSectionRequest[]
   registryWires: Array<SessionRegistryView | null>
+  globalMemorySourcesCalls: number
 }
 
 export function fakeMemory(options: FakeMemoryOptions): FakeMemoryService {
@@ -70,6 +73,7 @@ export function fakeMemory(options: FakeMemoryOptions): FakeMemoryService {
     searchRequests: [],
     exactRequests: [],
     registryWires: [],
+    globalMemorySourcesCalls: 0,
     config: { milvus: { dbPath: options.dbPath }, budgets },
     async ensureMemoryAccess() {
       fake.ensureCalls += 1
@@ -77,6 +81,10 @@ export function fakeMemory(options: FakeMemoryOptions): FakeMemoryService {
     },
     listVaults() {
       return (options.vaults ?? []).map((entry) => ({ ...entry }))
+    },
+    globalMemorySources() {
+      fake.globalMemorySourcesCalls += 1
+      return (options.globalMemorySources ?? []).map((source) => ({ ...source }))
     },
     async search(request) {
       fake.searchRequests.push(request)

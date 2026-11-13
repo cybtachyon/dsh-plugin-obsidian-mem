@@ -16,7 +16,7 @@
  * @module dsh-plugin-obsidian-mem/events/host
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { SessionRegistryView, VaultEntry } from '../../service/lib/index.js';
+import type { GlobalMemorySource, SessionRegistryView, VaultEntry } from '../../service/lib/index.js';
 import type { ExactSectionRequest, MemorySearchResult, SearchRequest } from '../../service/lib/search.js';
 export interface AgentSessionHeader {
     /** Absolute workspace dir the session was created in, when present. */
@@ -192,6 +192,8 @@ export interface MemoryEventsService {
     /** Idempotent lazy provisioning; the trigger call returns the notice. */
     ensureMemoryAccess(): Promise<string | undefined>;
     listVaults(): VaultEntry[];
+    /** Shared vaults' global memory files for TASK-014's pinned session-start injection. */
+    globalMemorySources(): GlobalMemorySource[];
     search(request: SearchRequest): Promise<MemorySearchResult[]>;
     /** Exact-section recall for the Read intercept (TASK-042). */
     searchExactSections(request: ExactSectionRequest): Promise<MemorySearchResult[]>;

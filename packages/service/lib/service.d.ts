@@ -89,6 +89,19 @@ export interface GlobalMemoryIndex {
     overBudget: boolean;
 }
 /**
+ * One shared vault's global memory file for TASK-014's pinned session-start
+ * injection: the containing vault, the absolute resolved file path, and the
+ * raw text as stored (no parsing, no offset windowing).
+ */
+export interface GlobalMemorySource {
+    /** Absolute path of the shared vault that owns the file. */
+    vaultPath: string;
+    /** Absolute `<vault path>/<globalFile>` the content was read from. */
+    path: string;
+    /** Raw UTF-8 file text, verbatim. */
+    content: string;
+}
+/**
  * SessionRegistryView is the minimal read slice the service needs of the
  * per-session memory registry (TASK-040 seam). The events package owns and
  * constructs the registry instance; the service only holds the wired
@@ -252,6 +265,17 @@ export declare class ObsidianMemService extends Service {
     ensureMemoryAccess(): Promise<string | undefined>;
     /** ListVaults returns the live registry; it never provisions. */
     listVaults(): VaultEntry[];
+    /**
+     * GlobalMemorySources answers every shared vault's global memory file
+     * (TASK-014): `<vault path>/<globalFile>` read as raw text, in registry
+     * order. Read-only vaults are excluded. A missing or unreadable file is
+     * skipped with a debug log, never a throw, and nothing is provisioned.
+     * The read bypasses the read registry and never bumps note read stats;
+     * the joined path is refused when it lands outside the vault, a belt over
+     * the config/addVault shape validation that already refuses absolute and
+     * `..` forms.
+     */
+    globalMemorySources(): GlobalMemorySource[];
     /**
      * AddVault registers a card-side vault: `shared` paths are created
      * (root + `.obsidian-mem/metadata/`), `read-only` paths must already

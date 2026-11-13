@@ -723,6 +723,72 @@ describe('vault registry and vaults.json', () => {
   })
 })
 
+// TASK-014: the read-only accessor behind turn-start pinned injection.
+describe('globalMemorySources', () => {
+  it('answers each shared vault global file raw in registry order, never provisioning', () => {
+    const h = harness({
+      config: { vaults: [
+        { path: '/shared-a', mode: 'shared' },
+        { path: '/shared-b', mode: 'shared', globalFile: 'memory/GLOBAL.md' },
+        { path: '/ro', mode: 'read-only' },
+      ] },
+      seedDirs: ['/shared-a', '/shared-b', '/shared-b/memory', '/ro'],
+      seedFiles: {
+        '/shared-a/GLOBAL.md': '# A\nanchor facts\n',
+        '/shared-b/memory/GLOBAL.md': '# B\nnested global\n',
+        '/ro/GLOBAL.md': '# RO\nrecall-only vault content\n',
+      },
+    })
+    // Registry order kept; the nested relative globalFile resolves under the
+    // vault root; the read-only vault is excluded even with the file present.
+    expect(h.service.globalMemorySources()).toEqual([
+      { vaultPath: '/shared-a', path: '/shared-a/GLOBAL.md', content: '# A\nanchor facts\n' },
+      { vaultPath: '/shared-b', path: '/shared-b/memory/GLOBAL.md', content: '# B\nnested global\n' },
+    ])
+    // A pure read: no provisioning, no launcher, no disk mutation, and the
+    // read registry stays untouched (no stats bump; proven by no writes).
+    expect(h.fs.mutations).toEqual([])
+    expect(h.order).toEqual([])
+    expect(h.launcher.start).not.toHaveBeenCalled()
+  })
+
+  it('skips a shared vault whose global file is missing and answers [] when none exist', () => {
+    const h = harness({
+      config: { vaults: [
+        { path: '/shared-a', mode: 'shared' },
+        { path: '/shared-b', mode: 'shared' },
+      ] },
+      seedDirs: ['/shared-a', '/shared-b'],
+      seedFiles: { '/shared-b/GLOBAL.md': 'B global\n' },
+    })
+    expect(h.service.globalMemorySources()).toEqual([
+      { vaultPath: '/shared-b', path: '/shared-b/GLOBAL.md', content: 'B global\n' },
+    ])
+    const onlyMissing = harness({
+      config: { vaults: [{ path: '/shared-a', mode: 'shared' }] },
+      seedDirs: ['/shared-a'],
+    })
+    expect(onlyMissing.service.globalMemorySources()).toEqual([])
+    expect(onlyMissing.ctx.warnings.join('\n')).toBe('')
+  })
+
+  it('refuses a hand-edited vaults.json globalFile that climbs out of the vault', () => {
+    // Row config and addVault reject `..` shapes; this belt guards the only
+    // remaining entry point, a hand-edited card file.
+    const h = harness({
+      seedDirs: ['/card-escape', '/elsewhere'],
+      seedFiles: {
+        [VAULTS_JSON]: JSON.stringify({ version: 1, vaults: [
+          { path: '/card-escape', mode: 'shared', globalFile: '../elsewhere/GLOBAL.md' },
+        ] }),
+        '/elsewhere/GLOBAL.md': '# outside the vault\n',
+      },
+    })
+    expect(h.service.listVaults()).toHaveLength(1)
+    expect(h.service.globalMemorySources()).toEqual([])
+  })
+})
+
 describe('read: stats, slicing, read-only skip, registry', () => {
   const notePath = join(DEFAULT_VAULT, 'topic.md')
   const seededNote = `---

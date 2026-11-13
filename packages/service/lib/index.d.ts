@@ -27,7 +27,7 @@ declare module '@deepseek-ai/cordis' {
     }
 }
 export { nodeServiceFs, OBSIDIAN_MEM_SEAM, ObsidianMemService, VAULTS_FILE_NAME, withObsidianMemHooks, } from './service.js';
-export type { GlobalMemoryIndex, IndexerLike, MilvusLauncherLike, ObsidianMemHooks, ObsidianMemReadResult, ObsidianMemStatus, ObsidianMemWriteRequest, ObsidianMemWriteResult, ReadRegistryEntry, ServiceFs, SessionRegistryView, VaultAddRequest, VaultEntry, VaultSource, } from './service.js';
+export type { GlobalMemoryIndex, GlobalMemorySource, IndexerLike, MilvusLauncherLike, ObsidianMemHooks, ObsidianMemReadResult, ObsidianMemStatus, ObsidianMemWriteRequest, ObsidianMemWriteResult, ReadRegistryEntry, ServiceFs, SessionRegistryView, VaultAddRequest, VaultEntry, VaultSource, } from './service.js';
 export { DEFAULT_READINESS_TIMEOUT_MS, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 export type { DreamingSchedule, ObsidianMemConfig, ObsidianMemResolvedConfig, ResolvedObsidianMemConfig, } from './config.js';
 export default ObsidianMemService;

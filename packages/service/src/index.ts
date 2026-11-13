@@ -38,6 +38,7 @@ export {
 } from './service.js'
 export type {
   GlobalMemoryIndex,
+  GlobalMemorySource,
   IndexerLike,
   MilvusLauncherLike,
   ObsidianMemHooks,

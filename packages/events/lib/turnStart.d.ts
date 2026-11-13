@@ -11,14 +11,17 @@
  * cold-starting index would stall the loop).
  *
  * The flow: ensureMemoryAccess (the one-time default-vault notice is
- * injected first), one workspace manifest scan at the agent's session cwd,
- * search over the first user text plus the manifest query text, budget
- * trimming to `budgets.turnStartRecallTokens`, the once-per-session source
- * filter, `core.wrapRecalled` envelopes (defang included), the
- * memory_search guidance line naming the discovered extensions/languages/
- * frameworks, the token accounting TASK-045 consumes, and TASK-045's
- * budget switch: an over-budget session gets the memory_dream compaction
- * pointer instead of the fresh recall sections.
+ * injected first), TASK-045's budget switch (an over-budget session gets the
+ * memory_dream compaction pointer instead of anything below and returns
+ * early), TASK-014's pinned injection of each shared vault's global memory
+ * file within the remaining global budget, one workspace manifest scan at
+ * the agent's session cwd, search over the first user text plus the manifest
+ * query text, budget trimming to `budgets.turnStartRecallTokens`, the
+ * once-per-session source filter, `core.wrapRecalled` envelopes (defang
+ * included), the memory_search guidance line naming the discovered
+ * extensions/languages/frameworks, the token accounting TASK-045 consumes,
+ * and the once-per-session mark that keeps a pinned global file out of the
+ * search recall below.
  * @module dsh-plugin-obsidian-mem/events/turnStart
  */
 import type { ManifestFs, WorkspaceManifest } from '../../core/lib/index.js';

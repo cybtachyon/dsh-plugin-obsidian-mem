@@ -25,7 +25,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, } from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
 import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
 import { expandHomePath, globalFileShapeIssue, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
@@ -176,6 +176,37 @@ export class ObsidianMemService extends Service {
     /** ListVaults returns the live registry; it never provisions. */
     listVaults() {
         return this.loadRegistry().vaults.map((entry) => ({ ...entry }));
+    }
+    /**
+     * GlobalMemorySources answers every shared vault's global memory file
+     * (TASK-014): `<vault path>/<globalFile>` read as raw text, in registry
+     * order. Read-only vaults are excluded. A missing or unreadable file is
+     * skipped with a debug log, never a throw, and nothing is provisioned.
+     * The read bypasses the read registry and never bumps note read stats;
+     * the joined path is refused when it lands outside the vault, a belt over
+     * the config/addVault shape validation that already refuses absolute and
+     * `..` forms.
+     */
+    globalMemorySources() {
+        const sources = [];
+        for (const vault of this.listVaults()) {
+            if (vault.mode !== VAULT_MODE_SHARED) {
+                continue;
+            }
+            const path = join(vault.path, vault.globalFile);
+            const rel = relative(vault.path, path);
+            if (rel === '' || rel === '.' || rel.startsWith('..' + sep) || rel === '..' || isAbsolute(rel)) {
+                this.log.debug(`global memory file escapes vault ${vault.path} (skipped): ${vault.globalFile}`);
+                continue;
+            }
+            const content = this.fs.readFile(path);
+            if (content === null) {
+                this.log.debug(`global memory file missing or unreadable (skipped): ${path}`);
+                continue;
+            }
+            sources.push({ vaultPath: vault.path, path, content });
+        }
+        return sources;
     }
     /**
      * AddVault registers a card-side vault: `shared` paths are created

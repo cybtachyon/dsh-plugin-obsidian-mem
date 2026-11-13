@@ -11,22 +11,25 @@
  * cold-starting index would stall the loop).
  *
  * The flow: ensureMemoryAccess (the one-time default-vault notice is
- * injected first), one workspace manifest scan at the agent's session cwd,
- * search over the first user text plus the manifest query text, budget
- * trimming to `budgets.turnStartRecallTokens`, the once-per-session source
- * filter, `core.wrapRecalled` envelopes (defang included), the
- * memory_search guidance line naming the discovered extensions/languages/
- * frameworks, the token accounting TASK-045 consumes, and TASK-045's
- * budget switch: an over-budget session gets the memory_dream compaction
- * pointer instead of the fresh recall sections.
+ * injected first), TASK-045's budget switch (an over-budget session gets the
+ * memory_dream compaction pointer instead of anything below and returns
+ * early), TASK-014's pinned injection of each shared vault's global memory
+ * file within the remaining global budget, one workspace manifest scan at
+ * the agent's session cwd, search over the first user text plus the manifest
+ * query text, budget trimming to `budgets.turnStartRecallTokens`, the
+ * once-per-session source filter, `core.wrapRecalled` envelopes (defang
+ * included), the memory_search guidance line naming the discovered
+ * extensions/languages/frameworks, the token accounting TASK-045 consumes,
+ * and the once-per-session mark that keeps a pinned global file out of the
+ * search recall below.
  * @module dsh-plugin-obsidian-mem/events/turnStart
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { approxTokens, manifestQueryText, scanManifest } from '../../core/lib/index.js';
+import { approxCharsForTokens, approxTokens, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js';
 import { describeError } from '../../service/lib/errors.js';
 import { compactionInstruction, isGlobalBudgetSpent } from './budget.js';
 import { firstUserText } from './host.js';
-import {} from './sessions.js';
+import { sourceKeyFor } from './sessions.js';
 import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
 /** Node ManifestFs over sync fs reads; unreadable paths answer null (skip). */
 export const nodeManifestFs = {
@@ -101,6 +104,23 @@ async function runTurnStartRecall(deps, sessionId, messages) {
         injectedTokens += injectNotice(deps.agent, newId(), 'obsidian-mem: global memory budget spent, run memory_dream', [compactionInstruction(usedTokens, budgetTokens)]);
         registry.addRecallTokens(sessionId, injectedTokens);
         return;
+    }
+    // TASK-014: pinned session-start injection of each shared vault's global
+    // memory file, inside the remaining global budget (`approxCharsForTokens`
+    // cuts the text; a file with nothing left in the budget is skipped). The
+    // source mark is fingerprint-less on purpose: that is the registry's
+    // session-wide block form, and the search recall below computes its
+    // fingerprint from the indexed updated_at, which the raw file read here
+    // cannot know. Token accounting rides the flow-total below.
+    for (const source of memory.globalMemorySources()) {
+        const remainingTokens = budgetTokens - registry.totalRecallTokensUsed();
+        if (remainingTokens <= 0) {
+            break;
+        }
+        const cap = approxCharsForTokens(remainingTokens);
+        const body = source.content.length > cap ? source.content.slice(0, cap) : source.content;
+        injectedTokens += injectNotice(deps.agent, newId(), 'obsidian-mem: pinned global memory', [wrapRecalled(source.path, body)]);
+        registry.markInjected(sessionId, sourceKeyFor({ vault: source.vaultPath, source_path: source.path }));
     }
     // Step 1: one manifest scan for the session, at the agent's workspace.
     const cwd = sessionWorkspaceCwd(deps.agent);

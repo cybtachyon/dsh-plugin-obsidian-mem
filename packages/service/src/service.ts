@@ -35,7 +35,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir as osHomedir } from 'node:os'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { MilvusClient } from '@zilliz/milvus2-sdk-node'
@@ -165,6 +165,20 @@ export interface GlobalMemoryIndex {
   remainingTokens: number
   /** True when usedTokens exceeds budgetTokens (strictly over). */
   overBudget: boolean
+}
+
+/**
+ * One shared vault's global memory file for TASK-014's pinned session-start
+ * injection: the containing vault, the absolute resolved file path, and the
+ * raw text as stored (no parsing, no offset windowing).
+ */
+export interface GlobalMemorySource {
+  /** Absolute path of the shared vault that owns the file. */
+  vaultPath: string
+  /** Absolute `<vault path>/<globalFile>` the content was read from. */
+  path: string
+  /** Raw UTF-8 file text, verbatim. */
+  content: string
 }
 
 /**
@@ -441,6 +455,38 @@ export class ObsidianMemService extends Service {
   /** ListVaults returns the live registry; it never provisions. */
   listVaults(): VaultEntry[] {
     return this.loadRegistry().vaults.map((entry) => ({ ...entry }))
+  }
+
+  /**
+   * GlobalMemorySources answers every shared vault's global memory file
+   * (TASK-014): `<vault path>/<globalFile>` read as raw text, in registry
+   * order. Read-only vaults are excluded. A missing or unreadable file is
+   * skipped with a debug log, never a throw, and nothing is provisioned.
+   * The read bypasses the read registry and never bumps note read stats;
+   * the joined path is refused when it lands outside the vault, a belt over
+   * the config/addVault shape validation that already refuses absolute and
+   * `..` forms.
+   */
+  globalMemorySources(): GlobalMemorySource[] {
+    const sources: GlobalMemorySource[] = []
+    for (const vault of this.listVaults()) {
+      if (vault.mode !== VAULT_MODE_SHARED) {
+        continue
+      }
+      const path = join(vault.path, vault.globalFile)
+      const rel = relative(vault.path, path)
+      if (rel === '' || rel === '.' || rel.startsWith('..' + sep) || rel === '..' || isAbsolute(rel)) {
+        this.log.debug(`global memory file escapes vault ${vault.path} (skipped): ${vault.globalFile}`)
+        continue
+      }
+      const content = this.fs.readFile(path)
+      if (content === null) {
+        this.log.debug(`global memory file missing or unreadable (skipped): ${path}`)
+        continue
+      }
+      sources.push({ vaultPath: vault.path, path, content })
+    }
+    return sources
   }
 
   /**

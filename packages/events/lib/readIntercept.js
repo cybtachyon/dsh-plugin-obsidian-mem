@@ -22,7 +22,7 @@
 import { dirname, extname, isAbsolute, normalize, resolve, sep } from 'node:path';
 import { classifyPath, normalizeExtension, } from '../../core/lib/index.js';
 import { boundSummary } from './host.js';
-import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
+import { asRecord, collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
 /** The harness Read tool's registry name (verified live: `read`). */
 export const HARNESS_READ_TOOL_NAME = 'read';
 /** Import-ish lines are worth ~2 KB of the result at most. */
@@ -55,7 +55,7 @@ function observeRead(deps, exec, result, warnOnce) {
     if (agent === undefined) {
         return;
     }
-    const args = asObject(exec.arguments);
+    const args = asRecord(exec.arguments) ?? {};
     const given = typeof args['file_path'] === 'string' ? args['file_path'].trim() : '';
     if (given === '') {
         return;
@@ -139,11 +139,6 @@ function resolveAgainstSession(agent, given) {
         return null;
     }
     return normalize(resolve(cwd, given));
-}
-function asObject(value) {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-        ? value
-        : {};
 }
 // The Read result is line-numbered (`N\t` prefixes); the snippet filter
 // works on the recovered source lines of the first ~2 KB, capped at 12

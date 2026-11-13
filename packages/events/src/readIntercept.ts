@@ -37,6 +37,7 @@ import type {
 import { boundSummary } from './host.js'
 import type { SessionRegistry } from './sessions.js'
 import {
+  asRecord,
   collectFreshSources,
   deliverProvisionNotice,
   fireAndForget,
@@ -104,7 +105,7 @@ function observeRead(
   if (agent === undefined) {
     return
   }
-  const args = asObject(exec.arguments)
+  const args = asRecord(exec.arguments) ?? {}
   const given = typeof args['file_path'] === 'string' ? (args['file_path'] as string).trim() : ''
   if (given === '') {
     return
@@ -210,12 +211,6 @@ function resolveAgainstSession(agent: LiveAgent, given: string): string | null {
     return null
   }
   return normalize(resolve(cwd, given))
-}
-
-function asObject(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
 }
 
 // The Read result is line-numbered (`N\t` prefixes); the snippet filter

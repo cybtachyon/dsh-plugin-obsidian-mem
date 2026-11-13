@@ -18,7 +18,7 @@
 import { TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
 import type { HookLogger, ToolResultEvents } from './host.js'
 import { sourceKeyFor, type SessionRegistry } from './sessions.js'
-import { runGuarded } from './toolkit.js'
+import { asRecord, runGuarded } from './toolkit.js'
 
 /** Dependencies of the plugin-ctx write observer (mount-owned). */
 export interface WriteLedgerDeps {
@@ -59,11 +59,8 @@ export function installWriteLedger(deps: WriteLedgerDeps): () => void {
 // the FINAL absolute note path and the owning vault root. Every other
 // shape (refusal kinds, absent value, poisoned payloads) records nothing.
 function writtenValueOf(value: unknown): { vault: string, source_path: string } | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return null
-  }
-  const record = value as Record<string, unknown>
-  if (record['kind'] !== 'written') {
+  const record = asRecord(value)
+  if (record === null || record['kind'] !== 'written') {
     return null
   }
   const path = record['path']

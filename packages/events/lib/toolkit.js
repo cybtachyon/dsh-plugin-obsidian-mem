@@ -44,6 +44,16 @@ export function fireAndForget(logger, label, work) {
     });
 }
 /**
+ * AsRecord narrows an unknown event payload (tool arguments, a tool's
+ * structured value) to a plain object record; arrays, null, and non-objects
+ * answer null, so poisoned payloads take the caller's skip path.
+ */
+export function asRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? value
+        : null;
+}
+/**
  * MakeWarnOnce builds the keyed sink behind the offline-index discipline:
  * a session hammering a dead index gets one warning, then quiet skips.
  */

@@ -16,7 +16,7 @@
  */
 import { TOOL_MEMORY_WRITE } from '../../core/lib/index.js';
 import { sourceKeyFor } from './sessions.js';
-import { runGuarded } from './toolkit.js';
+import { asRecord, runGuarded } from './toolkit.js';
 /**
  * InstallWriteLedger registers the plugin-level `tools/result` observer
  * that feeds the per-session written-source ledger, keyed by the calling
@@ -48,11 +48,8 @@ export function installWriteLedger(deps) {
 // the FINAL absolute note path and the owning vault root. Every other
 // shape (refusal kinds, absent value, poisoned payloads) records nothing.
 function writtenValueOf(value) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-        return null;
-    }
-    const record = value;
-    if (record['kind'] !== 'written') {
+    const record = asRecord(value);
+    if (record === null || record['kind'] !== 'written') {
         return null;
     }
     const path = record['path'];

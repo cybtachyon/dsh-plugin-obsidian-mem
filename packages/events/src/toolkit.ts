@@ -49,6 +49,17 @@ export function fireAndForget(logger: HookLogger, label: string, work: Promise<u
   })
 }
 
+/**
+ * AsRecord narrows an unknown event payload (tool arguments, a tool's
+ * structured value) to a plain object record; arrays, null, and non-objects
+ * answer null, so poisoned payloads take the caller's skip path.
+ */
+export function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
 /** WarnOnce is a keyed warning sink: every key logs at most once. */
 export type WarnOnce = (key: string, message: string) => void
 

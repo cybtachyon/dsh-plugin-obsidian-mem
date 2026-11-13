@@ -59,7 +59,7 @@ surfaces the failure in the card.
 
 ### Phase C: consolidation
 
-- [ ] [TASK-005-refactor-review](docs/PLAN-dream-launch-TASK-005-refactor-review.md)
+- [x] [TASK-005-refactor-review](docs/PLAN-dream-launch-TASK-005-refactor-review.md)
 - [ ] [TASK-006-repo-gates](docs/PLAN-dream-launch-TASK-006-repo-gates.md)
 
 ## Dependencies

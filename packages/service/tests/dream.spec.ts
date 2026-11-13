@@ -19,7 +19,8 @@ import { describe, expect, it } from 'vitest'
 import { GLOBAL_MEMORY_FILE_DEFAULT, NOTE_TIMELINE_BYTES } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import { DEFAULT_DREAM_PROMPT, DreamBlockedError, DreamBusyError, DreamOrchestrator, renderPromptTunables } from '../src/dream.ts'
-import type { DreamAgentHandle, DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
+import type { DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
+import { failedTurnError, fakeGateway, turnEndRecord } from './dream-testkit.ts'
 import type { AuditedNote, VaultInventory } from '../src/audit.ts'
 import type { ResolvedObsidianMemConfig } from '../src/config.ts'
 import type { ServiceFs } from '../src/service.ts'
@@ -162,76 +163,6 @@ function stampedFs(files: Record<string, string> = {}): MemFs {
   return new MemFs({
     files: { [`${DB}/state/state.json`]: JSON.stringify({ lastDreamAt: Date.parse(LAST_DREAM_ISO) }), ...files },
   })
-}
-
-interface GatewayRecorder {
-  gateway: DreamAgentsGateway
-  created: Array<{ sessionId: string; agentOptions?: { provider?: string; model?: string } }>
-  followups: unknown[]
-  calls: string[]
-  disposed: number
-}
-
-type SessionRecord = { type: string; data?: unknown }
-
-// A real clean dream turn closes with reason kind 'completed' (verified
-// against ~/.dsh/sessions transcripts); the double answers ownEvents with
-// this unless a test scripts its own transcript.
-const CLEAN_TRANSCRIPT: SessionRecord[] = [
-  { type: 'turn/start', data: { turn: 1 } },
-  { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
-]
-
-function turnEndRecord(reason: Record<string, unknown>): SessionRecord {
-  return { type: 'turn/end', data: { turn: 1, reason } }
-}
-
-function failedTurnError(message: string): SessionRecord {
-  return turnEndRecord({ kind: 'error', error: { message, code: 'UNKNOWN' } })
-}
-
-function fakeGateway(options: {
-  whenIdle?: () => Promise<void>
-  /** Transcript the agent double's ownEvents answers with; defaults to a clean one. */
-  sessionEvents?: SessionRecord[]
-  /** Replaces the whole session slice; null omits it (TASK-003 defensive path). */
-  session?: DreamAgentHandle['agent']['session'] | null
-} = {}): GatewayRecorder {
-  const recorder: GatewayRecorder = {
-    created: [],
-    followups: [],
-    calls: [],
-    disposed: 0,
-    gateway: null as never,
-  }
-  recorder.gateway = {
-    async create(createOptions) {
-      recorder.created.push(createOptions)
-      recorder.calls.push('create')
-      const agent: DreamAgentHandle['agent'] = {
-        followup: (message: unknown) => {
-          recorder.calls.push('followup')
-          recorder.followups.push(message)
-          return undefined
-        },
-        whenIdle: async () => {
-          recorder.calls.push('whenIdle')
-          await (options.whenIdle?.() ?? Promise.resolve())
-        },
-      }
-      if (options.session !== null) {
-        agent.session = options.session ?? { ownEvents: () => options.sessionEvents ?? CLEAN_TRANSCRIPT }
-      }
-      return {
-        agent,
-        dispose: async () => {
-          recorder.calls.push('dispose')
-          recorder.disposed += 1
-        },
-      }
-    },
-  }
-  return recorder
 }
 
 interface DepsOptions {

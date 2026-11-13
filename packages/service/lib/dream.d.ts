@@ -117,27 +117,31 @@ export declare class DreamBusyError extends Error {
 export declare class DreamBlockedError extends Error {
     constructor(message: string);
 }
+/**
+ * DreamAgentRoute is the provider/model pair that travels together from the
+ * host default selection, through the launch resolver, into
+ * `agents.create`. Either half may be unresolved until the pair is complete.
+ */
+export interface DreamAgentRoute {
+    provider?: string;
+    model?: string;
+}
 /** The reflection-gateway slice of the host `agents` service (never typed). */
 export interface DreamAgentsGateway {
     create(options: {
         sessionId: string;
-        agentOptions?: {
-            provider?: string;
-            model?: string;
-        };
+        agentOptions?: DreamAgentRoute;
     }): Promise<DreamAgentHandle>;
 }
 /**
  * The reflection-gateway slice of the host `agentDefaultModel` service
  * (never typed; TASK-002 wiring). The structural shape matches the
  * `dsh-headless` `ctx.get("agentDefaultModel").currentSelection():
- * ModelSelection`.
+ * ModelSelection` (a live selection always answers both halves; the optional
+ * fields let the resolver treat a partial answer as unresolved).
  */
 export interface DreamDefaultModelGateway {
-    currentSelection(): {
-        provider: string;
-        model: string;
-    };
+    currentSelection(): DreamAgentRoute;
 }
 export interface DreamAgentHandle {
     agent: {
@@ -148,7 +152,11 @@ export interface DreamAgentHandle {
          * (`@deepseek-ai/dsh-agent` runtime-types): `ownEvents()` returns this
          * session's records. Declared optional because the runtime may not
          * carry it; a missing slice logs a warning, never a silent pass
-         * (dream-launch TASK-003).
+         * (dream-launch TASK-003). `ownEvents()` is `@deprecated` in the
+         * installed `@deepseek-ai/dsh-session` (0.2.1-alpha.3), like every
+         * synchronous session-event read there, and no non-deprecated
+         * same-scope read exists; a host removal lands here as the
+         * missing-slice warning (dream-launch TASK-005 adjudication).
          */
         session?: {
             ownEvents(): readonly {
@@ -182,10 +190,7 @@ export interface DreamDeps {
      * the host offers no default-model service. It is the only provider
      * source: model overrides never change the provider route.
      */
-    defaultAgentOptions: () => {
-        provider?: string;
-        model?: string;
-    } | undefined;
+    defaultAgentOptions: () => DreamAgentRoute | undefined;
     /** Stored chunk vectors averaged per note; empty map when index cold. */
     noteVectors: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>;
     log: (message: string) => void;
@@ -208,6 +213,9 @@ export declare class DreamOrchestrator {
     /**
      * Why no run can start at all (no agents gateway, or no provider/model
      * pair resolves from config plus the host default); null when ready.
+     * The status-facing gate resolves without a per-run override (there is
+     * no run at status time); drive re-checks the pair at launch with the
+     * run's own override.
      */
     blockedReason(): string | null;
     /** Absolute path of the editable dream prompt (seeded on first use). */
@@ -234,14 +242,15 @@ export declare class DreamOrchestrator {
     }): DreamRunHandle;
     private nearDuplicateThreshold;
     /**
-     * AgentLaunchOptions is the single home of the launch model rule: the
+     * LaunchRoute is the single home of the launch model rule: the
      * model is the first non-empty of the per-run override, config
      * dreaming.model, and the host default model (empty string counts as
      * unset); the provider comes only from the host default selection, so
-     * model overrides never change the provider route. blockedReason and
-     * drive read the same resolution.
+     * model overrides never change the provider route. Returns the complete
+     * provider/model pair, or null when either half is unresolved;
+     * blockedReason and drive read the pair from here and nowhere else.
      */
-    private agentLaunchOptions;
+    private launchRoute;
     /**
      * ApplyDreamScoring is the deterministic post-pass: relevancy is bumped
      * to the target from frontmatter read evidence newer than the PREVIOUS

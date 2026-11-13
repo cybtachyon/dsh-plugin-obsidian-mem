@@ -33,6 +33,7 @@ import type {
 } from '../src/service.ts'
 import type { MilvusLauncherOptions } from '../src/milvus/launcher.ts'
 import type { IndexerManagerOptions } from '../src/indexer.ts'
+import { fakeGateway } from './dream-testkit.ts'
 
 /**
  * Service seam tests for TASK-030, mocked at every external seam (fs,
@@ -1079,31 +1080,13 @@ describe('status, placeholders, and not-implemented seams', () => {
 })
 
 // ---------------------------------------------------------------------------
-// TASK-002: dream run launch wiring through the ctx.get gateways.
-
-/** Records every agents-gateway create so the test can read agentOptions. */
-function launchGateway(): { gateway: unknown, created: Array<{ sessionId: string, agentOptions?: { provider?: string, model?: string } }> } {
-  const created: Array<{ sessionId: string, agentOptions?: { provider?: string, model?: string } }> = []
-  return {
-    created,
-    gateway: {
-      async create(options: { sessionId: string, agentOptions?: { provider?: string, model?: string } }) {
-        created.push(options)
-        return {
-          agent: {
-            followup: () => undefined,
-            whenIdle: async () => {},
-          },
-          dispose: async () => {},
-        }
-      },
-    },
-  }
-}
+// TASK-002: dream run launch wiring through the ctx.get gateways. The
+// agents-gateway double is the shared dream-testkit fakeGateway, so both
+// specs read one create() recorder (TASK-005).
 
 describe('dream run launch wiring (TASK-002)', () => {
   it('launches with the host default-model selection in the create agentOptions', async () => {
-    const agents = launchGateway()
+    const agents = fakeGateway()
     const h = harness({
       services: {
         agents: agents.gateway,
@@ -1121,7 +1104,7 @@ describe('dream run launch wiring (TASK-002)', () => {
   })
 
   it('blocks a run lacking the agentDefaultModel service and launches nothing', async () => {
-    const agents = launchGateway()
+    const agents = fakeGateway()
     const h = harness({
       services: { agents: agents.gateway },
       // Provider is host-only (PLAN-dream-launch Decisions): a config model

@@ -1,5 +1,7 @@
 # TASK-032 Tool: memory_search
 
+Status: done
+
 Depends: TASK-030. `packages/tools/src/search.ts`.
 
 ## Scope

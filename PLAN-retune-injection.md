@@ -74,7 +74,7 @@ decoy memories, machinae-game subagents reporting every recall they see.
 
 ### Phase 2 - Undecided-item decisions
 
- - [ ] [TASK-009-alpha-reranker-decision](docs/PLAN-retune-injection-TASK-009-alpha-reranker-decision.md)
+ - [x] [TASK-009-alpha-reranker-decision](docs/PLAN-retune-injection-TASK-009-alpha-reranker-decision.md)
  - [ ] [TASK-010-recall-instruction-decision](docs/PLAN-retune-injection-TASK-010-recall-instruction-decision.md)
 
 ### Phase 3 - Live test loop

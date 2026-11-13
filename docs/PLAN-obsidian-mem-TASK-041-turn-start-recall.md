@@ -1,5 +1,7 @@
 # TASK-041 Turn-start recall injection
 
+Status: done
+
 Depends: TASK-040, TASK-014, TASK-045 (globalMemoryIndex). `packages/events/src/turnStart.ts`.
 
 ## Scope
@@ -32,3 +34,19 @@ Depends: TASK-040, TASK-014, TASK-045 (globalMemoryIndex). `packages/events/src/
 Tests with fake agent/ctx: single injection per session (second pre-step no-op), wrapper
 exactness, budget trimming, guidance line includes discovered ext; waterfall returns next
 decision intact; commit.
+
+## Status notes
+
+- Waterfall: the listener is fire-and-forget for the recall work and then always answers
+  `{ ...await next() }`; a throwing gate is caught and warned, never allowed to reject the
+  waterfall (a cold index must not stall step admission; `agent.inject()` lands at the
+  next step boundary regardless).
+- Trigger: `step === 1` of the first step the session is seen at; the once-per-session
+  slot is claimed (markTurnStartDone) BEFORE the async work so parallel steps cannot
+  double-fire.
+- Scope note: flow step 4 (globalMemoryIndex injection) stays with TASK-045: the seam
+  method is still the TODO-045 placeholder and has no note index to inject. The
+  accounting TASK-045 needs is done here: every injected token (notice, bodies,
+  guidance) is summed into `SessionRegistry.addRecallTokens`.
+- Fingerprints for the once-per-session filter come from the result's indexed
+  `updated_at`, matching TASK-040's re-eligibility rule.

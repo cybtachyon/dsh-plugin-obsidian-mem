@@ -26,6 +26,16 @@ import { nodeServiceFs } from '../../service/lib/index.js'
 /** File name for the persisted per-session ledger under the plugin state dir. */
 export const SESSIONS_FILE_NAME = 'sessions.json'
 
+/**
+ * SourceKey canonicalizes one memory note's identity for the
+ * once-per-session ledger: the (truncated) vault column plus the note's
+ * vault-relative source path, exactly as search results carry them, so the
+ * turn-start recall and the Read/Think intercepts share one dedupe space.
+ */
+export function sourceKeyFor(result: { vault: string, source_path: string }): string {
+  return `${result.vault}\u0000${result.source_path}`
+}
+
 /** Ledger sessions older than this (last touch) are dropped at persist time. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 

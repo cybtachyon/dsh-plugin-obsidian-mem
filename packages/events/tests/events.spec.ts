@@ -75,7 +75,7 @@ describe('mountLifecycle (session registry wiring)', () => {
       }),
     }
     expect(() => ctx.emit('agent/created', broken.asCreated() as never)).not.toThrow()
-    expect(ctx.warnings.join('\n')).toContain('agent/created session wiring failed')
+    expect(ctx.warnings.join('\n')).toContain('agent/created wiring failed')
     tmp.cleanup()
   })
 

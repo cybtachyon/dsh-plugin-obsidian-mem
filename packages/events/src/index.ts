@@ -23,15 +23,25 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 
 import { dbStateDir } from '../../core/lib/index.js'
+import type { ManifestFs } from '../../core/lib/index.js'
 // Type import only: pulls the `obsidianMem` Context augmentation in.
 import type {} from '../../service/lib/index.js'
 import { OBSIDIAN_MEM_SEAM } from '../../service/lib/index.js'
 import { describeError } from '../../service/lib/errors.js'
-import type { EffectDisposer, LiveAgent, MemoryEventsScope } from './host.js'
+import type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope } from './host.js'
 import { SESSIONS_FILE_NAME, SessionRegistry } from './sessions.js'
+import { installTurnStart } from './turnStart.js'
 
 export const name = 'obsidian-mem-events'
 export const inject = ['obsidianMem']
+
+/** Test seams for the mount; production calls `apply` without options. */
+export interface MountOptions {
+  /** Workspace manifest fs the turn-start scan reads; defaults to node fs. */
+  manifestFs?: ManifestFs
+  /** Message id factory for injected messages; defaults to random UUIDs. */
+  newMessageId?: () => string
+}
 
 /**
  * Mount the lifecycle hooks. The scoped inject waits for the memory seam
@@ -40,19 +50,20 @@ export const inject = ['obsidianMem']
  * agent-lifecycle listeners register. The turn-start recall and the
  * Read/Think intercepts join through the same wiring.
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: Context, options: MountOptions = {}): void {
   ctx.inject([OBSIDIAN_MEM_SEAM, 'agents'], (scope) => {
-    mountLifecycle(scope as MemoryEventsScope)
+    mountLifecycle(scope as MemoryEventsScope, options)
   })
 }
 
 /**
  * MountLifecycle wires one profile's lifecycle: session registry, seam
- * hookup, and the agent create/dispose pairing that owns every per-agent
- * listener. Answers the registry (the intercept installs below consume it;
- * tests assert on it).
+ * hookup, and the agent create/dispose pairing whose per-agent
+ * `agent.ctx.effect()` carries every agent-scoped listener this row
+ * installs (turn-start recall now; the Think-stream and turn-end hooks join
+ * the same effect). Answers the registry (tests assert on it).
  */
-export function mountLifecycle(scope: MemoryEventsScope): SessionRegistry {
+export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions = {}): SessionRegistry {
   const ctx = scope
   const logger = ctx.logger('obsidian-mem-events')
   const memory = scope.obsidianMem
@@ -84,8 +95,28 @@ export function mountLifecycle(scope: MemoryEventsScope): SessionRegistry {
       const agent = payload.agent
       const sessionId = String(agent.id)
       registry.ensure(sessionId, { subagent: isSubagentAgent(agent) })
+      // Agent-scoped events fire on the AGENT's context: one effect per
+      // agent carries every agent-scoped listener this row installs, and
+      // its disposer lives in the plugin-side map below (AGENTS.md facts).
+      const deps = {
+        agent,
+        memory,
+        registry,
+        logger: logger as HookLogger,
+        ...(options.manifestFs === undefined ? {} : { manifestFs: options.manifestFs }),
+        ...(options.newMessageId === undefined ? {} : { newMessageId: options.newMessageId }),
+      }
+      const handle = agent.ctx.effect(() => {
+        const disposers = [installTurnStart(deps)]
+        return () => {
+          for (const dispose of disposers) {
+            dispose()
+          }
+        }
+      }, `${name}.agent`)
+      agentDisposers.set(sessionId, () => { handle() })
     } catch (error: unknown) {
-      logger.warn(`agent/created session wiring failed: ${describeError(error)}`)
+      logger.warn(`agent/created wiring failed: ${describeError(error)}`)
     }
     return undefined
   })
@@ -126,6 +157,7 @@ export {
   SESSIONS_FILE_NAME,
   SESSIONS_LRU_MAX,
   SessionRegistry,
+  sourceKeyFor,
 } from './sessions.js'
 export type {
   InjectedSourceRecord,
@@ -139,3 +171,5 @@ export type {
   MemoryEventsScope,
   MemoryEventsService,
 } from './host.js'
+export { guidanceLine, installTurnStart, nodeManifestFs } from './turnStart.js'
+export type { TurnStartDeps } from './turnStart.js'

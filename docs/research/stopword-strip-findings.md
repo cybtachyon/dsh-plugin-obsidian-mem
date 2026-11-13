@@ -13,9 +13,11 @@ R1 applied before its warned-about trap; decoys never fired in any
 iteration. Documented imperfection: the bitECS query-order seed ranks 16
 for an order-agnostic brief (passes the floor; dual-route-agreement rows
 dominate for every k; no knob lifts it without doubling forbidden rate,
-full-page forbRate 0.317 vs 0.136). Details and the before/after table:
-`docs/PLAN-retune-injection-TASK-014-converge-final-values.md` until the
-plan artifacts are finalized away.
+full-page forbRate 0.317 vs 0.136). The full before/after table, the
+three live-loop iteration ledgers, and the cleanup record lived in the
+PLAN-retune-injection task files and are preserved in git history
+(commits bffc029 through a19b250; plan artifacts deleted at
+finalization per the harness workflow).
 
 Stack under test: the LIVE production collection `obsidian_mem`
 (`milvus_lite-3.2.2`, 206 rows at run time 2026-11-13; `dense_vector`

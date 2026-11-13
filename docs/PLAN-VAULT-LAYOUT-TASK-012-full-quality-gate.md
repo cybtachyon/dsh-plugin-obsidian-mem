@@ -4,8 +4,10 @@ Objective: the whole tree passes every repo gate on the final layout code.
 
 Steps:
 0. Re-root `packages/service/tests/integration/live-pipeline.live.test.ts`
-   (asserts legacy `markdown/…` source_paths; skipped in normal runs but must
-   be layout-correct when exercised). Also sweep remaining cosmetic
+   (asserts legacy `markdown/…` source_paths AND reads/rm's the OLD
+   `<vault>/metadata/obsidian-mem-state.json` at ~L427/L509/L543; state now
+   lives at `<vault>/.obsidian-mem/metadata/`; skipped in normal runs but
+   must be layout-correct when exercised). Also sweep remaining cosmetic
    `markdown/` fixture path strings through tools/events/core/service test
    specs (opaque strings that pass today: tools write/read/search/dream/audit
    specs, events readIntercept, core constants.spec, service.spec ~L840) so

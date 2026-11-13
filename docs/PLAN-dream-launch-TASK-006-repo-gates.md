@@ -6,6 +6,12 @@ working tree clean.
 ## Steps
 
 1. `pnpm build` (tsc -b --force, client bundle, format, verify-emit).
+   Also re-check the TASK-002 intent gate as an import check (parent
+   ruling, TASK-002 note):
+   `grep -n "from '@deepseek-ai" packages/service/src` must stay empty;
+   the literal `grep "dsh-agent" packages/service/src` is not a gate, the
+   only allowed hit is the user-facing blockedReason sentence in
+   `dream.ts` naming the host service.
 2. `pnpm test` (vitest run) — coverage thresholds in `vitest.config.ts`
    (85/85/78/85) must clear; add coverage where TASK-001/003 branches
    demand it.

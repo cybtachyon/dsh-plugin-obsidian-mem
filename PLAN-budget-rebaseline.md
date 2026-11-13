@@ -52,7 +52,26 @@ throttle state unchanged; no persist call triggered by the reset alone.
   call it; service-level: over-budget fake registry reports recovered
   totals after a successful run.
 
-### TASK-003 gates
+### TASK-003 tools budget wording sweep
+
+The tools renderers print the same single number with their own
+sentences, and those are the sentences the dreaming agent reads from
+`memory_audit` and `memory_dream` output. Name the window there too:
+
+- `packages/tools/src/audit.ts`: the `tracker` line ("N of M tokens
+  used") and the "no recall budget spent in this process yet" idle line.
+- `packages/tools/src/dream.ts`: both `OVER BUDGET:` lines, the
+  "Budget headroom:" line, and its idle line.
+- Phrase: append "injected since the last successful dream or host
+  restart" to the counted lines; idle lines become "no recall budget
+  spent since the last successful dream or host restart".
+- Update the render-line pins in `packages/tools/tests/audit.spec.ts`
+  and `packages/tools/tests/dream.spec.ts`, and the fabricated fixture
+  wording there for consistency (renderer input, not an assertion).
+- Do not touch the service `audit.ts` / events `budget.ts` wording;
+  TASK-002 landed it.
+
+### TASK-004 gates
 
 `pnpm build`, `pnpm test`, coverage bar, `pnpm lint`,
 `prek run --files`; tracked emit committed; tree clean.

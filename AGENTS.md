@@ -11,8 +11,13 @@
   - `./package.json` is the installable bundle
   - Packages mounted with (`dsh.bundle.patch` → `cordis.patch.yml`).
 - **core** is the pure, framework-free domain model:
-  - Constants and intent strings shared by every layer
-  - `VaultConfig` (path, `shared` | `readonly` mode) and the vault registry model
+  - Constants and intent strings shared by every layer. The layout
+    constants: the vault root IS the indexed note root; each vault's
+    sidecars (indexer state, `DREAMS.md`) live under
+    `<vault>/.obsidian-mem/metadata/`; the model cache lives under
+    `<dbDir>/models/`
+  - `VaultConfig` (path, `shared` | `readonly` mode, `globalFile` relative
+    to the vault root, default `GLOBAL.md`) and the vault registry model
   - The memory-note Markdown format: frontmatter (`gray-matter`) and body
   - The Markdown chunker (heading-aware split), workspace manifest reading,
     chunk-id hashing

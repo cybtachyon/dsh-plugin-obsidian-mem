@@ -18,7 +18,10 @@ then watch your agents learn from shared experiences.
 - **Five agent tools**
   - `memory_read`: open a memory note from a vault by path.
   - `memory_search`: hybrid vector + keyword recall across your vaults.
-  - `memory_write`: save a durable memory note (shared vaults only).
+  - `memory_write`: save a durable memory note (shared vaults only). A new
+    note's path is `<vault>/<slug>.md` (the slug comes from the title); pass
+    a subdirectory path to file it deeper. The bare vault root as a directory
+    target is refused.
   - `memory_audit`: report vault size, index state, and over-budget warnings.
   - `memory_dream`: run the split-compaction pass that merges and prunes notes.
 - **Works out of the box.** With no vault configured, the first memory access
@@ -30,17 +33,34 @@ then watch your agents learn from shared experiences.
 - **Vault sharing modes.** Adopt a vault as **Adopt and Share** (agents read
   and write) or **Read-only** (agents query but never write).
 - **Settings card.** The "Obsidian Mem" card in the Web GUI manages the vault
-  registry (paths, modes, re-index), the vector/index knobs, and the Dreaming
-  section, where you add DSH schedule/timer triggers that wake agents to run
-  `memory_dream`.
+  registry (paths, modes, the per-vault "Global memory relative file path",
+  re-index), the vector/index knobs, and the Dreaming section, where you add
+  DSH schedule/timer triggers that wake agents to run `memory_dream`.
+- **Global memory file.** Each vault names one global memory file (the
+  add-vault form's "Global memory relative file path" field, relative to the
+  vault root; blank defaults to `GLOBAL.md`). Each shared vault's file is
+  injected, pinned, at session start within the global memory budget, and the
+  dreaming pass never proposes it for compaction or merging. Otherwise it is
+  an ordinary editable, indexable note: keep your always-relevant facts there
+  and edit it like any other note.
 
 ## Storage layout
 
-| Path                              | What lives there                                        |
-| --------------------------------- | ------------------------------------------------------- |
-| `$HOME/.dsh/obsidian-mem/`        | The default shared vault (created on first memory access) |
-| `$HOME/.dsh/obsidian-mem-db/`     | The Milvus-Lite database (rebuildable; safe to delete)  |
-| `$HOME/.dsh/obsidian-mem/models/` | The transformers.js ONNX model cache                    |
+The registered vault root IS the indexed note root: every `*.md` file under
+the root, at any depth, is a memory note. Dot directories and dot files are
+never indexed, and these vault-root paths are reserved for the plugin:
+
+| Path (inside a vault)                | What lives there                                            |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `<vault>/<slug>_history.md`          | Note history retired by dreaming; reserved suffix, never indexed |
+| `<vault>/.INTENTS.md`                | The intents file; never indexed                             |
+| `<vault>/.obsidian-mem/metadata/`    | The vault's sidecars: the indexer state file and the `DREAMS.md` dream diary; never indexed (dot dir) |
+
+| Path (plugin state)                  | What lives there                                            |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `$HOME/.dsh/obsidian-mem/`           | The default shared vault (created on first memory access)   |
+| `$HOME/.dsh/obsidian-mem-db/`        | The Milvus-Lite database (rebuildable; safe to delete)      |
+| `$HOME/.dsh/obsidian-mem-db/models/` | The transformers.js ONNX model cache                        |
 
 Deleting `obsidian-mem-db` is always safe: the index is derived state and is
 rebuilt from your Markdown notes on demand.
@@ -51,10 +71,10 @@ The settings card (or the plugin's profile config) exposes:
 
 | Knob                    | Default                              | Notes                                                            |
 | ----------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `vaults[]`              | (none; default vault is lazy-created) | Each vault: `path`, `mode` (`shared` \| `readonly`)              |
+| `vaults[]`              | (none; default vault is lazy-created) | Each vault: `path`, `mode` (`shared` \| `readonly`), `globalFile` (vault-root relative; blank = `GLOBAL.md`) |
 | `vectorDim`             | `384`                                | Full e5-small width; `128`..`320` are lossy; change = re-index   |
 | `embeddingModel`        | `Xenova/multilingual-e5-small`       | ONNX q8, `passage:` / `query:` prefixes                        |
-| `modelCacheDir`         | `$HOME/.dsh/obsidian-mem/models`     | transformers.js `env.cacheDir`                                   |
+| `modelCacheDir`         | `$HOME/.dsh/obsidian-mem-db/models`  | transformers.js `env.cacheDir`                                   |
 | `dbDir`                 | `$HOME/.dsh/obsidian-mem-db`         | Milvus-Lite data directory                                       |
 | `keywordLlm`            | off                                  | Optional OpenAI-compatible endpoint that augments heuristic wake-keyword extraction |
 | `recallBudget`          | per plan                             | Caps injected recall context per turn                            |
@@ -79,7 +99,7 @@ analyzer and BM25 Function (verified, `docs/research/milvus-transformers-finding
 ## Model download and offline use
 
 On first embedding the plugin downloads `Xenova/multilingual-e5-small` (ONNX
-q8, roughly 135 MB) into `$HOME/.dsh/obsidian-mem/models`. For an offline
+q8, roughly 135 MB) into `$HOME/.dsh/obsidian-mem-db/models`. For an offline
 host, pre-seed the cache on a connected machine:
 
 ```

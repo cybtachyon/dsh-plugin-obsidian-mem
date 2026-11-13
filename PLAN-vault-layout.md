@@ -110,7 +110,7 @@ Ordered list; every task is defined in its own file.
  - [x] [Refactor: Phase 3 review](docs/PLAN-VAULT-LAYOUT-TASK-R3-refactor-phase-3.md)
 
 ### Phase 4 — Ship
- - [ ] [TASK-011-docs-layout-wording](docs/PLAN-VAULT-LAYOUT-TASK-011-docs-layout-wording.md)
+ - [x] [TASK-011-docs-layout-wording](docs/PLAN-VAULT-LAYOUT-TASK-011-docs-layout-wording.md)
  - [ ] [TASK-012-full-quality-gate](docs/PLAN-VAULT-LAYOUT-TASK-012-full-quality-gate.md)
  - [ ] [TASK-013-live-vault-migration](docs/PLAN-VAULT-LAYOUT-TASK-013-live-vault-migration.md)
 

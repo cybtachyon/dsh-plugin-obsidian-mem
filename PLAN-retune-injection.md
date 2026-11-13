@@ -87,7 +87,7 @@ decoy memories, machinae-game subagents reporting every recall they see.
 
 ### Phase 4 - Finalization
 
- - [ ] [TASK-016-retire-test-debris](docs/PLAN-retune-injection-TASK-016-retire-test-debris.md)
+ - [x] [TASK-016-retire-test-debris](docs/PLAN-retune-injection-TASK-016-retire-test-debris.md)
  - [ ] [TASK-017-final-report](docs/PLAN-retune-injection-TASK-017-final-report.md)
 
 ## Dependencies

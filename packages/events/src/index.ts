@@ -34,6 +34,7 @@ import { installThinkIntercept } from './thinkIntercept.js'
 import { installMemoryToolWatch, installTurnEnd } from './turnEnd.js'
 import { installTurnStart } from './turnStart.js'
 import { runGuarded } from './toolkit.js'
+import { installWriteLedger } from './writeLedger.js'
 
 export const name = 'obsidian-mem-events'
 export const inject = ['obsidianMem']
@@ -144,6 +145,7 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
   // memory-tool turn guard.
   installReadIntercept({ ctx, memory, registry, logger: hookLogger })
   installMemoryToolWatch({ ctx, registry, logger: hookLogger })
+  installWriteLedger({ ctx, registry, logger: hookLogger })
 
   return registry
 }
@@ -213,3 +215,5 @@ export {
 } from './turnEnd.js'
 export type { MemoryToolWatchDeps, TurnEndDeps } from './turnEnd.js'
 export { compactionInstruction } from './budget.js'
+export { installWriteLedger } from './writeLedger.js'
+export type { WriteLedgerDeps } from './writeLedger.js'

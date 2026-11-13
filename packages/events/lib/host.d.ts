@@ -162,10 +162,19 @@ export interface ToolExecutionMirror {
     readonly arguments: unknown;
     readonly agent?: LiveAgent;
 }
-/** The `tools/result` outcome slice (isError discriminates the union). */
+/**
+ * The `tools/result` outcome slice (isError discriminates the union).
+ * `value` is the canonical JsonValue a successful execution carries
+ * (ToolExecutionSuccess in the installed @deepseek-ai/dsh-tools
+ * 0.2.1-alpha.3 lib/types/index.d.ts): the in-process emit delivers it
+ * to live listeners; the "omitted from durable events" note covers the
+ * session-log projections only, so observers read it type-guarded and
+ * treat absence (failures, older emitters) as "no structured outcome".
+ */
 export interface ToolResultMirror {
     readonly isError: boolean;
     readonly content: readonly HostContentBlock[];
+    readonly value?: unknown;
 }
 declare module '@deepseek-ai/cordis' {
     interface Events {

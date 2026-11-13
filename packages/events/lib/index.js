@@ -27,6 +27,7 @@ import { installThinkIntercept } from './thinkIntercept.js';
 import { installMemoryToolWatch, installTurnEnd } from './turnEnd.js';
 import { installTurnStart } from './turnStart.js';
 import { runGuarded } from './toolkit.js';
+import { installWriteLedger } from './writeLedger.js';
 export const name = 'obsidian-mem-events';
 export const inject = ['obsidianMem'];
 /**
@@ -120,6 +121,7 @@ export function mountLifecycle(scope, options = {}) {
     // memory-tool turn guard.
     installReadIntercept({ ctx, memory, registry, logger: hookLogger });
     installMemoryToolWatch({ ctx, registry, logger: hookLogger });
+    installWriteLedger({ ctx, registry, logger: hookLogger });
     return registry;
 }
 /**
@@ -141,4 +143,5 @@ export { dirSignalsOf, HARNESS_READ_TOOL_NAME, importSnippetFrom, installReadInt
 export { extractCompletedThinkBlocks, installThinkIntercept, THINK_QUERY_MAX_CHARS, THINK_SEARCH_TOP_K, } from './thinkIntercept.js';
 export { installMemoryToolWatch, installTurnEnd, isTrivialTurn, TURN_END_REMINDER, TRIVIAL_TURN_MAX_CHARS, turnEndReminder, WORK_MARKER, } from './turnEnd.js';
 export { compactionInstruction } from './budget.js';
+export { installWriteLedger } from './writeLedger.js';
 //# sourceMappingURL=index.js.map

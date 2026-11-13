@@ -75,4 +75,6 @@ export type { ThinkInterceptDeps } from './thinkIntercept.js';
 export { installMemoryToolWatch, installTurnEnd, isTrivialTurn, TURN_END_REMINDER, TRIVIAL_TURN_MAX_CHARS, turnEndReminder, WORK_MARKER, } from './turnEnd.js';
 export type { MemoryToolWatchDeps, TurnEndDeps } from './turnEnd.js';
 export { compactionInstruction } from './budget.js';
+export { installWriteLedger } from './writeLedger.js';
+export type { WriteLedgerDeps } from './writeLedger.js';
 //# sourceMappingURL=index.d.ts.map

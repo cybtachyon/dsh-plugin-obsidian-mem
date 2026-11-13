@@ -338,9 +338,21 @@ export function streamPayload(agent: FakeAgent, frame: AssistantStreamPayload['f
   return { agent: agent as never, frame }
 }
 
-/** The tool result envelope the intercept observes. */
-export function toolResult(isError: boolean, text: string): ToolResultMirror {
-  return { isError, content: [{ type: 'text', text }] }
+/**
+ * The tool result envelope the intercept observes. `value` is the
+ * structured ToolExecutionSuccess payload the live emit carries (absent
+ * keys stay absent for exactOptionalPropertyTypes fidelity).
+ */
+export function toolResult(
+  isError: boolean,
+  text: string,
+  value?: unknown,
+): ToolResultMirror {
+  return {
+    isError,
+    content: [{ type: 'text', text }],
+    ...(value === undefined ? {} : { value }),
+  }
 }
 
 /** A temp state dir; the registry file lands under <dir>/state/. */

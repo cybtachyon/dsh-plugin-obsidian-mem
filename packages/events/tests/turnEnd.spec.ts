@@ -377,7 +377,7 @@ describe('mount wiring', () => {
     const agent = fakeAgent({ id: 'session-wired' })
     ctx.emit('agent/created', agent.asCreated())
     expect(agent.agentHandlers.has('agent/turn-stopping')).toBe(true)
-    expect(ctx.handlers.get('tools/result') ?? []).toHaveLength(2) // read + memory watch
+    expect(ctx.handlers.get('tools/result') ?? []).toHaveLength(3) // read + memory watch + write ledger
   })
 
   it('captures the first user text from the pre-step waterfall end to end', async () => {

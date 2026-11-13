@@ -1,5 +1,7 @@
 # TASK-021 Milvus-Lite bootstrap (uvx auto-spawn)
 
+Status: done
+
 Depends: TASK-010; consult `docs/research/milvus-transformers-findings.md` §Milvus for the
 verified spawn command, db-file semantics, and Node SDK connection shape BEFORE coding.
 

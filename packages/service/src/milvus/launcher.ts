@@ -1,0 +1,671 @@
+/**
+ * Launcher owns the Milvus-Lite child process: uvx resolution, the verified
+ * spawn command, the <dataDir>/.memlite.json port/pid file,
+ * attach-before-spawn, readiness polling, lock-owner handling, degraded-mode
+ * respawn with backoff, and SIGTERM/SIGKILL teardown.
+ *
+ * Start is lazy by contract: only `ensureMemoryAccess()` (TASK-030) calls
+ * start(), so an unconfigured install spawns no child process. The bootstrap
+ * command and the algorithm are copied verbatim from
+ * docs/research/milvus-transformers-findings.md §5.1-5.2; do not re-derive.
+ * @module dsh-plugin-obsidian-mem/service/milvus/launcher
+ */
+
+import { spawn as nodeSpawn } from 'node:child_process'
+import {
+  accessSync,
+  constants,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { createServer } from 'node:net'
+import type { AddressInfo } from 'node:net'
+import { homedir as osHomedir } from 'node:os'
+import { delimiter, join } from 'node:path'
+
+import { dbDir } from '../../../core/lib/index.js'
+import type { ProbeFactory } from './client.js'
+import { probeFor } from './client.js'
+
+/**
+ * MilvusLiteVersion pins the certified milvus-lite release passed to
+ * `uvx --from milvus-lite==<PIN>`. 3.x storage is a directory layout 2.x
+ * cannot read and there is no migration, so an upstream release must never
+ * silently change storage semantics under a live index (findings §5.2.9).
+ */
+export const MILVUS_LITE_VERSION = '3.2.2'
+
+/** LiteVersionPrefix is what identifies a lite server in getVersion output. */
+export const LITE_VERSION_PREFIX = 'milvus_lite'
+
+/** PortFileName is the port/pid record under dataDir; lite itself writes none. */
+export const PORT_FILE_NAME = '.memlite.json'
+
+/** UvInstallScript is the official installer used when uvx is absent. */
+export const UV_INSTALL_SCRIPT = 'https://astral.sh/uv/install.sh'
+
+// milvus-lite prints this exception name on stderr when another process
+// owns the data-dir LOCK file (findings §2.3); it is the already-running
+// signal.
+const DATA_DIR_LOCK_MARKER = 'DataDirLockedError'
+
+const DEFAULT_READINESS_TIMEOUT_MS = 90_000
+const DEFAULT_READINESS_INTERVAL_MS = 250
+const DEFAULT_PROBE_TIMEOUT_MS = 2_000
+const DEFAULT_KILL_GRACE_MS = 5_000
+const DEFAULT_RESPAWN_BASE_DELAY_MS = 1_000
+const DEFAULT_RESPAWN_MAX_DELAY_MS = 30_000
+const STDERR_TAIL_CHARS = 4_000
+
+/** Launcher mode: 'spawn' owns a child; 'external' only connects. */
+export type MilvusLauncherMode = 'spawn' | 'external'
+
+/** Config for the Milvus-Lite backend. */
+export interface MilvusLauncherConfig {
+  /** Default 'spawn'. 'external' skips spawning and uses address. */
+  mode?: MilvusLauncherMode
+  /** external mode: host:port of an already-running Milvus. */
+  address?: string
+  /** spawn mode: fixed localhost port; default: free ephemeral port. */
+  port?: number
+  /** lite data directory (3.x: a directory, not a file); default dbDir(homedir()). */
+  dataDir?: string
+  /** uvx path override; default: probe PATH then ~/.local/bin. */
+  uvxPath?: string
+}
+
+/** Minimal process view the launcher needs; ChildProcess satisfies it. */
+export interface LiteChild {
+  // Optional plus undefined: exactOptionalPropertyTypes would otherwise
+  // reject ChildProcess's `pid?: number` against either spelling alone.
+  readonly pid?: number | undefined
+  kill(signal?: NodeJS.Signals | number): boolean
+  once(
+    event: 'exit',
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): unknown
+  readonly stderr: {
+    on(event: 'data', listener: (chunk: string | Buffer) => void): unknown
+  } | null
+}
+
+/** Spawn options the launcher always passes. */
+export interface LiteSpawnOptions {
+  env: NodeJS.ProcessEnv
+  stdio: ['ignore', 'pipe', 'pipe']
+  detached: false
+}
+
+/** LiteSpawner injects the process factory; tests stub it, production spawns. */
+export type LiteSpawner = (
+  command: string,
+  args: readonly string[],
+  options: LiteSpawnOptions,
+) => LiteChild
+
+/** Seeded constructor options; every process/client touch point is injectable. */
+export interface MilvusLauncherOptions {
+  config?: MilvusLauncherConfig
+  spawner?: LiteSpawner
+  probeFactory?: ProbeFactory
+  /** env for uvx resolution and children; default process.env. */
+  env?: NodeJS.ProcessEnv
+  /** Home base for dataDir and ~/.local/bin defaults. */
+  homedir?: () => string
+  /** Loud lines (degraded state, legacy moves); default console.warn. */
+  log?: (message: string) => void
+  readinessTimeoutMs?: number
+  readinessIntervalMs?: number
+  probeTimeoutMs?: number
+  killGraceMs?: number
+  respawnBaseDelayMs?: number
+  respawnMaxDelayMs?: number
+}
+
+/** What a successful start() reports. */
+export interface MilvusStartResult {
+  /** host:port the service connects to. */
+  address: string
+  /** Server version from getVersion, e.g. `milvus_lite-3.2.2`. */
+  version: string
+  /** True when this launcher spawned the child; false on attach/external. */
+  spawned: boolean
+}
+
+/** Thrown when the data-dir LOCK belongs to another process. */
+export class MilvusDataDirLockedError extends Error {}
+
+/** Thrown when a non-lite Milvus answers on the spawn-mode port. */
+export class MilvusForeignServerError extends Error {}
+
+interface ChildWatch {
+  exit: { code: number | null; signal: NodeJS.Signals | null } | null
+  stderrText: string
+}
+
+interface PortFileRecord {
+  port: number
+  pid: number | null
+}
+
+/**
+ * MilvusLauncher implements the verified bootstrap lifecycle. Constructing
+ * it starts nothing; start() attach-or-spawns single-flight, dispose() tears
+ * down, and an unexpected child exit flips degraded and backs off to
+ * respawn.
+ */
+export class MilvusLauncher {
+  private readonly config: MilvusLauncherConfig
+  private readonly spawner: LiteSpawner
+  private readonly probeFactory: ProbeFactory
+  private readonly env: NodeJS.ProcessEnv
+  private readonly homedir: () => string
+  private readonly log: (message: string) => void
+  private readonly readinessTimeoutMs: number
+  private readonly readinessIntervalMs: number
+  private readonly probeTimeoutMs: number
+  private readonly killGraceMs: number
+  private readonly respawnBaseDelayMs: number
+  private readonly respawnMaxDelayMs: number
+
+  private startPromise: Promise<MilvusStartResult> | null = null
+  private activeResult: MilvusStartResult | null = null
+  private child: LiteChild | null = null
+  private ownedPortFile: string | null = null
+  private readonly killedChildren = new Set<LiteChild>()
+  private respawnTimer: ReturnType<typeof setTimeout> | null = null
+  private respawnAttempt = 0
+  private degradedState = false
+  private disposed = false
+
+  constructor(options: MilvusLauncherOptions = {}) {
+    this.config = options.config ?? {}
+    this.spawner = options.spawner ?? defaultSpawner
+    this.env = options.env ?? process.env
+    this.homedir = options.homedir ?? osHomedir
+    this.log = options.log ?? ((message) => console.warn(`[obsidian-mem] ${message}`))
+    this.readinessTimeoutMs = options.readinessTimeoutMs ?? DEFAULT_READINESS_TIMEOUT_MS
+    this.readinessIntervalMs = options.readinessIntervalMs ?? DEFAULT_READINESS_INTERVAL_MS
+    this.probeTimeoutMs = options.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS
+    this.probeFactory = options.probeFactory
+      ?? ((address: string) => probeFor(address, this.probeTimeoutMs))
+    this.killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS
+    this.respawnBaseDelayMs = options.respawnBaseDelayMs ?? DEFAULT_RESPAWN_BASE_DELAY_MS
+    this.respawnMaxDelayMs = options.respawnMaxDelayMs ?? DEFAULT_RESPAWN_MAX_DELAY_MS
+  }
+
+  /** Degraded reports a dead owned child awaiting respawn (index offline). */
+  get degraded(): boolean {
+    return this.degradedState
+  }
+
+  /** Address reports the live backend, or null before start / after crash. */
+  get address(): string | null {
+    return this.activeResult?.address ?? null
+  }
+
+  /** OwnedChild exposes the live spawned child for status and tests. */
+  get ownedChild(): LiteChild | null {
+    return this.child
+  }
+
+  /**
+   * Start attaches to a live lite server or spawns one, returning once the
+   * backend is health-checked. Concurrent calls share one flight.
+   */
+  start(): Promise<MilvusStartResult> {
+    if (this.disposed) {
+      return Promise.reject(new Error('milvus launcher: already disposed'))
+    }
+    if (this.activeResult) {
+      return Promise.resolve(this.activeResult)
+    }
+    this.startPromise ??= this.runStart().finally(() => {
+      this.startPromise = null
+    })
+    return this.startPromise
+  }
+
+  /**
+   * Dispose stops respawns, kills an owned child SIGTERM then SIGKILL after
+   * the grace window (lite has no shutdown RPC), and clears the port file.
+   */
+  async dispose(): Promise<void> {
+    this.disposed = true
+    if (this.respawnTimer) {
+      clearTimeout(this.respawnTimer)
+      this.respawnTimer = null
+    }
+    const child = this.child
+    this.child = null
+    this.activeResult = null
+    if (!child) {
+      return
+    }
+    this.killedChildren.add(child)
+    child.kill('SIGTERM')
+    const exited = await this.childExitAfterKill(child)
+    if (!exited) {
+      child.kill('SIGKILL')
+    }
+    this.removePortFile(this.ownedPortFile)
+    this.ownedPortFile = null
+  }
+
+  private async runStart(): Promise<MilvusStartResult> {
+    if (this.config.mode === 'external') {
+      return await this.startExternal()
+    }
+    return await this.attachOrSpawn()
+  }
+
+  /** StartExternal connects to a user-managed Milvus and never spawns. */
+  private async startExternal(): Promise<MilvusStartResult> {
+    const address = this.config.address
+    if (!address) {
+      throw new Error('milvus launcher: mode "external" requires config.address (host:port)')
+    }
+    const version = await this.waitForReady(address, null)
+    const result: MilvusStartResult = { address, version, spawned: false }
+    this.activeResult = result
+    return result
+  }
+
+  /**
+   * AttachOrSpawn follows findings §5.2: legacy-layout check, port file,
+   * attach-if-ours probe, uvx resolution, the pinned spawn command,
+   * readiness, and the lock-owner path.
+   */
+  private async attachOrSpawn(): Promise<MilvusStartResult> {
+    const dataDir = this.config.dataDir ?? dbDir(this.homedir())
+    this.retireLegacyDataDir(dataDir)
+    mkdirSync(dataDir, { recursive: true })
+    const portFile = join(dataDir, PORT_FILE_NAME)
+    const recorded = readPortFile(portFile)
+
+    const candidatePort = this.config.port ?? recorded?.port
+    if (candidatePort !== undefined) {
+      const attached = await this.tryAttach(`127.0.0.1:${candidatePort}`)
+      if (attached) {
+        return attached
+      }
+    }
+
+    const uvxPath = await this.ensureUvx()
+    const port = candidatePort ?? await freePort()
+    const address = `127.0.0.1:${port}`
+    const watch: ChildWatch = { exit: null, stderrText: '' }
+    const child = this.spawnLite(uvxPath, dataDir, port, watch)
+
+    try {
+      if (child.pid !== undefined) {
+        writePortFile(portFile, { port, pid: child.pid })
+        this.ownedPortFile = portFile
+      }
+      const version = await this.waitForReady(address, watch)
+      const result: MilvusStartResult = { address, version, spawned: true }
+      this.child = child
+      this.activeResult = result
+      this.degradedState = false
+      this.respawnAttempt = 0
+      return result
+    } catch (error) {
+      const childExited = watch.exit !== null
+      if (error instanceof MilvusDataDirLockedError) {
+        const attached = recorded
+          ? await this.tryAttach(`127.0.0.1:${recorded.port}`)
+          : null
+        if (attached) {
+          // The live owner's record was clobbered by ours; restore it so a
+          // future restart can find the owner's port again.
+          writePortFile(portFile, recorded!)
+          return attached
+        }
+        this.removePortFile(portFile)
+        this.ownedPortFile = null
+        throw new MilvusDataDirLockedError(
+          `another process holds the lock on ${dataDir} (DataDirLockedError) and no live `
+          + `milvus-lite answered at ${recorded ? `127.0.0.1:${recorded.port}` : 'a recorded port'}. `
+          + 'Stop the other plugin instance or point config at it with '
+          + `{ mode: 'external', address: '127.0.0.1:<port>' }; never retry blind.`,
+        )
+      }
+      if (!childExited) {
+        this.killedChildren.add(child)
+        child.kill('SIGTERM')
+      }
+      this.removePortFile(portFile)
+      this.ownedPortFile = null
+      throw error
+    }
+  }
+
+  /** TryAttach attaches when a milvus-lite answers; foreign servers throw. */
+  private async tryAttach(address: string): Promise<MilvusStartResult | null> {
+    const probe = this.probeFactory(address)
+    try {
+      if (probe.connectPromise) {
+        await probe.connectPromise
+      }
+      const { version } = await probe.getVersion()
+      if (!version.startsWith(LITE_VERSION_PREFIX)) {
+        throw new MilvusForeignServerError(
+          `a non-milvus-lite Milvus (${version || 'unknown version'}) answers at ${address}. `
+          + `Spawn mode refuses it; run it as { mode: 'external', address: '${address}' } `
+          + 'or free the port.',
+        )
+      }
+      const result: MilvusStartResult = { address, version, spawned: false }
+      this.activeResult = result
+      return result
+    } catch (error) {
+      if (error instanceof MilvusForeignServerError) {
+        throw error
+      }
+      return null // nothing answering: not attachable
+    } finally {
+      await Promise.resolve(probe.close()).catch(() => undefined)
+    }
+  }
+
+  /** SpawnLite runs the one command verified in findings §5.1, pinned. */
+  private spawnLite(uvxPath: string, dataDir: string, port: number, watch: ChildWatch): LiteChild {
+    const args = [
+      '--with', 'pymilvus', // mandatory: milvus-lite omits pymilvus (§5.1)
+      '--from', `milvus-lite==${MILVUS_LITE_VERSION}`,
+      'milvus-lite', 'server',
+      '--data-dir', dataDir,
+      '--host', '127.0.0.1', // mandatory: default 0.0.0.0 has no auth (§5.1)
+      '--port', String(port),
+    ]
+    const child = this.spawner(uvxPath, args, {
+      env: { ...this.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    })
+    child.stderr?.on('data', (chunk) => {
+      watch.stderrText = (watch.stderrText + chunk.toString()).slice(-STDERR_TAIL_CHARS)
+    })
+    child.once('exit', (code, signal) => {
+      watch.exit = { code, signal }
+      this.onChildExit(child, code, signal)
+    })
+    return child
+  }
+
+  /**
+   * WaitForReady is the SDK-3.0.6 replacement for the nonexistent
+   * waitForMilvusReady: await connectPromise, then poll checkHealth on the
+   * interval until the deadline (findings §4.1, §5.2.4).
+   */
+  private async waitForReady(address: string, watch: ChildWatch | null): Promise<string> {
+    const deadline = Date.now() + this.readinessTimeoutMs
+    const probe = this.probeFactory(address)
+    let lastError: unknown = null
+    try {
+      if (probe.connectPromise) {
+        await probe.connectPromise.catch((error: unknown) => {
+          lastError = error
+        })
+      }
+      for (;;) {
+        if (watch?.exit) {
+          throw this.childDiedError(address, watch)
+        }
+        try {
+          const health = await probe.checkHealth()
+          if (health.isHealthy) {
+            const { version } = await probe.getVersion()
+            if (this.config.mode !== 'external' && !version.startsWith(LITE_VERSION_PREFIX)) {
+              throw new MilvusForeignServerError(
+                `the server spawned for ${address} reports ${version}, not ${LITE_VERSION_PREFIX}-*; `
+                + `the version pin guards the 3.x storage layout`,
+              )
+            }
+            return version
+          }
+        } catch (error) {
+          if (error instanceof MilvusForeignServerError) {
+            throw error
+          }
+          lastError = error
+        }
+        if (Date.now() >= deadline) {
+          break
+        }
+        await sleep(this.readinessIntervalMs)
+      }
+    } finally {
+      await Promise.resolve(probe.close()).catch(() => undefined)
+    }
+    throw new Error(
+      `milvus launcher: no healthy milvus-lite at ${address} within ${this.readinessTimeoutMs} ms `
+      + `(cold uvx resolves and downloads the wheel set once; warm starts take ~0.5 s). `
+      + `Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    )
+  }
+
+  /** ChildDiedError classifies a spawn that exited before readiness. */
+  private childDiedError(address: string, watch: ChildWatch): Error {
+    const tail = watch.stderrText.trim()
+    if (watch.stderrText.includes(DATA_DIR_LOCK_MARKER)) {
+      return new MilvusDataDirLockedError(
+        `milvus-lite for ${address} exited: ${DATA_DIR_LOCK_MARKER}; stderr: ${tail}`,
+      )
+    }
+    return new Error(
+      `milvus-lite for ${address} exited before ready `
+      + `(code=${watch.exit?.code} signal=${watch.exit?.signal}). `
+      + `stderr tail: ${tail || '(empty)'}`,
+    )
+  }
+
+  /** OnChildExit flips degraded and schedules a backed-off respawn. */
+  private onChildExit(child: LiteChild, code: number | null, signal: string | null): void {
+    if (this.disposed || this.killedChildren.has(child) || this.child !== child) {
+      return
+    }
+    this.child = null
+    this.activeResult = null
+    this.degradedState = true
+    this.log(
+      `milvus-lite child (pid ${child.pid ?? '?'}) exited unexpectedly `
+      + `(code=${code} signal=${signal}); index offline until respawn `
+      + `(attempt ${this.respawnAttempt + 1})`,
+    )
+    this.scheduleRespawn()
+  }
+
+  private scheduleRespawn(): void {
+    if (this.disposed || this.respawnTimer) {
+      return
+    }
+    const delay = Math.min(
+      this.respawnBaseDelayMs * 2 ** this.respawnAttempt,
+      this.respawnMaxDelayMs,
+    )
+    this.respawnAttempt += 1
+    this.respawnTimer = setTimeout(() => {
+      this.respawnTimer = null
+      if (this.disposed) {
+        return
+      }
+      this.start().then(
+        (result) => {
+          this.degradedState = false
+          this.log(`milvus-lite respawned at ${result.address} (${result.version})`)
+        },
+        (error: unknown) => {
+          this.log(
+            `milvus-lite respawn failed: ${error instanceof Error ? error.message : String(error)}; `
+            + 'backing off',
+          )
+          this.scheduleRespawn()
+        },
+      )
+    }, delay)
+    this.respawnTimer.unref?.()
+  }
+
+  /** EnsureUvx probes PATH then ~/.local/bin, then tries the official install. */
+  private async ensureUvx(): Promise<string> {
+    if (this.config.uvxPath) {
+      return this.config.uvxPath
+    }
+    const found = this.findUvx()
+    if (found) {
+      return found
+    }
+    this.log(`uvx not found on PATH or ~/.local/bin; installing uv from ${UV_INSTALL_SCRIPT}`)
+    const installed = await this.installUv()
+    if (installed) {
+      return installed
+    }
+    throw new Error(
+      'milvus launcher: uvx not found and uv auto-install failed. If this machine is '
+      + `offline, copy uvx in place or set the uvxPath config. Manual install: `
+      + `curl -LsSf ${UV_INSTALL_SCRIPT} | sh (https://docs.astral.sh/uv/), then retry.`,
+    )
+  }
+
+  private findUvx(): string | null {
+    const directories = [
+      ...(this.env.PATH ?? '').split(delimiter).filter(Boolean),
+      join(this.homedir(), '.local', 'bin'), // the uv installer's target
+    ]
+    for (const directory of directories) {
+      const candidate = join(directory, 'uvx')
+      try {
+        accessSync(candidate, constants.X_OK)
+        return candidate
+      } catch {
+        // keep looking
+      }
+    }
+    return null
+  }
+
+  /**
+   * InstallUv runs the official astral installer through the spawner. It
+   * needs network; offline it fails and findUvx still returns null, which
+   * turns into the actionable uvx-not-found error.
+   */
+  private async installUv(): Promise<string | null> {
+    try {
+      const child = this.spawner('sh', ['-c', `curl -LsSf ${UV_INSTALL_SCRIPT} | sh`], {
+        env: { ...this.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: false,
+      })
+      const code = await new Promise<number | null>((resolve) => {
+        child.once('exit', (exitCode) => resolve(exitCode))
+      })
+      if (code !== 0) {
+        this.log(`uv installer exited with code ${code}`)
+      }
+      return this.findUvx()
+    } catch (error) {
+      this.log(`uv auto-install failed: ${error instanceof Error ? error.message : String(error)}`)
+      return null
+    }
+  }
+
+  /**
+   * RetireLegacyDataDir moves aside a milvus-lite 2.x single-file database
+   * before 3.x starts in the same path. 3.x cannot read 2.x files and the
+   * upstream provides no migration, so the loud move-plus-rebuild is the
+   * only honest path (RESEARCH-FINDINGS scar tissue; findings §2.3).
+   */
+  private retireLegacyDataDir(dataDir: string): void {
+    let stats
+    try {
+      stats = statSync(dataDir)
+    } catch {
+      return // fresh path: nothing to retire
+    }
+    if (!stats.isFile()) {
+      return
+    }
+    const moved = `${dataDir}.legacy-2x-${Date.now()}`
+    renameSync(dataDir, moved)
+    this.log(
+      `milvus-lite: moved legacy 2.x single-file database ${dataDir} to ${moved}; `
+      + '3.x cannot read 2.x databases and no migration exists. The index rebuilds from the vaults.',
+    )
+  }
+
+  /** ChildExitAfterKill waits graceMs for the killed child to exit. */
+  private childExitAfterKill(child: LiteChild): Promise<boolean> {
+    return new Promise((resolve) => {
+      let settled = false
+      const settle = (exited: boolean): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        clearTimeout(timer)
+        resolve(exited)
+      }
+      const timer = setTimeout(() => settle(false), this.killGraceMs)
+      timer.unref?.()
+      child.once('exit', () => settle(true))
+    })
+  }
+
+  private removePortFile(portFile: string | null): void {
+    if (!portFile) {
+      return
+    }
+    try {
+      unlinkSync(portFile)
+    } catch {
+      // already gone: nothing to undo
+    }
+  }
+}
+
+/** DefaultSpawner is the production LiteSpawner over node:child_process. */
+const defaultSpawner: LiteSpawner = (command, args, options) =>
+  nodeSpawn(command, [...args], options)
+
+/** FreePort asks the OS for an unused ephemeral TCP port on loopback. */
+async function freePort(): Promise<number> {
+  const server = createServer()
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve())
+  })
+  const { port } = server.address() as AddressInfo
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve())
+  })
+  return port
+}
+
+/** ReadPortFile parses <dataDir>/.memlite.json; unreadable files are absent. */
+function readPortFile(portFile: string): PortFileRecord | null {
+  try {
+    const parsed = JSON.parse(readFileSync(portFile, 'utf8')) as Partial<PortFileRecord>
+    if (typeof parsed?.port !== 'number' || !Number.isInteger(parsed.port)) {
+      return null
+    }
+    return { port: parsed.port, pid: typeof parsed.pid === 'number' ? parsed.pid : null }
+  } catch {
+    return null
+  }
+}
+
+/** WritePortFile persists the {port,pid} record for a restart to reuse/reap. */
+function writePortFile(portFile: string, record: PortFileRecord): void {
+  writeFileSync(portFile, `${JSON.stringify(record)}\n`)
+}
+
+/** Sleep resolves after ms. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}

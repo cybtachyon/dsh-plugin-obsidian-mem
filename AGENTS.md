@@ -75,11 +75,12 @@
   (`../../core/lib/index.js`). A self-referencing bare specifier
   (`dsh-plugin-obsidian-mem/core`) only resolves when the package has a
   self-link inside a `node_modules` tree, so it fails on local/pnpm installs.
-- **lib is NOT tracked here.** Unlike dsh-plugin-local-infer (which commits
-  `packages/*/lib` so a git install ships entry points), this repo git-ignores
-  `packages/*/lib` and `packages/*/tsconfig.tsbuildinfo`: a `pnpm build`
-  regenerates them, and plugin installs go through plugin_manager from a built
-  tree. After `git clean`, run `pnpm build` before anything consumes `lib/`.
+- **lib IS tracked here.** This repo commits `packages/*/lib` (like
+  dsh-plugin-local-infer) so a git or npm install ships the runtime entry
+  points. `packages/*/tsconfig.tsbuildinfo` stays git-ignored. After
+  `git clean`, `pnpm install` is still required; the entry points came from
+  git, so `pnpm build` must leave the tree clean rather than create missing
+  outputs.
 - A bundle with a client half needs a bare-package carrier row: a no-op
   `dsh/host.js` module, a root `.` export, and a bundle row named after the
   bare package. The client-module scan keys `dsh.client` on a bare
@@ -92,9 +93,9 @@
   root package.json is the installable bundle manifest: its `dependencies`
   are what the plugin install materializes into
   `~/.dsh/profiles/<profile>/node_modules`, which is the only tree the
-  running `packages/*/lib` files resolve bare specifiers against (lib is
-  git-ignored and carries no node_modules of its own). The per-package rows
-  are the local-workspace declaration and the tsc/vitest resolver. Deleting
+  running `packages/*/lib` files resolve bare specifiers against (lib
+  carries no node_modules of its own). The per-package rows are the
+  local-workspace declaration and the tsc/vitest resolver. Deleting
   either half breaks one surface: the root half makes the installed plugin
   throw `Cannot find module '@zilliz/milvus2-sdk-node'` at activation; the
   per-package half breaks local typecheck/test resolution. Keep the two

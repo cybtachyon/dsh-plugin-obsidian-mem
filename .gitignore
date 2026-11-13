@@ -1,11 +1,9 @@
 # Dependencies
 node_modules/
 
-# tsc build output. Unlike dsh-plugin-local-infer (which commits packages/*/lib
-# so a git install ships entry points), this repo keeps lib/ untracked: a
-# `pnpm build` regenerates it, and plugin installs go through plugin_manager
-# from a built tree.
-packages/*/lib/
+# packages/*/lib is committed so a git or npm install ships the runtime
+# entry points. tsc incremental state stays ignored; a `pnpm build` must
+# leave the tracked lib output clean.
 packages/*/tsconfig.tsbuildinfo
 
 # Generated client bundle intermediate (scripts/build-client.mjs)

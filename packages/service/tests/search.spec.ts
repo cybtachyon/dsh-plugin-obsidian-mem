@@ -8,6 +8,7 @@ import {
   buildFilterExpr,
   hybridSearch,
   searchExactSections,
+  sparseQueryText,
 } from '../src/search.ts'
 import type { SearchMilvus, SearchRouteDispatch } from '../src/search.ts'
 import type { SearchDependencies } from '../src/search.ts'
@@ -22,8 +23,10 @@ import type { SearchDependencies } from '../src/search.ts'
  * fused floor at 1/(k+2) (TASK-009 rule, TASK-007 value: default
  * filtering, explicit 0 disables, explicit override), dedupe/token
  * budgets/mode resolution, the exact-section fallback with its fused
- * floor (exact-file leg unfloored, TASK-014), and the typed offline
- * degradation.
+ * floor (exact-file leg unfloored, TASK-014), the typed offline
+ * degradation, and the stop-word strip: sparseQueryText tokenizer-table
+ * goldens plus the stripped BM25 `data` on both dispatch seams with the
+ * dense legs proven to carry the FULL query's vector (TASK-003).
  */
 
 interface Recorded {
@@ -257,6 +260,89 @@ describe('two-route search dispatch', () => {
 
     expect(results).toEqual([])
     expect(calls.map((call) => call.method)).toEqual(['count'])
+  })
+})
+
+describe('sparseQueryText tokenizer table (shipped behavior)', () => {
+  // Goldens pinned against the SHIPPED behavior (TASK-003), not intent:
+  // Han runs split per codepoint so the single-character zho entries
+  // fire, kana and Hangul are word characters and pass whole, hyphens
+  // and punctuation are separators, '_' stays inside a word run, and
+  // casing survives because removal matches on token.toLowerCase().
+  it.each([
+    ['collapses the spaces left by removed stopwords', 'the   rate   limit', 'rate limit'],
+    ['splits hyphen and trailing-punctuation tokens', 'rate-limit!', 'rate limit'],
+    ['keeps the hyphen halves that are not stop words', 'e-mail me', 'e mail'],
+    ['treats underscore as part of the word run', 'rate_limit', 'rate_limit'],
+    ['keeps digits inside word runs', 'top10 k8s', 'top10 k8s'],
+    ['removes case-insensitively and keeps survivor casing', 'THE rate Limit', 'rate Limit'],
+    ['leaves words the 108-entry eng list lacks', 'IPv6 address filtering', 'IPv6 address filtering'],
+    ['splits Han runs per codepoint', '我 喜欢 混合 检索', '喜 欢 混 合 检 索'],
+    ['fires the single-character zho entries', '时间 和 日期', '间 期'],
+    ['keeps kana runs whole beside split Han', 'テストの時間', 'テストの 時 間'],
+    ['passes Hangul through whole', '안녕하세요', '안녕하세요'],
+    ['strips a zho single char between Latin words', 'upsert 和 delete', 'upsert delete'],
+    ['fail-opens an all-stop-word query to the original', 'the a an of and is are', 'the a an of and is are'],
+    ['fail-opens a symbols-only query to the original', '?! ... @#', '?! ... @#'],
+    ['returns empty input unchanged (identity via fail-open)', '', ''],
+  ])('%s', (_label, query, expected) => {
+    expect(sparseQueryText(query)).toBe(expected)
+  })
+})
+
+describe('stop-word strip on the BM25 route (TASK-003 pins)', () => {
+  it('sends the stripped text on BM25 while the dense route embeds the FULL query', async () => {
+    const embedder = fakeEmbedder({ vectorDim: 8 })
+    const { client, calls } = stubMilvus({ results: [row()] })
+    const query = 'what does the Milvus indexer do?'
+
+    await hybridSearch(deps(client, { embedder }), { query })
+
+    const [dense, sparse] = searchDispatches(calls)
+    // eng lists 'do' but not 'does', and no domain term drops: only the
+    // true function words go.
+    expect(sparse!.data).toEqual(['does Milvus indexer'])
+    // The strip never reaches the embed the caller ran: the dense data is
+    // the FULL query's vector, and the stripped text's vector is not it
+    // (fakeEmbedder is a deterministic hash of the exact text).
+    expect(dense!.data).toEqual([await embedder.embedQuery(query)])
+    expect(dense!.data[0]).not.toEqual(await embedder.embedQuery('does Milvus indexer'))
+  })
+
+  it('fail-opens an all-stop-word query to the ORIGINAL text on BM25, never empty', async () => {
+    const { client, calls } = stubMilvus({ results: [row()] })
+    const query = 'the a of'
+
+    await hybridSearch(deps(client), { query })
+
+    const [, sparse] = searchDispatches(calls)
+    expect(sparse!.data).toEqual([query])
+  })
+
+  it('strips the snippet on both searchExactSections pairs (shared dispatchRoutes)', async () => {
+    const embedder = fakeEmbedder({ vectorDim: 8 })
+    const { client, calls } = stubSequenced([[], [row()]])
+    const snippet = 'the widget of'
+
+    await searchExactSections(deps(client, { embedder }), {
+      filePath: 'src/widget.tsx',
+      ext: '.tsx',
+      snippet,
+      fileTokens: ['widget'],
+    })
+
+    const dispatches = searchDispatches(calls)
+    expect(dispatches).toHaveLength(4)
+    // Both pairs share dispatchRoutes: the exact-file pair (0, 1) and
+    // the fallback pair (2, 3) each carry the stripped text on the BM25
+    // leg...
+    for (const dispatch of [dispatches[1]!, dispatches[3]!]) {
+      expect(dispatch.data).toEqual(['widget'])
+    }
+    // ...and every dense leg still carries the FULL snippet's vector.
+    for (const dispatch of [dispatches[0]!, dispatches[2]!]) {
+      expect(dispatch.data).toEqual([await embedder.embedQuery(snippet)])
+    }
   })
 })
 

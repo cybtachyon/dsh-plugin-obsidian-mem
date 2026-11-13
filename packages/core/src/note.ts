@@ -16,6 +16,12 @@ import { isScopeType, SCOPE_GLOBAL } from './constants.js'
 export interface Note {
   meta: NoteMeta
   body: string
+  /**
+   * Raw frontmatter record including the keys NoteMeta does not model
+   * (keywords, trigger_extensions, trigger_frameworks); trigger extraction
+   * reads the overrides from here. Absent on hand-built Note objects.
+   */
+  raw?: Record<string, unknown>
 }
 
 /**
@@ -90,7 +96,7 @@ export function parseNote(text: string): Note {
     ...(lastReadAt === '' ? {} : { last_read_at: lastReadAt }),
     read_count: countOf(data['read_count']),
   }
-  return { meta, body: parsed.content }
+  return { meta, body: parsed.content, raw: data }
 }
 
 /**

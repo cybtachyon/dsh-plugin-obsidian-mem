@@ -87,6 +87,22 @@ describe('parseNote', () => {
     expect(note.body).toBe('# Just a document\n')
   })
 
+  it('keeps unmodeled frontmatter keys in the raw record', () => {
+    const note = parseNote([
+      '---',
+      'type: domain',
+      'keywords: [billing, rate limit]',
+      'trigger_extensions: [ts]',
+      '---',
+      'Body.',
+    ].join('\n'))
+
+    expect(note.raw).toMatchObject({
+      keywords: ['billing', 'rate limit'],
+      trigger_extensions: ['ts'],
+    })
+  })
+
   it('normalizes CRLF input to LF', () => {
     const note = parseNote('---\r\nindex_title: T\r\n---\r\nline one\r\nline two\r\n')
 

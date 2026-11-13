@@ -24,6 +24,8 @@ import {
 } from '@zilliz/milvus2-sdk-node'
 
 import {
+  MILVUS_ARRAY_CAPACITIES,
+  MILVUS_ARRAY_ELEMENT_MAX_LENGTHS,
   MILVUS_COLLECTION,
   MILVUS_FIELDS,
   VECTOR_DIM_DEFAULT,
@@ -128,22 +130,22 @@ export function createCollectionParams(
         name: MILVUS_FIELDS.triggerExtensions,
         data_type: DataType.Array,
         element_type: DataType.VarChar,
-        max_capacity: 64,
-        max_length: 32,
+        max_capacity: MILVUS_ARRAY_CAPACITIES.triggerExtensions,
+        max_length: MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.triggerExtensions,
       },
       {
         name: MILVUS_FIELDS.triggerFrameworks,
         data_type: DataType.Array,
         element_type: DataType.VarChar,
-        max_capacity: 64,
-        max_length: 64,
+        max_capacity: MILVUS_ARRAY_CAPACITIES.triggerFrameworks,
+        max_length: MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.triggerFrameworks,
       },
       {
         name: MILVUS_FIELDS.wakeKeywords,
         data_type: DataType.Array,
         element_type: DataType.VarChar,
-        max_capacity: 96,
-        max_length: 64,
+        max_capacity: MILVUS_ARRAY_CAPACITIES.wakeKeywords,
+        max_length: MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords,
       },
       {
         name: MILVUS_FIELDS.denseVector,

@@ -267,6 +267,29 @@ export const MILVUS_FIELDS = {
 export type MilvusField = typeof MILVUS_FIELDS[keyof typeof MILVUS_FIELDS]
 
 /**
+ * MILVUS_ARRAY_CAPACITIES maps each Array<VarChar> column to the
+ * max_capacity the collection declares. Trigger extraction caps its lists
+ * here so an insert can never overflow the stored array; schema.ts builds
+ * the columns from the same numbers.
+ */
+export const MILVUS_ARRAY_CAPACITIES = {
+  triggerExtensions: 64,
+  triggerFrameworks: 64,
+  wakeKeywords: 96,
+} as const
+
+/**
+ * MILVUS_ARRAY_ELEMENT_MAX_LENGTHS maps each Array<VarChar> column to the
+ * per-element max_length; extraction drops candidates longer than this
+ * rather than silently truncating a keyword into a different word.
+ */
+export const MILVUS_ARRAY_ELEMENT_MAX_LENGTHS = {
+  triggerExtensions: 32,
+  triggerFrameworks: 64,
+  wakeKeywords: 64,
+} as const
+
+/**
  * Vector width stored by default: multilingual-e5-small's true width. The
  * research decision log retired the original "768" (that is e5-base); no
  * lossy truncation happens unless the user opts into one below.

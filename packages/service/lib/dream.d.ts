@@ -192,6 +192,7 @@ export declare class DreamOrchestrator {
      */
     private applyDreamScoring;
     private setLastDream;
+    private relevancyPath;
     private readRelevancy;
     private writeRelevancy;
     private seedDreamsDiary;

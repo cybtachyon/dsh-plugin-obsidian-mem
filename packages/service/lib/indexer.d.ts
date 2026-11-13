@@ -35,6 +35,15 @@ export type { LlmFetch, LlmRefineConfig } from './llm-refine.js';
 export declare const INDEX_STATE_VERSION = 2;
 /** State file name inside `<vault>/.obsidian-mem/metadata/`. */
 export declare const STATE_FILE_NAME = "obsidian-mem-state.json";
+/** Suffix saveState appends to the tmp file before the rename onto the state file. */
+export declare const STATE_FILE_TMP_SUFFIX = ".tmp";
+/**
+ * IndexStatePath is the ONE definition of the per-vault state file location
+ * (`<vault>/.obsidian-mem/metadata/obsidian-mem-state.json`). The indexer
+ * writes it, the audit reads it, and the service's forced-reindex reset
+ * deletes it; all three call here.
+ */
+export declare function indexStatePath(vaultPath: string): string;
 /** Watcher debounce window; memsearch watchdog value. */
 export declare const WATCH_DEBOUNCE_MS = 1500;
 /**

@@ -14,7 +14,7 @@
  * @module dsh-plugin-obsidian-mem/service/config
  */
 import { isAbsolute, join, resolve } from 'node:path';
-import { dbDir, DEFAULT_MODEL_ID, DREAM_NEAR_DUPLICATE_THRESHOLD, GLOBAL_MEMORY_TOKENS, isVectorDim, MILVUS_SCALAR_MAX_LENGTHS, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, RECALL_TURN_START_TOKENS, resolveGlobalFile, SEARCH_DEFAULT_TOP_K, TRANSFORMERS_PIPELINE_OPTIONS, VAULT_MODE_SHARED, VAULT_MODES, VECTOR_DIM_DEFAULT, VECTOR_DIM_LOSSY, } from '../../core/lib/index.js';
+import { dbDir, DEFAULT_MODEL_ID, DREAM_NEAR_DUPLICATE_THRESHOLD, GLOBAL_MEMORY_TOKENS, isVaultMode, isVectorDim, MILVUS_SCALAR_MAX_LENGTHS, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, RECALL_TURN_START_TOKENS, resolveGlobalFile, SEARCH_DEFAULT_TOP_K, TRANSFORMERS_PIPELINE_OPTIONS, VAULT_MODE_SHARED, VAULT_MODES, VECTOR_DIM_DEFAULT, VECTOR_DIM_LOSSY, } from '../../core/lib/index.js';
 /** G13: cold uvx on an empty cache can exceed 400 s (1.3 GB wheels). */
 export const DEFAULT_READINESS_TIMEOUT_MS = 600_000;
 /**
@@ -220,7 +220,7 @@ function validateVaultEntries(entries, unknownKeys, issues) {
             return;
         }
         const mode = entry.mode === undefined ? VAULT_MODE_SHARED : entry.mode;
-        if (typeof mode !== 'string' || !VAULT_MODES.includes(mode)) {
+        if (typeof mode !== 'string' || !isVaultMode(mode)) {
             issues.push({
                 message: `vault mode must be one of ${VAULT_MODES.join(' | ')}, got ${JSON.stringify(entry.mode)}`,
                 path: ['vaults', index, 'mode'],

@@ -204,6 +204,8 @@ export interface AuditDeps {
  * source of truth).
  */
 export declare function inventoryVault(vault: VaultEntry, fs: AuditFs): VaultInventory;
+/** DreamStatePath is the ONE location of the dream stamp file (`<dbPath>/state/state.json`). */
+export declare function dreamStatePath(dbPath: string): string;
 /** ReadLastDreamAt answers the dream stamp from the plugin state dir. */
 export declare function readLastDreamAt(readSource: {
     readFile(path: string): string | null;

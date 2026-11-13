@@ -38,12 +38,15 @@ import {
   modelCacheDir,
   NOTE_TIMELINE_BYTES,
   parseNote,
+  PLUGIN_METADATA_REL,
   SCOPE_GLOBAL,
+  VAULT_MODE_READ_ONLY,
+  VAULT_MODE_SHARED,
 } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import type { ResolvedObsidianMemConfig } from './config.js'
 import { describeError } from './errors.js'
-import { MAX_FILES_PER_VAULT, STATE_FILE_NAME } from './indexer.js'
+import { indexStatePath, MAX_FILES_PER_VAULT } from './indexer.js'
 import type { IndexProgress, IndexState } from './indexer.js'
 import type { GlobalMemoryIndex, ObsidianMemStatus, VaultEntry } from './service.js'
 
@@ -278,6 +281,9 @@ const ECHO_LABEL_CAP = 60
 const ECHO_PATH_CAP = 120
 const ECHO_TEXT_CAP = 200
 
+// Parse errors echoed into one malformed-notes issue detail line.
+const MALFORMED_ERROR_ECHO_CAP = 3
+
 /**
  * InventoryVault walks one vault read-only: the root note tree (the vault
  * root IS the note root; size-before-read, read cap, reserved placement,
@@ -390,7 +396,7 @@ function toRel(vaultPath: string, abs: string): string {
 // State file facts: missing is the empty answer; corrupt is reported, never
 // reinterpreted (the indexer rewrites it on the next pass).
 function readVaultState(vault: VaultEntry, fs: AuditFs): VaultStateInfo {
-  const path = join(metadataDir(vault.path), STATE_FILE_NAME)
+  const path = indexStatePath(vault.path)
   const raw = fs.readFile(path)
   if (raw === null) {
     return { path, present: false, parseError: null, modelId: null, vectorDim: null, fileCount: 0, expectedChunks: 0, fileKeys: [] }
@@ -426,7 +432,9 @@ function measureUsage(vault: VaultEntry, fs: AuditFs): { bytes: number; truncate
   let entries = 0
   let truncated = false
   const stack: string[] = [vault.path]
-  while (stack.length > 0) {
+  // Past the entry cap the walk stops: MAX_WALK_ENTRIES is what bounds the
+  // doctor on a runaway tree, so it must end the traversal, not just flag.
+  while (stack.length > 0 && !truncated) {
     const dir = stack.pop() as string
     for (const entry of fs.listDirectory(dir) ?? []) {
       if (entry.name.startsWith('.')) {
@@ -512,9 +520,14 @@ interface DreamStateFile {
   lastDreamAt?: number
 }
 
+/** DreamStatePath is the ONE location of the dream stamp file (`<dbPath>/state/state.json`). */
+export function dreamStatePath(dbPath: string): string {
+  return join(dbStateDir(dbPath), DREAM_STATE_FILE)
+}
+
 /** ReadLastDreamAt answers the dream stamp from the plugin state dir. */
 export function readLastDreamAt(readSource: { readFile(path: string): string | null }, dbPath: string): number | null {
-  const raw = readSource.readFile(join(dbStateDir(dbPath), DREAM_STATE_FILE))
+  const raw = readSource.readFile(dreamStatePath(dbPath))
   if (raw === null) {
     return null
   }
@@ -609,7 +622,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
 
   const inventories = deps.vaults.map((vault) => inventoryVault(vault, deps.fs))
   const allNotes = inventories.flatMap((inventory) => inventory.notes)
-  const shared = inventories.filter((inventory) => inventory.vault.mode === 'shared')
+  const shared = inventories.filter((inventory) => inventory.vault.mode === VAULT_MODE_SHARED)
 
   // 1. Vault existence, layout, writability, per-vault reserved placement.
   for (const inventory of inventories) {
@@ -624,20 +637,20 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
         're-register the vault at its real path (the vault root is the indexed note root)')
     }
     if (!facts.sidecarPresent) {
-      issue('vault.sidecar-missing', 'INFO', `vault ${quoted(vault.path, ECHO_PATH_CAP)} has no .obsidian-mem/metadata/ directory yet`,
+      issue('vault.sidecar-missing', 'INFO', `vault ${quoted(vault.path, ECHO_PATH_CAP)} has no ${PLUGIN_METADATA_REL}/ directory yet`,
         'nothing to do: the plugin creates it when it first writes index state for this vault')
     }
-    if (vault.mode === 'shared' && !facts.writable) {
+    if (vault.mode === VAULT_MODE_SHARED && !facts.writable) {
       issue('vault.writable', 'ISSUE', `shared vault ${quoted(vault.path, ECHO_PATH_CAP)} is not writable by this process`,
         'make the directory writable, or switch the vault to read-only in the Obsidian Mem settings card')
     }
-    if (vault.mode === 'read-only' && facts.writable) {
+    if (vault.mode === VAULT_MODE_READ_ONLY && facts.writable) {
       issue('vault.readonly-writable', 'INFO', `read-only vault ${quoted(vault.path, ECHO_PATH_CAP)} is writable on disk`,
         'the plugin still never writes it; tighten permissions if the read-only intent is enforcement')
     }
     if (inventory.reservedMisplaced.length > 0) {
       issue('reserved.placement', 'ISSUE', `reserved protocol files sit outside their skip-indexed placement in ${quoted(vault.path, ECHO_PATH_CAP)}: ${pathList(inventory.reservedMisplaced)}`,
-        'move .INTENTS.md and *_history.md copies to the vault root; for DREAMS.md move it to <vault>/.obsidian-mem/metadata/. Reserved files are never indexed from any other placement')
+        `move .INTENTS.md and *_history.md copies to the vault root; for DREAMS.md move it to <vault>/${PLUGIN_METADATA_REL}/. Reserved files are never indexed from any other placement`)
     }
     if (inventory.walkTruncated) {
       issue('vault.walk-truncated', 'INFO', `the stat walk of ${quoted(vault.path, ECHO_PATH_CAP)} hit its entry cap`,
@@ -766,7 +779,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   const malformed = allNotes.filter((note) => note.malformed !== null)
   if (malformed.length > 0) {
     issue('notes.malformed', 'ISSUE', `notes that could not be read or whose frontmatter failed to parse: ${pathList(malformed.map((note) => note.path), limit)}`,
-      'fix the frontmatter (an unclosed quote or fence poisons every key after it); parse errors: ' + malformed.slice(0, 3).map((note) => note.malformed).join(', '))
+      'fix the frontmatter (an unclosed quote or fence poisons every key after it); parse errors: ' + malformed.slice(0, MALFORMED_ERROR_ECHO_CAP).map((note) => note.malformed).join(', '))
   }
 
   // 6. Model cache.
@@ -780,7 +793,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   // 7. Dreaming: last stamp + schedules summary (Q4 audit<->dream link).
   const lastDreamAt = readLastDreamAt(deps.fs, deps.config.milvus.dbPath)
   issue('dream.last', 'INFO', lastDreamAt === null
-    ? `no dream has run yet (state file ${quoted(join(dbStateDir(deps.config.milvus.dbPath), DREAM_STATE_FILE), ECHO_PATH_CAP)})`
+    ? `no dream has run yet (state file ${quoted(dreamStatePath(deps.config.milvus.dbPath), ECHO_PATH_CAP)})`
     : `last dream ran at ${iso(lastDreamAt)}`,
   'run memory_dream periodically; see its description for the plan/run flow')
   const schedules = status.dreaming.schedules

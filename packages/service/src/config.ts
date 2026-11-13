@@ -22,6 +22,7 @@ import {
   DEFAULT_MODEL_ID,
   DREAM_NEAR_DUPLICATE_THRESHOLD,
   GLOBAL_MEMORY_TOKENS,
+  isVaultMode,
   isVectorDim,
   MILVUS_SCALAR_MAX_LENGTHS,
   RECALL_READ_MAX_SECTIONS,
@@ -353,7 +354,7 @@ function validateVaultEntries(
       return
     }
     const mode = entry.mode === undefined ? VAULT_MODE_SHARED : entry.mode
-    if (typeof mode !== 'string' || !(VAULT_MODES as readonly string[]).includes(mode)) {
+    if (typeof mode !== 'string' || !isVaultMode(mode)) {
       issues.push({
         message: `vault mode must be one of ${VAULT_MODES.join(' | ')}, got ${JSON.stringify(entry.mode)}`,
         path: ['vaults', index, 'mode'],

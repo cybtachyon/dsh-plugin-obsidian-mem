@@ -263,6 +263,14 @@ export declare class ObsidianMemService extends Service {
      */
     addVault(request: VaultAddRequest): VaultEntry;
     /**
+     * CommitRegistryMutation is the ONE card-registry mutation seam: apply
+     * the change to the live registry, rewrite vaults.json, and re-form the
+     * indexer, so add and remove cannot fork the persist/restart pair. The
+     * provision-time default-vault push is the deliberate exception: it is
+     * never persisted, and provisioning owns its own indexer start.
+     */
+    private commitRegistryMutation;
+    /**
      * RemoveVault drops a card-added vault: its chunks are deleted from the
      * collection by the vault filter (when the index is live), its
      * read-registry entries and vaults.json record go, and the indexer

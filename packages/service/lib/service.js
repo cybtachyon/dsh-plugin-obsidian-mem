@@ -27,13 +27,13 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync
 import { homedir as osHomedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, } from '../../core/lib/index.js';
+import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
 import { expandHomePath, globalFileShapeIssue, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js';
 import { DreamOrchestrator } from './dream.js';
 import { createEmbedder } from './embedder.js';
 import { describeError } from './errors.js';
-import { IndexerManager, STATE_FILE_NAME } from './indexer.js';
+import { indexStatePath, IndexerManager, STATE_FILE_TMP_SUFFIX } from './indexer.js';
 import { readyMilvusClient } from './milvus/client.js';
 import { MILVUS_LITE_VERSION, MilvusLauncher } from './milvus/launcher.js';
 import { assertOk } from './milvus/ok.js';
@@ -43,6 +43,8 @@ import { hybridSearch, IndexOfflineError, searchExactSections } from './search.j
 export const OBSIDIAN_MEM_SEAM = 'obsidianMem';
 /** File holding the card-managed vault additions under the state dir. */
 export const VAULTS_FILE_NAME = 'vaults.json';
+/** Schema version stamped on vaults.json; loading tolerates older files by key defaults. */
+const VAULTS_FILE_VERSION = 1;
 /** Upper bound on stored chunk vectors pulled per candidate note. */
 const DREAM_VECTOR_QUERY_LIMIT = 16;
 /** Node implementation of ServiceFs over node:fs. */
@@ -185,9 +187,9 @@ export class ObsidianMemService extends Service {
      * persist to <stateDir>/vaults.json atomically.
      */
     addVault(request) {
-        const mode = request.mode ?? 'shared';
+        const mode = request.mode ?? VAULT_MODE_SHARED;
         if (!isVaultMode(mode)) {
-            throw new Error(`obsidian-mem addVault: mode must be one of shared | read-only, got "${mode}"`);
+            throw new Error(`obsidian-mem addVault: mode must be one of ${VAULT_MODES.join(' | ')}, got "${mode}"`);
         }
         const globalFile = resolveGlobalFile(request.globalFile);
         const globalFileIssue = globalFileShapeIssue(globalFile);
@@ -196,7 +198,7 @@ export class ObsidianMemService extends Service {
         }
         const rawPath = expandHomePath(request.path, this.homedir());
         const registry = this.loadRegistry();
-        if (mode === 'shared') {
+        if (mode === VAULT_MODE_SHARED) {
             // The vault root IS the note root: provisioning creates root +
             // .obsidian-mem/metadata only, never a markdown/ dir.
             this.fs.mkdirp(rawPath);
@@ -217,10 +219,22 @@ export class ObsidianMemService extends Service {
             globalFile,
             source: 'card',
         };
-        registry.vaults.push(entry);
+        this.commitRegistryMutation((vaults) => {
+            vaults.push(entry);
+        });
+        return { ...entry };
+    }
+    /**
+     * CommitRegistryMutation is the ONE card-registry mutation seam: apply
+     * the change to the live registry, rewrite vaults.json, and re-form the
+     * indexer, so add and remove cannot fork the persist/restart pair. The
+     * provision-time default-vault push is the deliberate exception: it is
+     * never persisted, and provisioning owns its own indexer start.
+     */
+    commitRegistryMutation(mutate) {
+        mutate(this.loadRegistry().vaults);
         this.persistVaultsFile();
         this.restartIndexer();
-        return { ...entry };
     }
     /**
      * RemoveVault drops a card-added vault: its chunks are deleted from the
@@ -245,15 +259,17 @@ export class ObsidianMemService extends Service {
             throw new Error(`obsidian-mem removeVault: ${target} is the auto-provisioned default vault; `
                 + 'register a shared vault (card or config.vaults) to take over, then restart');
         }
-        registry.vaults.splice(index, 1);
-        this.persistVaultsFile();
+        this.commitRegistryMutation((vaults) => {
+            vaults.splice(index, 1);
+        });
         for (const readPath of [...this.readRegistry.keys()]) {
             if (readPath.startsWith(`${target}/`) || readPath.startsWith(`${target}\\`)) {
                 this.readRegistry.delete(readPath);
             }
         }
+        // The seam already re-formed the indexer without this vault; purging
+        // its rows in the collection is independent Milvus work.
         await this.dropVaultChunks(entry.path);
-        this.restartIndexer();
     }
     /**
      * Read returns a note's meta plus a 1-based line slice of its body, and
@@ -278,7 +294,7 @@ export class ObsidianMemService extends Service {
         const stat = this.fs.stat(target);
         let statsUpdated = false;
         let finalText = text;
-        if (classified.mode === 'shared') {
+        if (classified.mode === VAULT_MODE_SHARED) {
             const nextMeta = {
                 ...note.meta,
                 read_count: note.meta.read_count + 1,
@@ -344,7 +360,7 @@ export class ObsidianMemService extends Service {
         if (classified === null) {
             throw new Error(`obsidian-mem write: ${target} is not inside any registered vault`);
         }
-        if (classified.mode !== 'shared') {
+        if (classified.mode !== VAULT_MODE_SHARED) {
             throw new Error(`obsidian-mem write: ${target} lies in read-only vault ${classified.vault.path}`);
         }
         // Reserved protocol files (.INTENTS.md, DREAMS.md, <slug>_history.md)
@@ -788,7 +804,7 @@ export class ObsidianMemService extends Service {
     persistVaultsFile() {
         const registry = this.loadRegistry();
         const record = {
-            version: 1,
+            version: VAULTS_FILE_VERSION,
             vaults: registry.vaults
                 .filter((entry) => entry.source === 'card')
                 .map((entry) => ({
@@ -887,8 +903,8 @@ export class ObsidianMemService extends Service {
     // rebuild. Best-effort per vault; a missing file is the empty answer.
     dropVaultStateFiles() {
         for (const vault of this.listVaults()) {
-            for (const suffix of ['', '.tmp']) {
-                const statePath = `${join(metadataDir(vault.path), STATE_FILE_NAME)}${suffix}`;
+            for (const suffix of ['', STATE_FILE_TMP_SUFFIX]) {
+                const statePath = `${indexStatePath(vault.path)}${suffix}`;
                 try {
                     if (this.fs.exists(statePath)) {
                         this.fs.unlink(statePath);

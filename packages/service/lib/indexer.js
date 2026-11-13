@@ -24,6 +24,7 @@ import { watch as fsWatch } from 'node:fs';
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chunkId, chunkMarkdown, contentHash, extractTriggers, isArchived, isReservedNonIndexed, isScopeType, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS, parseNote, SCOPE_GLOBAL, stripNoise, } from '../../core/lib/index.js';
+import { vaultKey } from './config.js';
 import { describeError } from './errors.js';
 import { LlmRefiner } from './llm-refine.js';
 import { assertOk } from './milvus/ok.js';
@@ -39,6 +40,17 @@ import { createSerialQueue } from './serial-queue.js';
 export const INDEX_STATE_VERSION = 2;
 /** State file name inside `<vault>/.obsidian-mem/metadata/`. */
 export const STATE_FILE_NAME = 'obsidian-mem-state.json';
+/** Suffix saveState appends to the tmp file before the rename onto the state file. */
+export const STATE_FILE_TMP_SUFFIX = '.tmp';
+/**
+ * IndexStatePath is the ONE definition of the per-vault state file location
+ * (`<vault>/.obsidian-mem/metadata/obsidian-mem-state.json`). The indexer
+ * writes it, the audit reads it, and the service's forced-reindex reset
+ * deletes it; all three call here.
+ */
+export function indexStatePath(vaultPath) {
+    return join(metadataDir(vaultPath), STATE_FILE_NAME);
+}
 /** Watcher debounce window; memsearch watchdog value. */
 export const WATCH_DEBOUNCE_MS = 1500;
 /**
@@ -166,14 +178,15 @@ export class VaultIndexer {
         this.frameworkVocabulary = options.frameworkVocabulary ?? [];
         this.collectionName = options.collectionName ?? MILVUS_COLLECTION;
         this.pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
-        // The stored and hashed vault identity: one truncation of the path, so
-        // the chunkId input and the vault column can never disagree.
-        this.vaultKey = options.vault.path.slice(0, MILVUS_SCALAR_MAX_LENGTHS.vault);
+        // The stored and hashed vault identity: config.vaultKey is the ONE
+        // truncation the service's chunk purge, mode lookup, and search filters
+        // use, so the chunkId input and the vault column can never disagree.
+        this.vaultKey = vaultKey(options.vault.path);
         this.state = this.readStateFromDisk();
     }
     /** Path of the vault's state file. */
     get stateFilePath() {
-        return join(metadataDir(this.vault.path), STATE_FILE_NAME);
+        return indexStatePath(this.vault.path);
     }
     /** Progress snapshots the ui status card and memory_audit read. */
     get progress() {
@@ -521,7 +534,7 @@ export class VaultIndexer {
     saveState() {
         const statePath = this.stateFilePath;
         this.fsLike.mkdirp(metadataDir(this.vault.path));
-        const tmpPath = `${statePath}.tmp`;
+        const tmpPath = `${statePath}${STATE_FILE_TMP_SUFFIX}`;
         this.fsLike.writeFile(tmpPath, `${JSON.stringify(this.state, null, 2)}\n`);
         this.fsLike.rename(tmpPath, statePath);
     }

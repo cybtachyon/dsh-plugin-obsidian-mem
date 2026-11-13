@@ -20,9 +20,9 @@
  */
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { ARCHIVE_HISTORY_SUFFIX, dbStateDir, DEGRADATION_STEP, DREAM_PROMPT_FILE, DREAM_SESSION_PREFIX, DREAM_STATE_FILE, DREAMS_FILE, metadataDir, NOTE_TIMELINE_BYTES, RELEVANCY_BUMP_TARGET, RELEVANCY_FILE, SCOPE_GLOBAL, } from '../../core/lib/index.js';
+import { ARCHIVE_HISTORY_SUFFIX, dbStateDir, DEGRADATION_STEP, DREAM_PROMPT_FILE, DREAM_SESSION_PREFIX, DREAMS_FILE, metadataDir, NOTE_TIMELINE_BYTES, PLUGIN_METADATA_REL, RELEVANCY_BUMP_TARGET, RELEVANCY_FILE, SCOPE_GLOBAL, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
-import { dayEnd, globalBudgetReport, readLastDreamAt } from './audit.js';
+import { dayEnd, dreamStatePath, globalBudgetReport, readLastDreamAt } from './audit.js';
 /**
  * DEFAULT_DREAM_PROMPT seeds `<dbDir>/dream-prompt.md` once. The seeded
  * file keeps the `{{...}}` tunable placeholders; every load renders them
@@ -48,7 +48,7 @@ Ground rules:
   with the suffix {{ARCHIVE_HISTORY_SUFFIX}} at the vault root (reserved,
   never indexed).
 - After each step, append a dated section "## <YYYY-MM-DD> Step <N>: <step
-  name>" to DREAMS.md in the first shared vault's .obsidian-mem/metadata/
+  name>" to DREAMS.md in the first shared vault's ${PLUGIN_METADATA_REL}/
   directory. The diary is a log: never treat it as a memory source and
   never write memory notes into it.
 - Never change the frontmatter fields read_count or last_read_at; the
@@ -105,6 +105,8 @@ const CANDIDATE_WEIGHTS = {
 const PLAN_CANDIDATE_CAP = 25;
 const VECTOR_TARGET_CAP = 24;
 const ARCHIVE_CANDIDATE_CAP = 50;
+// Relevancy decay is rounded to three decimals; the scale is that rounding.
+const RELEVANCY_DECAY_SCALE = 1000;
 /** Cosine-similarity union-find clusters over the candidate vectors. */
 function similarityClusters(paths, vectors, threshold) {
     const usable = paths.filter((path) => vectors.has(path));
@@ -321,7 +323,7 @@ export class DreamOrchestrator {
                 bumped += 1;
                 continue;
             }
-            const next = Math.max(0, Math.round(((relevancy.get(note.path) ?? 0) - DEGRADATION_STEP) * 1000) / 1000);
+            const next = Math.max(0, Math.round(((relevancy.get(note.path) ?? 0) - DEGRADATION_STEP) * RELEVANCY_DECAY_SCALE) / RELEVANCY_DECAY_SCALE);
             relevancy.set(note.path, next);
             degraded += 1;
             // Decay to zero is the archive-REVIEW flag; nothing is ever deleted.
@@ -333,12 +335,17 @@ export class DreamOrchestrator {
         return { notes: allNotes.length, bumped, degraded, archiveCandidates };
     }
     setLastDream(at) {
-        const path = join(dbStateDir(this.deps.config.milvus.dbPath), DREAM_STATE_FILE);
+        const path = dreamStatePath(this.deps.config.milvus.dbPath);
         this.deps.fs.mkdirp(dirname(path));
         this.deps.fs.writeFile(path, `${JSON.stringify({ lastDreamAt: at }, null, 2)}\n`);
     }
+    // Path of the relevancy sidecar under the plugin state dir; read and
+    // write share it so the two halves cannot name different files.
+    relevancyPath() {
+        return join(dbStateDir(this.deps.config.milvus.dbPath), RELEVANCY_FILE);
+    }
     readRelevancy() {
-        const path = join(dbStateDir(this.deps.config.milvus.dbPath), RELEVANCY_FILE);
+        const path = this.relevancyPath();
         const raw = this.deps.fs.readFile(path);
         if (raw === null) {
             return new Map();
@@ -354,7 +361,7 @@ export class DreamOrchestrator {
         }
     }
     writeRelevancy(relevancy) {
-        const path = join(dbStateDir(this.deps.config.milvus.dbPath), RELEVANCY_FILE);
+        const path = this.relevancyPath();
         const record = {};
         for (const key of [...relevancy.keys()].sort()) {
             record[key] = relevancy.get(key);
@@ -367,7 +374,7 @@ export class DreamOrchestrator {
     // sidecar dir (PLAN-vault-layout); parents are created here because a
     // pre-TASK-013 vault may not have `.obsidian-mem/metadata/` on disk yet.
     seedDreamsDiary(id) {
-        const shared = this.deps.inventories().filter((inventory) => inventory.vault.mode === 'shared' && inventory.facts.exists);
+        const shared = this.deps.inventories().filter((inventory) => inventory.vault.mode === VAULT_MODE_SHARED && inventory.facts.exists);
         const first = shared[0];
         if (first === undefined) {
             return;
@@ -513,7 +520,7 @@ function renderPlanText(input) {
         if (review.length === 0 || clustered.has(candidate.path)) {
             continue;
         }
-        const action = candidate.mode === 'shared'
+        const action = candidate.mode === VAULT_MODE_SHARED
             ? 'verify it with memory_read; correct it or set archive=true when it no longer holds'
             : 'its vault is read-only: raise the review with the user instead of editing';
         lines.push(`${next()} Review (${candidate.reasons.join(', ')}): ${candidate.path}: ${action}.`);

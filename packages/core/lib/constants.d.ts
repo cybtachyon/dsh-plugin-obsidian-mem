@@ -41,6 +41,14 @@ export declare function isScopeType(value: string): boolean;
 export declare const PLUGIN_VAULT_DIR = ".obsidian-mem";
 /** VAULT_METADATA_DIR names the sidecar dir under PLUGIN_VAULT_DIR. */
 export declare const VAULT_METADATA_DIR = "metadata";
+/**
+ * PLUGIN_METADATA_REL is the slash-joined relative path of the sidecar dir
+ * inside a vault root (`.obsidian-mem/metadata`). Report messages and the
+ * seeded dream prompt name the placement through this constant so prose
+ * cannot drift from the layout; core's metadataDir() is the absolute-path
+ * seam.
+ */
+export declare const PLUGIN_METADATA_REL = ".obsidian-mem/metadata";
 /** Vault-root file listing the intent markers; never indexed. */
 export declare const INTENTS_FILE = ".INTENTS.md";
 /**

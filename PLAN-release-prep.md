@@ -66,8 +66,8 @@ Facts heading) are left as the user's call, outside release scope.
 
 ### Phase 3: Build artifacts in version control
 
-- [ ] [TASK-08-build-and-commit-artifacts](docs/PLAN-release-prep-TASK-08-build-and-commit-artifacts.md)
-- [ ] [TASK-09-verify-build-idempotency](docs/PLAN-release-prep-TASK-09-verify-build-idempotency.md)
+- [x] [TASK-08-build-and-commit-artifacts](docs/PLAN-release-prep-TASK-08-build-and-commit-artifacts.md)
+- [x] [TASK-09-verify-build-idempotency](docs/PLAN-release-prep-TASK-09-verify-build-idempotency.md)
 - [ ] [TASK-10-refactor-review-phase-1-3](docs/PLAN-release-prep-TASK-10-refactor-review-phase-1-3.md)
 
 ### Phase 4: GitHub Actions build workflow

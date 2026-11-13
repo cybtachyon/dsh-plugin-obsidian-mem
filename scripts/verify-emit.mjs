@@ -79,7 +79,10 @@ const packages = fs.readdirSync(path.join(ROOT, PACKAGE_JSON), { withFileTypes: 
         && fs.existsSync(path.join(ROOT, PACKAGE_JSON, entry.name, 'tsconfig.json')))
     .map(entry => path.join(ROOT, PACKAGE_JSON, entry.name));
 
-const broken = packages.flatMap(pkg => inspectArtifacts(expectedOutputs(pkg)));
+// One derivation per package, shared by the broken check and the total, so
+// the reported count and the verified set can never disagree.
+const expected = packages.flatMap(pkg => expectedOutputs(pkg));
+const broken = inspectArtifacts(expected);
 
 // The hand-written carrier the bare package-root export resolves to; the
 // Loader mounts it to key the `dsh.client` scan, so a truncated copy breaks
@@ -106,6 +109,4 @@ if (broken.length > 0) {
     process.exit(1);
 }
 
-const total = packages.reduce(
-    (count, pkg) => count + expectedOutputs(pkg).length, 0);
-console.log(`verify-emit: ${total} tsc artifacts intact across ${packages.length} packages`);
+console.log(`verify-emit: ${expected.length} tsc artifacts intact across ${packages.length} packages`);

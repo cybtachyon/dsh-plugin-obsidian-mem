@@ -1,15 +1,16 @@
 import fs from 'node:fs/promises';
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
 
-// Define target directory (usually your tsc outDir)
+// Target directories: the hand-written dsh/ carriers plus every workspace
+// package's tsc outDir. Package lib dirs are derived from the packages/ tree
+// so a new package is covered without editing this script: lib IS tracked, so
+// an unformatted package lib would break the clean-tree build gate.
 const TARGET_DIRS = [
     'dsh',
-    'packages/client/lib',
-    'packages/core/lib',
-    'packages/events/lib',
-    'packages/service/lib',
-    'packages/tools/lib',
-    'packages/ui/lib'
+    ...readdirSync(path.join(process.cwd(), 'packages'), { withFileTypes: true })
+        .filter(entry => entry.isDirectory())
+        .map(entry => path.join('packages', entry.name, 'lib')),
 ].map(dir => path.join(process.cwd(), dir));
 
 async function processDirectory(dir) {

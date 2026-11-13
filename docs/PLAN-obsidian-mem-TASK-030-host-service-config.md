@@ -16,7 +16,10 @@ This is the `export function apply(ctx, config)` + `export const Config` row.
   NO vault/db creation, NO Milvus child when nothing is configured.
 - `ensureMemoryAccess()` (idempotent async, Decision log): first call only, in this order:
   zero shared vaults → `provisionDefaultVault` + seed `.INTENTS.md` → mkdir dbDir →
-  milvus launcher start (spawn) → ensureCollection → indexer background start → set the
+  milvus launcher start (spawn; generous readinessTimeoutMs default ~600_000 per G13 —
+  cold uvx can exceed 400 s; best-effort background uvx pre-warm at activation when
+  spawn mode is configured so first access is warm; long-lived client created ONLY
+  after readiness per G12) → ensureCollection → indexer background start → set the
   one-time `notice` = "Obsidian Mem is using the default memory vault at <full path>.
   Add your own vaults in the Obsidian Mem settings card to override." The notice is
   returned to, and must be included by, whichever tool/injection triggered it (tools

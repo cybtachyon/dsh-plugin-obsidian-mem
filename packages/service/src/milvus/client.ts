@@ -15,6 +15,13 @@ import { assertOk } from './ok.js'
 /** Default gRPC request budget for plugin calls, in ms. */
 export const MILVUS_REQUEST_TIMEOUT_MS = 60_000
 
+/**
+ * PROBE_TIMEOUT_MS bounds one launcher probe: an attach or readiness check
+ * must fail fast enough that the poll loop keeps its own cadence, and
+ * launcher.ts defaults probeTimeoutMs to this same number.
+ */
+export const PROBE_TIMEOUT_MS = 2_000
+
 // The SDK's BaseClient forces keepalive pings every 10 s with
 // keepalive_permit_without_calls=1. milvus-lite's pure-Python gRPC server
 // enforces an HTTP/2 keepalive policy and answers that with GOAWY
@@ -96,7 +103,7 @@ export type ProbeFactory = (address: string) => MilvusProbe
  * ProbeFor opens a real short-timeout probe client for launcher attach
  * checks and readiness polling.
  */
-export function probeFor(address: string, timeoutMs = 2_000): MilvusProbe {
+export function probeFor(address: string, timeoutMs = PROBE_TIMEOUT_MS): MilvusProbe {
   const client = createMilvusClient(address, timeoutMs)
   return {
     getVersion: async () => {

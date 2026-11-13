@@ -1,7 +1,13 @@
 import { DataType, FunctionType, type MilvusClient } from '@zilliz/milvus2-sdk-node'
 import { describe, expect, it } from 'vitest'
 
-import { MILVUS_COLLECTION, MILVUS_FIELDS, VECTOR_DIM_DEFAULT } from '../../core/lib/index.js'
+import {
+  MILVUS_COLLECTION,
+  MILVUS_CONSISTENCY_LEVEL,
+  MILVUS_FIELDS,
+  MILVUS_SCALAR_MAX_LENGTHS,
+  VECTOR_DIM_DEFAULT,
+} from '../../core/lib/index.js'
 import {
   BM25_FUNCTION_NAME,
   createCollectionParams,
@@ -334,5 +340,20 @@ describe('assertOk', () => {
     const version = { version: 'milvus_lite-3.2.2' }
 
     expect(assertOk(version, 'getVersion')).toBe(version)
+  })
+})
+
+describe('column widths and the pinned consistency level', () => {
+  it('declares each scalar column at the width core shares with the indexer', () => {
+    const params = createCollectionParams()
+
+    for (const [field, maxLength] of Object.entries(MILVUS_SCALAR_MAX_LENGTHS)) {
+      expect(fieldByName(params, MILVUS_FIELDS[field as keyof typeof MILVUS_FIELDS]))
+        .toMatchObject({ max_length: maxLength })
+    }
+  })
+
+  it('declares the collection at the level every search asks for', () => {
+    expect(createCollectionParams().consistency_level).toBe(MILVUS_CONSISTENCY_LEVEL)
   })
 })

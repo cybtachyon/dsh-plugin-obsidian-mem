@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { MILVUS_ARRAY_CAPACITIES } from '../src/constants.ts'
-import { extractTriggers } from '../src/triggers.ts'
+import { MILVUS_ARRAY_CAPACITIES, MILVUS_ARRAY_ELEMENT_MAX_LENGTHS } from '../src/constants.ts'
+import { extractTriggers, normalizeExtension } from '../src/triggers.ts'
 
 /**
  * Trigger-heuristic spec for the core module TASK-023 depends on:
@@ -164,5 +164,57 @@ describe('wake_keywords', () => {
     const text = '# Alpha\n\n**beta** gamma *delta* how debug'
 
     expect(keywords(text)).toEqual(keywords(text))
+  })
+})
+
+describe('normalizeExtension: the canonical trigger-extension spelling', () => {
+  it('renders one dotted lowercase form for every accepted spelling', () => {
+    expect(normalizeExtension('.ts')).toBe('.ts')
+    expect(normalizeExtension('TS')).toBe('.ts')
+    expect(normalizeExtension(' .TSX ')).toBe('.tsx')
+    expect(normalizeExtension('..md')).toBe('.md')
+    expect(normalizeExtension('c++')).toBe('.c++')
+  })
+
+  it('returns null for anything that is not an extension', () => {
+    expect(normalizeExtension('')).toBeNull()
+    expect(normalizeExtension('.')).toBeNull()
+    expect(normalizeExtension('...')).toBeNull()
+    expect(normalizeExtension('   ')).toBeNull()
+  })
+
+  it('stores override spellings through the same normalizer a filter uses', () => {
+    const found = extractTriggers({
+      sectionText: 'plain text',
+      filePath: 'notes/a.md',
+      noteMeta: { trigger_extensions: [' TS ', '.Vue'] },
+    }).trigger_extensions
+
+    expect(found).toEqual(['.ts', '.vue'])
+  })
+})
+
+describe('per-column element caps', () => {
+  it('drops wake keywords past the wakeKeywords element cap only', () => {
+    const tooLong = 'k'.repeat(MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords + 1)
+
+    const found = keywords(`**${tooLong}** **kept**`)
+
+    expect(found).not.toContain(tooLong.toLowerCase())
+    expect(found).toContain('kept')
+  })
+
+  it('drops extensions whose dotted form passes the triggerExtensions element cap', () => {
+    const cap = MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.triggerExtensions
+    const fits = `.ts`
+    const overCap = `.${'z'.repeat(cap)}` // dotted form is cap + 1 chars
+
+    const found = extractTriggers({
+      sectionText: 'plain text',
+      filePath: 'notes/a.md',
+      noteMeta: { trigger_extensions: [fits, overCap] },
+    }).trigger_extensions
+
+    expect(found).toEqual([fits])
   })
 })

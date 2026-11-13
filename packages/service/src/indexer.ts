@@ -37,13 +37,20 @@ import {
   metadataDir,
   MILVUS_COLLECTION,
   MILVUS_FIELDS,
+  MILVUS_SCALAR_MAX_LENGTHS,
   parseNote,
   SCOPE_GLOBAL,
   stripNoise,
 } from '../../core/lib/index.js'
-import type { VaultConfig } from '../../core/lib/index.js'
+import type { Chunk, Note, VaultConfig } from '../../core/lib/index.js'
 import type { Embedder } from './embedder.js'
+import { describeError } from './errors.js'
+import { LlmRefiner } from './llm-refine.js'
+import type { LlmFetch, LlmRefineConfig } from './llm-refine.js'
 import { assertOk } from './milvus/ok.js'
+import { createSerialQueue } from './serial-queue.js'
+
+export type { LlmFetch, LlmRefineConfig } from './llm-refine.js'
 
 /** Schema version of the per-vault state file. */
 export const INDEX_STATE_VERSION = 1
@@ -51,25 +58,19 @@ export const INDEX_STATE_VERSION = 1
 export const STATE_FILE_NAME = 'obsidian-mem-state.json'
 /** Watcher debounce window; memsearch watchdog value. */
 export const WATCH_DEBOUNCE_MS = 1500
-/** Polling fallback interval when recursive fs.watch is unavailable. */
+/**
+ * POLL_INTERVAL_MS is the default stat-sweep interval. The sweep is the
+ * safety net for a watcher that died or dropped events (nodeWatchFactory
+ * closes its handle on an fs.watch error and nothing re-arms it), not only
+ * the fallback when recursive watching is unavailable, so it stays on even
+ * beside a live watcher; VaultIndexerOptions.pollIntervalMs overrides it and
+ * 0 turns it off. It is stat-only work: no reads, no embeds, no Milvus calls.
+ */
 export const POLL_INTERVAL_MS = 30_000
 /** Hard cap on indexed files per vault; the walk stops past it. */
 export const MAX_FILES_PER_VAULT = 2000
 /** Hard cap on chunks indexed per file; later sections are dropped. */
 export const MAX_CHUNKS_PER_FILE = 128
-
-// Schema max_lengths that inserts must not exceed (milvus/schema.ts).
-const SOURCE_PATH_MAX_CHARS = 1024
-const SECTION_HEADER_MAX_CHARS = 512
-const CHUNK_TEXT_MAX_CHARS = 65_535
-const VAULT_MAX_CHARS = 256
-
-// LLM refinement limits: 6000 chars of chunk text per prompt, and three
-// consecutive failures open the per-run circuit so an offline endpoint
-// cannot add a timeout to every chunk.
-const LLM_INPUT_CHAR_CAP = 6000
-const LLM_FAILURE_CIRCUIT = 3
-const LLM_REQUEST_TIMEOUT_MS = 15_000
 
 /** Per-file record in the vault state file. */
 export interface IndexFileState {
@@ -207,22 +208,6 @@ export const nodeWatchFactory: WatchFactory = (path, listener) => {
   }
 }
 
-/** Chat-completion config; Q3's optional LLM upgrade over the heuristics. */
-export interface LlmRefineConfig {
-  enabled: boolean
-  /** OpenAI-compatible base URL; the pass POSTs `<baseUrl>/chat/completions`. */
-  baseUrl: string
-  model: string
-  /** Env var NAME holding the bearer key; unset means no auth header. */
-  apiKeyEnv?: string
-}
-
-/** Fetch-slice the LLM pass calls; tests inject a fake, Node 22 fetch fits. */
-export type LlmFetch = (
-  url: string,
-  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
-) => Promise<{ status?: number; ok?: boolean; json(): Promise<unknown> }>
-
 /** Options for one VaultIndexer. */
 export interface VaultIndexerOptions {
   vault: VaultConfig
@@ -241,6 +226,8 @@ export interface VaultIndexerOptions {
   /** Workspace-manifest framework labels offered to trigger extraction. */
   frameworkVocabulary?: readonly string[]
   collectionName?: string
+  /** Stat-sweep interval in ms; default POLL_INTERVAL_MS, 0 disables the sweep. */
+  pollIntervalMs?: number
   log?: (message: string) => void
 }
 
@@ -271,17 +258,16 @@ export class VaultIndexer {
   private readonly writer: IndexWriter
   private readonly fsLike: IndexerFs
   private readonly watchFactory: WatchFactory
-  private readonly llm: LlmRefineConfig
-  private readonly fetchImpl: LlmFetch | null
-  private readonly env: Record<string, string | undefined>
+  private readonly llmRefiner: LlmRefiner
   private readonly frameworkVocabulary: readonly string[]
   private readonly collectionName: string
+  private readonly pollIntervalMs: number
+  private readonly vaultKey: string
   private readonly log: (message: string) => void
 
   private state: IndexState
   private indexed = 0
   private errors = 0
-  private llmErrors = 0
   private runRemaining = 0
   private readonly dirty = new Set<string>()
   private dirtyAll = false
@@ -292,12 +278,10 @@ export class VaultIndexer {
   // Every index operation runs one at a time: the state file and the
   // dirty queue are shared between reindex(), indexFile(), and the
   // watcher flush, and there is exactly one writer to lite.
-  private opTail: Promise<unknown> = Promise.resolve()
+  private readonly enqueueOp = createSerialQueue()
   // Separate mutation queue: every delete/insert pair reaches Milvus in
   // issue order on its own, so a slow embed never idles the writer.
-  private writeTail: Promise<unknown> = Promise.resolve()
-  private llmConsecutiveFailures = 0
-  private llmCircuitOpen = false
+  private readonly enqueueWrite = createSerialQueue()
 
   constructor(options: VaultIndexerOptions) {
     this.vault = options.vault
@@ -305,12 +289,19 @@ export class VaultIndexer {
     this.writer = options.writer
     this.fsLike = options.fs ?? nodeIndexerFs
     this.watchFactory = options.watchFactory ?? nodeWatchFactory
-    this.llm = options.llm ?? { enabled: false, baseUrl: '', model: '' }
-    this.fetchImpl = options.fetch ?? null
-    this.env = options.env ?? process.env
+    this.log = options.log ?? ((message) => console.warn(`[obsidian-mem indexer] ${message}`))
+    this.llmRefiner = new LlmRefiner({
+      ...(options.llm !== undefined ? { config: options.llm } : {}),
+      ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
+      ...(options.env !== undefined ? { env: options.env } : {}),
+      log: this.log,
+    })
     this.frameworkVocabulary = options.frameworkVocabulary ?? []
     this.collectionName = options.collectionName ?? MILVUS_COLLECTION
-    this.log = options.log ?? ((message) => console.warn(`[obsidian-mem indexer] ${message}`))
+    this.pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS
+    // The stored and hashed vault identity: one truncation of the path, so
+    // the chunkId input and the vault column can never disagree.
+    this.vaultKey = options.vault.path.slice(0, MILVUS_SCALAR_MAX_LENGTHS.vault)
     this.state = this.readStateFromDisk()
   }
 
@@ -325,26 +316,25 @@ export class VaultIndexer {
       indexed: this.indexed,
       pending: this.runRemaining + this.dirty.size,
       errors: this.errors,
-      llmErrors: this.llmErrors,
+      llmErrors: this.llmRefiner.failures,
     }
   }
 
   /**
    * Start arms activation triggers: a background full-scan (not awaited)
-   * plus the debounced watcher with its 30 s stat-poll safety net. Read-
-   * only vaults are indexed too: recall works, only writes are refused.
+   * plus the debounced watcher and the POLL_INTERVAL_MS stat sweep (see
+   * pollIntervalMs). Read-only vaults are indexed too: recall works, only
+   * writes are refused.
    */
   start(): void {
     this.stopped = false
     this.watchHandle = this.watchFactory(markdownDir(this.vault.path), (fileName) => {
       this.onWatchEvent(fileName)
     })
-    // The poll is both the fallback when fs.watch is unavailable and the
-    // safety net for dropped watcher events; it is stat-only and cheap.
-    if (this.pollTimer === null) {
+    if (this.pollTimer === null && this.pollIntervalMs > 0) {
       this.pollTimer = setInterval(() => {
         this.pollStats()
-      }, POLL_INTERVAL_MS)
+      }, this.pollIntervalMs)
       this.pollTimer.unref?.()
     }
     void this.reindex().catch((error: unknown) => {
@@ -384,8 +374,7 @@ export class VaultIndexer {
       const summary: IndexRunSummary = { indexed: 0, purged: 0, errors: this.errors }
       const present = new Set(files)
       this.runRemaining = files.length
-      this.llmConsecutiveFailures = 0
-      this.llmCircuitOpen = false
+      this.llmRefiner.resetRun()
 
       for (const removedRel of Object.keys(baseline.files)) {
         if (!present.has(removedRel)) {
@@ -446,28 +435,6 @@ export class VaultIndexer {
     })
   }
 
-  // The single operation lane. Watcher flushes, reindex(), and
-  // indexFile() all queue here so the in-memory state stays coherent.
-  private enqueueOp<T>(op: () => Promise<T>): Promise<T> {
-    const run = this.opTail.then(op, op)
-    this.opTail = run.then(
-      () => undefined,
-      () => undefined,
-    )
-    return run
-  }
-
-  // The single Milvus mutation lane: lite tolerates concurrent readers
-  // but not concurrent writers (findings §3 "serialize writes").
-  private enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.writeTail.then(task, task)
-    this.writeTail = run.then(
-      () => undefined,
-      () => undefined,
-    )
-    return run
-  }
-
   // Diff one file against the state baseline. 'indexed' means the file
   // was re-embedded and inserted; 'purged' means its chunks were
   // deleted (removed from disk or archived); 'unchanged' touched nothing.
@@ -495,12 +462,7 @@ export class VaultIndexer {
       const archivedStaleIds = stored?.chunkIds ?? []
       if (archivedStaleIds.length > 0) {
         try {
-          await this.enqueueWrite(async () => {
-            assertOk(await this.writer.delete({
-              collection_name: this.collectionName,
-              ids: archivedStaleIds,
-            }), 'indexer delete-archived')
-          })
+          await this.deleteChunks(archivedStaleIds, 'indexer delete-archived')
         } catch (error) {
           this.errors += 1
           this.log(`archived purge failed for ${rel} (state kept dirty): ${describeError(error)}`)
@@ -524,38 +486,16 @@ export class VaultIndexer {
 
     const scope = isScopeType(note.meta.type) ? note.meta.type : SCOPE_GLOBAL
     const newIds = kept.map((chunk) => chunkId({
-      vault: this.vault.path.slice(0, VAULT_MAX_CHARS),
+      vault: this.vaultKey,
       source_path: rel,
       header_hash: chunk.header_hash,
       part: chunk.part,
       modelId: this.embedder.modelId,
       vectorDim: this.embedder.dim,
     }))
-    const rows: IndexChunkRow[] = []
-    for (const [index, chunk] of kept.entries()) {
-      let triggers = extractTriggers({
-        sectionText: chunk.chunk_text,
-        filePath: rel,
-        ...(note.raw !== undefined ? { noteMeta: note.raw } : {}),
-        ...(this.frameworkVocabulary.length > 0
-          ? { manifestVocabulary: { frameworks: this.frameworkVocabulary } }
-          : {}),
-      })
-      triggers = await this.refineWithLlm(chunk.chunk_text, triggers)
-      rows.push({
-        [MILVUS_FIELDS.chunkId]: newIds[index] as number,
-        [MILVUS_FIELDS.sourcePath]: chunk.source_path.slice(0, SOURCE_PATH_MAX_CHARS),
-        [MILVUS_FIELDS.sectionHeader]: chunk.section_header.slice(0, SECTION_HEADER_MAX_CHARS),
-        [MILVUS_FIELDS.chunkText]: chunk.chunk_text.slice(0, CHUNK_TEXT_MAX_CHARS),
-        [MILVUS_FIELDS.vault]: this.vault.path.slice(0, VAULT_MAX_CHARS),
-        [MILVUS_FIELDS.scope]: scope,
-        [MILVUS_FIELDS.triggerExtensions]: triggers.trigger_extensions,
-        [MILVUS_FIELDS.triggerFrameworks]: triggers.trigger_frameworks,
-        [MILVUS_FIELDS.wakeKeywords]: triggers.wake_keywords,
-        [MILVUS_FIELDS.denseVector]: vectors[index] as number[],
-        [MILVUS_FIELDS.updatedAt]: Math.round(mtimeMs),
-      })
-    }
+    const rows = await this.buildRows({
+      rel, note, scope, mtimeMs, chunks: kept, vectors, ids: newIds,
+    })
 
     // Chunk ids ignore content (they hash path/header/part/model/dim),
     // so a content change usually keeps the same ids: delete the file's
@@ -565,10 +505,7 @@ export class VaultIndexer {
     try {
       await this.enqueueWrite(async () => {
         if (staleIds.length > 0) {
-          assertOk(await this.writer.delete({
-            collection_name: this.collectionName,
-            ids: staleIds,
-          }), 'indexer delete')
+          await this.deleteRows(staleIds, 'indexer delete')
         }
         if (rows.length > 0) {
           assertOk(await this.writer.insert({
@@ -591,6 +528,65 @@ export class VaultIndexer {
     return 'indexed'
   }
 
+  // One chunk purge, queued onto the single Milvus mutation lane: lite
+  // tolerates concurrent readers but not concurrent writers (findings §3).
+  private deleteChunks(ids: readonly number[], what: string): Promise<void> {
+    return this.enqueueWrite(() => this.deleteRows(ids, what))
+  }
+
+  // DeleteRows runs the delete itself. A caller already holding the
+  // mutation lane (the delete-then-insert pair) calls it directly: queuing
+  // from inside the lane would wait on itself.
+  private async deleteRows(ids: readonly number[], what: string): Promise<void> {
+    assertOk(await this.writer.delete({
+      collection_name: this.collectionName,
+      ids: [...ids],
+    }), what)
+  }
+
+  // One insert row per kept chunk. Stored scalars are clamped to the
+  // column widths core declares (MILVUS_SCALAR_MAX_LENGTHS), and the
+  // trigger lists are the core heuristics plus the optional LLM merge.
+  private async buildRows(input: {
+    rel: string
+    note: Note
+    scope: string
+    mtimeMs: number
+    chunks: readonly Chunk[]
+    vectors: readonly number[][]
+    ids: readonly number[]
+  }): Promise<IndexChunkRow[]> {
+    const { sourcePath, sectionHeader, chunkText } = MILVUS_SCALAR_MAX_LENGTHS
+    const rows: IndexChunkRow[] = []
+    for (const [index, chunk] of input.chunks.entries()) {
+      // The author's own vocabulary reaches the heuristics as the parsed
+      // frontmatter record (Note.raw); gray-matter stays a core concern.
+      let triggers = extractTriggers({
+        sectionText: chunk.chunk_text,
+        filePath: input.rel,
+        ...(input.note.raw !== undefined ? { noteMeta: input.note.raw } : {}),
+        ...(this.frameworkVocabulary.length > 0
+          ? { manifestVocabulary: { frameworks: this.frameworkVocabulary } }
+          : {}),
+      })
+      triggers = await this.llmRefiner.refine(chunk.chunk_text, triggers)
+      rows.push({
+        [MILVUS_FIELDS.chunkId]: input.ids[index] as number,
+        [MILVUS_FIELDS.sourcePath]: chunk.source_path.slice(0, sourcePath),
+        [MILVUS_FIELDS.sectionHeader]: chunk.section_header.slice(0, sectionHeader),
+        [MILVUS_FIELDS.chunkText]: chunk.chunk_text.slice(0, chunkText),
+        [MILVUS_FIELDS.vault]: this.vaultKey,
+        [MILVUS_FIELDS.scope]: input.scope,
+        [MILVUS_FIELDS.triggerExtensions]: triggers.trigger_extensions,
+        [MILVUS_FIELDS.triggerFrameworks]: triggers.trigger_frameworks,
+        [MILVUS_FIELDS.wakeKeywords]: triggers.wake_keywords,
+        [MILVUS_FIELDS.denseVector]: input.vectors[index] as number[],
+        [MILVUS_FIELDS.updatedAt]: Math.round(input.mtimeMs),
+      })
+    }
+    return rows
+  }
+
   // Drop a file's chunks and state entry: removals, archived notes, and
   // reserved-path corrections all funnel here.
   private async applyRemovedFile(rel: string): Promise<FileOutcome> {
@@ -599,12 +595,7 @@ export class VaultIndexer {
       return 'unchanged'
     }
     if (stored.chunkIds.length > 0) {
-      await this.enqueueWrite(async () => {
-        assertOk(await this.writer.delete({
-          collection_name: this.collectionName,
-          ids: stored.chunkIds,
-        }), 'indexer delete-stale')
-      })
+      await this.deleteChunks(stored.chunkIds, 'indexer delete-stale')
     }
     delete this.state.files[rel]
     this.saveState()
@@ -707,6 +698,12 @@ export class VaultIndexer {
       }
       this.dirty.add(rel)
     }
+    this.scheduleFlush()
+  }
+
+  // Restart the debounce window: Obsidian's save churn (a write plus a
+  // rename) fires several events per save, and the last one wins.
+  private scheduleFlush(): void {
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer)
     }
@@ -740,8 +737,9 @@ export class VaultIndexer {
     }
   }
 
-  // 30 s stat sweep: any mtime drift or file-count drift re-dirties the
-  // vault. Content-hash diffs in processFile make duplicate dirt cheap.
+  // Stat sweep (every pollIntervalMs): any mtime drift or file-count drift
+  // re-dirties the vault. Content-hash diffs in processFile make a duplicate
+  // sweep cost nothing but stats.
   private pollStats(): void {
     if (this.stopped) {
       return
@@ -758,12 +756,10 @@ export class VaultIndexer {
     }
     if (drifted) {
       this.dirtyAll = true
+      // An open debounce window already covers this sweep; re-arming it on
+      // every poll would postpone the flush forever in a busy vault.
       if (this.debounceTimer === null) {
-        this.debounceTimer = setTimeout(() => {
-          this.debounceTimer = null
-          this.flushDirty()
-        }, WATCH_DEBOUNCE_MS)
-        this.debounceTimer.unref?.()
+        this.scheduleFlush()
       }
     }
   }
@@ -785,94 +781,16 @@ export class VaultIndexer {
     return rel
   }
 
-  // Optional Q3 upgrade: an OpenAI-compatible chat completion asks for
-  // {wake_keywords, trigger_frameworks} JSON per chunk and MERGES onto the
-  // heuristics. Every failure path (no key, bad status, bad JSON) falls
-  // back to the heuristics silently with the llmErrors counter; three
-  // consecutive failures open the circuit for the rest of the run.
-  private async refineWithLlm(chunkText: string, base: {
-    trigger_extensions: string[]
-    trigger_frameworks: string[]
-    wake_keywords: string[]
-  }): Promise<typeof base> {
-    if (!this.llm.enabled || this.fetchImpl === null || this.llmCircuitOpen) {
-      return base
-    }
-    const apiKey = this.llm.apiKeyEnv !== undefined ? this.env[this.llm.apiKeyEnv] : ''
-    if (this.llm.apiKeyEnv !== undefined && (apiKey === undefined || apiKey === '')) {
-      return base
-    }
-
-    try {
-      const prompt = 'Extract wake keywords and frameworks for this memory note chunk. '
-        + 'Reply with ONLY a JSON object of the shape '
-        + '{"wake_keywords": ["...", "..."], "trigger_frameworks": ["...", "..."]}. '
-        + 'Lowercase terms only.\n\n---\n'
-        + chunkText.slice(0, LLM_INPUT_CHAR_CAP)
-      const response = await this.fetchImpl(
-        `${this.llm.baseUrl.replace(/\/+$/, '')}/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            ...(apiKey !== undefined && apiKey !== ''
-              ? { authorization: `Bearer ${apiKey}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            model: this.llm.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0,
-          }),
-          ...(typeof AbortSignal.timeout === 'function'
-            ? { signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS) }
-            : {}),
-        },
-      )
-      if (response.ok === false || (response.ok === undefined && (response.status ?? 0) >= 400)) {
-        throw new Error(`llm status ${String(response.status ?? 'unknown')}`)
-      }
-      const payload = await response.json() as {
-        choices?: Array<{ message?: { content?: unknown } }>
-      }
-      const content = payload.choices?.[0]?.message?.content
-      if (typeof content !== 'string') {
-        throw new Error('llm response has no message content')
-      }
-      const parsed = JSON.parse(content.replace(/^```(?:json)?[ \t]*\n?/i, '').replace(/```[ \t]*$/, '').trim()) as {
-        wake_keywords?: unknown
-        trigger_frameworks?: unknown
-      }
-      const wake = mergeLists(base.wake_keywords, stringEntries(parsed.wake_keywords))
-      const frameworks = mergeLists(base.trigger_frameworks, stringEntries(parsed.trigger_frameworks))
-      this.llmConsecutiveFailures = 0
-      return { ...base, wake_keywords: wake, trigger_frameworks: frameworks }
-    } catch (error) {
-      this.llmErrors += 1
-      this.llmConsecutiveFailures += 1
-      if (this.llmConsecutiveFailures >= LLM_FAILURE_CIRCUIT && !this.llmCircuitOpen) {
-        this.llmCircuitOpen = true
-        this.log(`llm refinement disabled for this run after ${this.llmConsecutiveFailures} `
-          + `consecutive failures: ${describeError(error)}`)
-      }
-      return base
-    }
-  }
 }
 
-/** Aggregates one IndexerManager's per-vault progress. */
-export interface IndexerManagerOptions {
+/**
+ * IndexerManagerOptions is every VaultIndexerOptions field except `vault`,
+ * plus the vault list: the manager hands the same shared seams (embedder,
+ * writer, fs, watchers, LLM, budgets) to each per-vault indexer, so the
+ * option shape has one definition instead of a second copy to keep in step.
+ */
+export type IndexerManagerOptions = Omit<VaultIndexerOptions, 'vault'> & {
   vaults: readonly VaultConfig[]
-  embedder: Embedder
-  writer: IndexWriter
-  fs?: IndexerFs
-  watchFactory?: WatchFactory
-  llm?: LlmRefineConfig
-  fetch?: LlmFetch
-  env?: Record<string, string | undefined>
-  frameworkVocabulary?: readonly string[]
-  collectionName?: string
-  log?: (message: string) => void
 }
 
 /**
@@ -942,20 +860,4 @@ export class IndexerManager {
   vaultProgress(vaultPath: string): IndexProgress | null {
     return this.indexers.get(vaultPath)?.progress ?? null
   }
-}
-
-// Merge heuristic and LLM lists: heuristic-first order, deduped.
-function mergeLists(base: readonly string[], extra: readonly string[]): string[] {
-  return [...new Set([...base, ...extra.map((value) => value.trim().toLowerCase()).filter((value) => value !== '')])]
-}
-
-function stringEntries(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value.filter((item): item is string => typeof item === 'string')
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

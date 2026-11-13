@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   ARCHIVE_HISTORY_SUFFIX,
+  approxCharsForTokens,
   approxTokens,
   CHUNK_MAX_TOKENS,
   dbDir,
@@ -18,7 +19,9 @@ import {
   isVectorDim,
   MEMORY_TOOL_NAMES,
   MILVUS_COLLECTION,
+  MILVUS_CONSISTENCY_LEVEL,
   MILVUS_FIELDS,
+  MILVUS_SCALAR_MAX_LENGTHS,
   modelCacheDir,
   PASSAGE_PREFIX,
   PLUGIN_SOURCE_KIND,
@@ -232,5 +235,33 @@ describe('milvus and embedder identifiers', () => {
       normalize: true,
       dtype: 'q8',
     })
+  })
+})
+
+describe('column widths and budgets shared across layers', () => {
+  it('declares one max_length per scalar VarChar column', () => {
+    expect(MILVUS_SCALAR_MAX_LENGTHS).toEqual({
+      sourcePath: 1024,
+      sectionHeader: 512,
+      chunkText: 65_535,
+      vault: 256,
+      scope: 64,
+    })
+  })
+
+  it('names the one consistency level both sides of a read pin', () => {
+    expect(MILVUS_CONSISTENCY_LEVEL).toBe('Strong')
+  })
+
+  it('converts a token budget to the char cut approxTokens reads back', () => {
+    expect(approxCharsForTokens(50)).toBe(200)
+    expect(approxCharsForTokens(350)).toBe(1400)
+    expect(approxCharsForTokens(2.9)).toBe(8)
+    // A zero or negative budget still shows one token worth of text.
+    expect(approxCharsForTokens(0)).toBe(4)
+    expect(approxCharsForTokens(-10)).toBe(4)
+    for (const tokens of [1, 5, 50, 350]) {
+      expect(approxTokens('x'.repeat(approxCharsForTokens(tokens)))).toBe(tokens)
+    }
   })
 })

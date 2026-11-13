@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MILVUS_FIELDS } from '../../core/lib/index.js'
+import { MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
 import type { Embedder } from '../src/embedder.ts'
 import {
@@ -195,6 +195,24 @@ function makeFixture(overrides: {
     ...(overrides.env !== undefined ? { env: overrides.env } : {}),
   })
   return { fs, writer, indexer, listeners }
+}
+
+// Same fixture with the stat sweep re-pointed (or disabled with 0), which the
+// sweep-configuration tests need instead of the 30 s default.
+function makeFixtureShortPoll(pollIntervalMs: number): IndexerFixture {
+  const fs = new MemFs()
+  seedVault(fs)
+  const writer = stubWriter()
+  const indexer = new VaultIndexer({
+    vault: { path: '/vault', mode: 'shared' },
+    embedder: fakeEmbedder({ vectorDim: 8 }),
+    writer: writer.writer,
+    fs,
+    watchFactory: () => null,
+    pollIntervalMs,
+    log: () => undefined,
+  })
+  return { fs, writer, indexer, listeners: [] }
 }
 
 // Drain the microtask chain a fire-and-forget start()/watcher flush runs
@@ -601,5 +619,75 @@ describe('caps and manager', () => {
     fs.add('/vaults/one/markdown/a.md', `${ALPHA_NOTE}\nWrite-through\n`, 5)
     expect(await manager.indexFile('/vaults/one', 'markdown/a.md')).toBe(true)
     expect(await manager.indexFile('/vaults/none', 'markdown/a.md')).toBe(false)
+  })
+})
+
+describe('stat sweep configuration', () => {
+  it('runs the sweep on pollIntervalMs when the caller overrides the default', async () => {
+    vi.useFakeTimers()
+    const { fs, writer, indexer } = makeFixtureShortPoll(5_000)
+    indexer.start()
+    await settle()
+    const baseline = writer.calls.length
+
+    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nEdited while the watcher slept\n`, 8888)
+
+    // The default 30 s window would still be asleep at 5 s plus the debounce.
+    vi.advanceTimersByTime(5_000 + 1_500)
+    await settle()
+
+    expect(writer.calls.slice(baseline).map((call) => call.method)).toEqual(['delete', 'insert'])
+    indexer.stop()
+  })
+
+  it('runs no sweep at all when pollIntervalMs is 0', async () => {
+    vi.useFakeTimers()
+    const { fs, writer, indexer } = makeFixtureShortPoll(0)
+    indexer.start()
+    await settle()
+    const baseline = writer.calls.length
+
+    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nEdit nobody reports\n`, 9999)
+
+    vi.advanceTimersByTime(120_000)
+    await settle()
+
+    expect(writer.calls.length).toBe(baseline)
+    indexer.stop()
+  })
+})
+
+describe('insert clamps to the schema column widths', () => {
+  it('truncates stored scalars to the core MILVUS_SCALAR_MAX_LENGTHS', async () => {
+    const longHeader = 'H'.repeat(MILVUS_SCALAR_MAX_LENGTHS.sectionHeader + 400)
+    const fs = new MemFs()
+    fs.add('/vault/markdown/long.md', `---\ntype: global\n---\n# ${longHeader}\n\nbody text\n`, 1)
+    const writer = stubWriter()
+    const indexer = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer: writer.writer,
+      fs,
+      log: () => undefined,
+    })
+
+    await indexer.reindex()
+
+    const rows = writer.calls
+      .filter((call) => call.method === 'insert')
+      .flatMap((call) => call.request.data!)
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect((row[MILVUS_FIELDS.sectionHeader] as string).length)
+        .toBeLessThanOrEqual(MILVUS_SCALAR_MAX_LENGTHS.sectionHeader)
+      expect((row[MILVUS_FIELDS.chunkText] as string).length)
+        .toBeLessThanOrEqual(MILVUS_SCALAR_MAX_LENGTHS.chunkText)
+      expect((row[MILVUS_FIELDS.sourcePath] as string).length)
+        .toBeLessThanOrEqual(MILVUS_SCALAR_MAX_LENGTHS.sourcePath)
+      expect((row[MILVUS_FIELDS.vault] as string).length)
+        .toBeLessThanOrEqual(MILVUS_SCALAR_MAX_LENGTHS.vault)
+    }
+    // The chunkId input and the vault column agree on the same stored path.
+    expect(rows[0]![MILVUS_FIELDS.vault]).toBe('/vault')
   })
 })

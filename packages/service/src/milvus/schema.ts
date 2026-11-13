@@ -27,7 +27,9 @@ import {
   MILVUS_ARRAY_CAPACITIES,
   MILVUS_ARRAY_ELEMENT_MAX_LENGTHS,
   MILVUS_COLLECTION,
+  MILVUS_CONSISTENCY_LEVEL,
   MILVUS_FIELDS,
+  MILVUS_SCALAR_MAX_LENGTHS,
   VECTOR_DIM_DEFAULT,
 } from '../../../core/lib/index.js'
 import { assertOk } from './ok.js'
@@ -82,10 +84,10 @@ export function createCollectionParams(
     collection_name: collectionName,
     description: 'obsidian-mem memory chunks (TASK-022 schema)',
     enable_dynamic_field: true,
-    // Strong consistency is pinned here and on reads (TASK-024): SDK 3.0.6
-    // has no client-level consistency setting. The SDK maps the name
-    // string, so the literal 'Strong' (not the numeric enum) is what it wants.
-    consistency_level: 'Strong',
+    // MILVUS_CONSISTENCY_LEVEL is pinned here and on every read (search.ts):
+    // SDK 3.0.6 has no client-level consistency setting, and the constant
+    // holds the name string the SDK maps (not the numeric enum).
+    consistency_level: MILVUS_CONSISTENCY_LEVEL,
     num_partitions: NUM_PARTITIONS,
     fields: [
       // 53-bit-safe ids from core/idhash; never autoID (we key by content).
@@ -98,12 +100,12 @@ export function createCollectionParams(
       {
         name: MILVUS_FIELDS.sourcePath,
         data_type: DataType.VarChar,
-        max_length: 1024,
+        max_length: MILVUS_SCALAR_MAX_LENGTHS.sourcePath,
       },
       {
         name: MILVUS_FIELDS.sectionHeader,
         data_type: DataType.VarChar,
-        max_length: 512,
+        max_length: MILVUS_SCALAR_MAX_LENGTHS.sectionHeader,
       },
       // BM25 text source. Choice recorded here: lite supports the BM25
       // Function, so chunk_text carries the analyzer and the client-side
@@ -112,18 +114,18 @@ export function createCollectionParams(
       {
         name: MILVUS_FIELDS.chunkText,
         data_type: DataType.VarChar,
-        max_length: 65_535,
+        max_length: MILVUS_SCALAR_MAX_LENGTHS.chunkText,
         enable_analyzer: true,
       },
       {
         name: MILVUS_FIELDS.vault,
         data_type: DataType.VarChar,
-        max_length: 256,
+        max_length: MILVUS_SCALAR_MAX_LENGTHS.vault,
       },
       {
         name: MILVUS_FIELDS.scope,
         data_type: DataType.VarChar,
-        max_length: 64,
+        max_length: MILVUS_SCALAR_MAX_LENGTHS.scope,
         is_partition_key: true,
       },
       {

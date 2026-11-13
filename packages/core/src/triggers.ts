@@ -266,8 +266,7 @@ function extractExtensions(
     .map(normalizeExtension)
     .filter((ext): ext is string => ext !== null)
   if (override.length > 0) {
-    return cap(override, MILVUS_ARRAY_CAPACITIES.triggerExtensions,
-      MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.triggerExtensions)
+    return capColumn(override, 'triggerExtensions')
   }
 
   const extensions: string[] = []
@@ -287,8 +286,7 @@ function extractExtensions(
   if (own !== null && KNOWN_INLINE_EXTENSIONS.has(own)) {
     extensions.push(own)
   }
-  return cap(dedupe(extensions), MILVUS_ARRAY_CAPACITIES.triggerExtensions,
-    MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.triggerExtensions)
+  return capColumn(dedupe(extensions), 'triggerExtensions')
 }
 
 // Frontmatter override, else every framework alias and manifest label
@@ -303,8 +301,7 @@ function extractFrameworks(
   const override = frontmatterList(meta['trigger_frameworks'])
     .map((value) => value.toLowerCase())
   if (override.length > 0) {
-    return cap(dedupe(override), MILVUS_ARRAY_CAPACITIES.triggerFrameworks,
-      MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.triggerFrameworks)
+    return capColumn(dedupe(override), 'triggerFrameworks')
   }
 
   const candidates = new Set<string>()
@@ -319,8 +316,7 @@ function extractFrameworks(
       candidates.add(canonical)
     }
   }
-  return cap([...candidates], MILVUS_ARRAY_CAPACITIES.triggerFrameworks,
-    MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.triggerFrameworks)
+  return capColumn([...candidates], 'triggerFrameworks')
 }
 
 // Wake keywords in fixed source order: frontmatter keywords, the chunker's
@@ -353,8 +349,7 @@ function extractWakeKeywords(
   }
 
   const usable = keywords.filter((keyword) => isUsableKeyword(keyword))
-  return cap(dedupe(usable), MILVUS_ARRAY_CAPACITIES.wakeKeywords,
-    MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords)
+  return capColumn(dedupe(usable), 'wakeKeywords')
 }
 
 // Frontmatter list values arrive as YAML arrays, comma lists, or a single
@@ -372,9 +367,14 @@ function frontmatterList(value: unknown): string[] {
   return []
 }
 
-// ".ts", "ts", ".TS ", " .tsx" all normalize to one dotted lowercase
-// form; anything left of that is not an extension.
-function normalizeExtension(raw: string): string | null {
+/**
+ * NormalizeExtension renders ".ts", "ts", ".TS ", and " .tsx" to one dotted
+ * lowercase form, and returns null for anything left of that. It defines the
+ * canonical spelling of a trigger extension: the extractor stores values
+ * through it, so a search filter must normalize its candidate the same way to
+ * match a stored trigger_extensions element.
+ */
+export function normalizeExtension(raw: string): string | null {
   const core = raw.trim().toLowerCase().replace(/^\.+/, '').replace(/[^a-z0-9+#]/g, '')
   return core === '' ? null : `.${core}`
 }
@@ -409,8 +409,17 @@ function dedupe(values: readonly string[]): string[] {
   return [...new Set(values)]
 }
 
-// Cap the list length and drop over-long elements; the collection's
-// max_capacity and max_length are the hard contract (constants.ts).
-function cap(values: readonly string[], maxCount: number, maxLength: number): string[] {
-  return values.filter((value) => value.length <= maxLength).slice(0, maxCount)
+/** One Array<VarChar> trigger column, keyed as in the constants records. */
+export type TriggerArrayColumn = keyof typeof MILVUS_ARRAY_CAPACITIES
+
+/**
+ * CapColumn enforces one column's contract on a trigger list: it drops
+ * elements longer than the column's max_length, then keeps
+ * max_capacity entries. Both limits are read from the same column key, so a
+ * list can never be capped against the wrong column (constants.ts).
+ */
+function capColumn(values: readonly string[], column: TriggerArrayColumn): string[] {
+  return values
+    .filter((value) => value.length <= MILVUS_ARRAY_ELEMENT_MAX_LENGTHS[column])
+    .slice(0, MILVUS_ARRAY_CAPACITIES[column])
 }

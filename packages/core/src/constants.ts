@@ -239,6 +239,16 @@ export function approxTokens(text: string): number {
   return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN)
 }
 
+/**
+ * ApproxCharsForTokens converts a token budget into the character cut
+ * approxTokens reads back as that budget (budget * 4, floored at one token so
+ * a zero or negative budget still shows something). Every per-result text
+ * budget applies this cut before any tokenizer runs.
+ */
+export function approxCharsForTokens(tokens: number): number {
+  return Math.max(1, Math.trunc(tokens)) * APPROX_CHARS_PER_TOKEN
+}
+
 /** Name of the single Milvus collection holding every vault's chunks. */
 export const MILVUS_COLLECTION = 'obsidian_mem'
 
@@ -288,6 +298,28 @@ export const MILVUS_ARRAY_ELEMENT_MAX_LENGTHS = {
   triggerFrameworks: 64,
   wakeKeywords: 64,
 } as const
+
+/**
+ * MILVUS_SCALAR_MAX_LENGTHS maps each scalar VarChar column to the max_length
+ * the collection declares. schema.ts builds the columns and the indexer
+ * clamps every insert to the same numbers, so no stored value can overflow
+ * its column and a width change lands in this one row.
+ */
+export const MILVUS_SCALAR_MAX_LENGTHS = {
+  sourcePath: 1024,
+  sectionHeader: 512,
+  chunkText: 65_535,
+  vault: 256,
+  scope: 64,
+} as const
+
+/**
+ * MILVUS_CONSISTENCY_LEVEL names the level the plugin pins on both sides of a
+ * read: createCollection declares it and every search asks for it per request,
+ * because SDK 3.0.6's ClientConfig has no client-level setting and lite must
+ * answer read-after-write.
+ */
+export const MILVUS_CONSISTENCY_LEVEL = 'Strong'
 
 /**
  * Vector width stored by default: multilingual-e5-small's true width. The

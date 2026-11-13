@@ -24,6 +24,8 @@ import {
   modelCacheDir,
 } from '../../core/lib/index.js'
 
+import { createSerialQueue } from './serial-queue.js'
+
 /** One embedding row; length equals the Embedder's stored dim. */
 export type EmbeddingVector = number[]
 
@@ -116,18 +118,10 @@ export function createEmbedder(options: EmbedderOptions = {}): Embedder {
 
   let extractorPromise: Promise<FeatureExtractor> | null = null
   let modelWidth = 0
-  let queueTail: Promise<unknown> = Promise.resolve()
 
   // Serialize every pipeline call: onnxruntime sessions are not safe to
-  // reenter from one process, and a TS queue is the lightest guard.
-  function enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const run = queueTail.then(task, task)
-    queueTail = run.then(
-      () => undefined,
-      () => undefined,
-    )
-    return run
-  }
+  // reenter from one process.
+  const enqueue = createSerialQueue()
 
   function ensureExtractor(): Promise<FeatureExtractor> {
     if (extractorPromise === null) {

@@ -26,8 +26,11 @@
 import { MetricType, RRFRanker } from '@zilliz/milvus2-sdk-node'
 
 import {
+  approxCharsForTokens,
   MILVUS_COLLECTION,
+  MILVUS_CONSISTENCY_LEVEL,
   MILVUS_FIELDS,
+  normalizeExtension,
   RECALL_READ_MAX_SECTIONS,
   RECALL_READ_SECTION_TOKENS,
   SEARCH_DEFAULT_TOP_K,
@@ -35,6 +38,7 @@ import {
 } from '../../core/lib/index.js'
 import type { VaultMode } from '../../core/lib/index.js'
 import type { Embedder } from './embedder.js'
+import { describeError } from './errors.js'
 import { assertOk } from './milvus/ok.js'
 
 /**
@@ -177,9 +181,15 @@ const EXT_FRAMEWORK_HINTS: Readonly<Record<string, readonly string[]>> = {
   '.svelte': ['svelte'],
 }
 
-// approxTokens uses ~4 chars per token, so the exact char cut for a
-// budget of `tokens` is tokens * 4 (ceil(len/4) <= tokens <=> len <= 4*tokens).
-const APPROX_CHARS_PER_TOKEN = 4
+// The verified fusion and search-knob values from findings §4.2: RRFRanker
+// (k) fuses the two routes by rank only (so negative BM25 scores never leak
+// into a result, G7), and ef is the HNSW candidate width per dense route.
+const RRF_RANKER_K = 60
+const DENSE_SEARCH_EF = 64
+
+// Each route asks for this many times the caller's limit, so dedupe and the
+// minScore floor still leave a full page of results to return.
+const CANDIDATE_OVERSAMPLE = 2
 
 /**
  * BuildFilterExpr renders FilterCriteria into a Milvus scalar expression
@@ -196,7 +206,7 @@ export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
   if (criteria.scopes !== undefined && criteria.scopes.length > 0) {
     clauses.push(`${MILVUS_FIELDS.scope} IN [${criteria.scopes.map(quoteExpr).join(', ')}]`)
   }
-  const ext = normalizeExt(criteria.ext)
+  const ext = criteria.ext === undefined ? null : normalizeExtension(criteria.ext)
   if (ext !== null) {
     clauses.push(`ARRAY_CONTAINS(${MILVUS_FIELDS.triggerExtensions}, ${quoteExpr(ext)})`)
   }
@@ -227,7 +237,7 @@ export async function hybridSearch(
   request: SearchRequest,
 ): Promise<MemorySearchResult[]> {
   const topK = clampTopK(request.topK)
-  const tokenCap = request.tokenCap ?? deps.defaultTokenCap ?? RECALL_READ_SECTION_TOKENS
+  const tokenCap = tokenBudget(request.tokenCap, deps)
   const expr = buildFilterExpr({
     ...(request.scopes !== undefined ? { scopes: request.scopes } : {}),
     ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
@@ -240,7 +250,7 @@ export async function hybridSearch(
     return []
   }
   const dense = await deps.embedder.embedQuery(request.query)
-  const rows = await dispatchHybrid(deps, request.query, dense, expr, topK * 2)
+  const rows = await dispatchHybrid(deps, request.query, dense, expr, candidatesFor(topK))
 
   let results = toResults(deps, rows, tokenCap)
   if (request.minScore !== undefined) {
@@ -249,7 +259,7 @@ export async function hybridSearch(
     // (G7) and never reach this comparison.
     results = results.filter((row) => row.score >= floor)
   }
-  return dedupeBySection(results).slice(0, topK)
+  return topSections(results, topK)
 }
 
 /**
@@ -264,7 +274,8 @@ export async function searchExactSections(
   request: ExactSectionRequest,
 ): Promise<MemorySearchResult[]> {
   const k = clampTopK(request.k ?? RECALL_READ_MAX_SECTIONS)
-  const sectionTokens = request.sectionTokens ?? deps.defaultTokenCap ?? RECALL_READ_SECTION_TOKENS
+  const sectionTokens = tokenBudget(request.sectionTokens, deps)
+  const ext = request.ext === undefined ? null : normalizeExtension(request.ext)
   const queryText = request.snippet !== undefined && request.snippet.trim() !== ''
     ? request.snippet
     : request.filePath
@@ -278,8 +289,8 @@ export async function searchExactSections(
     sourcePath: request.filePath,
     ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
   })
-  const exactRows = await dispatchHybrid(deps, queryText, dense, exactExpr, k * 2)
-  const exact = dedupeBySection(toResults(deps, exactRows, sectionTokens)).slice(0, k)
+  const exactRows = await dispatchHybrid(deps, queryText, dense, exactExpr, candidatesFor(k))
+  const exact = topSections(toResults(deps, exactRows, sectionTokens), k)
   if (exact.length > 0) {
     return exact
   }
@@ -289,19 +300,19 @@ export async function searchExactSections(
   // clause never over-restricts an already-filtered query.
   const frameworks = [
     ...(request.frameworks ?? []),
-    ...(EXT_FRAMEWORK_HINTS[normalizeExt(request.ext) ?? ''] ?? []),
+    ...(ext === null ? [] : EXT_FRAMEWORK_HINTS[ext] ?? []),
   ]
   const wakeKeywords = request.dirSignals?.map((signal) => signal.replace(/\/+$/, '')) ?? []
   const fallbackExpr = buildFilterExpr({
-    ...(request.ext !== undefined ? { ext: request.ext } : {}),
+    ...(ext === null ? {} : { ext }),
     ...(frameworks.length > 0 ? { frameworks } : {}),
     ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
     ...(frameworks.length === 0 && request.ext === undefined && wakeKeywords.length > 0
       ? { wakeKeywords }
       : {}),
   })
-  const fallbackRows = await dispatchHybrid(deps, queryText, dense, fallbackExpr, k * 2)
-  return dedupeBySection(toResults(deps, fallbackRows, sectionTokens)).slice(0, k)
+  const fallbackRows = await dispatchHybrid(deps, queryText, dense, fallbackExpr, candidatesFor(k))
+  return topSections(toResults(deps, fallbackRows, sectionTokens), k)
 }
 
 // Shared dispatch: one hybridSearch carrying both routes with explicit
@@ -320,7 +331,7 @@ async function dispatchHybrid(
       data: [dense],
       limit: candidateLimit,
       metric_type: MetricType.COSINE,
-      params: { ef: 64 },
+      params: { ef: DENSE_SEARCH_EF },
     },
     {
       anns_field: MILVUS_FIELDS.sparseVector,
@@ -336,14 +347,14 @@ async function dispatchHybrid(
   }
 
   const response = await callMilvus('hybridSearch', () => deps.client.hybridSearch({
-    collection_name: deps.collectionName ?? MILVUS_COLLECTION,
+    collection_name: collectionOf(deps),
     data: routes,
-    rerank: RRFRanker(60),
+    rerank: RRFRanker(RRF_RANKER_K),
     limit: candidateLimit,
     output_fields: [...SEARCH_OUTPUT_FIELDS],
-    // Collection pins Strong at create (schema.ts) and lite writes are
-    // read-back immediate; asking per read keeps read-after-write true.
-    consistency_level: 'Strong',
+    // The collection declares the same level at create (schema.ts) and lite
+    // writes are read-back immediate; asking per read keeps it explicit.
+    consistency_level: MILVUS_CONSISTENCY_LEVEL,
   }))
   return response.results ?? []
 }
@@ -353,7 +364,7 @@ async function dispatchHybrid(
 // answer must not come from a stale snapshot.
 async function guardCollectionHasRows(deps: SearchDependencies): Promise<boolean> {
   const response = await callMilvus('count', () => deps.client.count({
-    collection_name: deps.collectionName ?? MILVUS_COLLECTION,
+    collection_name: collectionOf(deps),
   }))
   return Number(response.data ?? 0) > 0
 }
@@ -364,8 +375,7 @@ async function callMilvus<T>(what: string, run: () => Promise<T>): Promise<T> {
   try {
     return assertOk(await run(), what)
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause)
-    throw new IndexOfflineError(`memory search: ${reason}`, { cause })
+    throw new IndexOfflineError(`memory search: ${describeError(cause)}`, { cause })
   }
 }
 
@@ -392,6 +402,23 @@ function toResults(
   })
 }
 
+// collectionOf resolves the one collection name every dispatch reads.
+function collectionOf(deps: SearchDependencies): string {
+  return deps.collectionName ?? MILVUS_COLLECTION
+}
+
+// tokenBudget resolves the per-result text budget: request, then deps, then
+// the shared read-section default.
+function tokenBudget(requestValue: number | undefined, deps: SearchDependencies): number {
+  return requestValue ?? deps.defaultTokenCap ?? RECALL_READ_SECTION_TOKENS
+}
+
+// candidatesFor widens each route's limit before dedupe and the score floor
+// trim the results.
+function candidatesFor(limit: number): number {
+  return limit * CANDIDATE_OVERSAMPLE
+}
+
 // Same file + same section header is one logical section that long-chunk
 // splitting or the two routes both surfaced: keep the highest score.
 function dedupeBySection(results: readonly MemorySearchResult[]): MemorySearchResult[] {
@@ -405,22 +432,23 @@ function dedupeBySection(results: readonly MemorySearchResult[]): MemorySearchRe
   return [...best.values()]
 }
 
+// topSections is the one shaping order every dispatch ends on: dedupe to one
+// row per logical section first, then cut to the caller's limit.
+function topSections(
+  results: readonly MemorySearchResult[],
+  limit: number,
+): MemorySearchResult[] {
+  return dedupeBySection(results).slice(0, limit)
+}
+
 function truncateToTokens(text: string, tokens: number): string {
-  const capChars = Math.max(1, Math.trunc(tokens)) * APPROX_CHARS_PER_TOKEN
+  const capChars = approxCharsForTokens(tokens)
   return text.length <= capChars ? text : text.slice(0, capChars)
 }
 
 function clampTopK(value: number | undefined): number {
   const wanted = value === undefined || !Number.isFinite(value) ? SEARCH_DEFAULT_TOP_K : Math.trunc(value)
   return Math.max(1, Math.min(SEARCH_MAX_RESULTS, wanted))
-}
-
-function normalizeExt(ext: string | undefined): string | null {
-  if (ext === undefined) {
-    return null
-  }
-  const core = ext.trim().toLowerCase().replace(/^\.+/, '')
-  return core === '' ? null : `.${core}`
 }
 
 function quoteExpr(value: string): string {

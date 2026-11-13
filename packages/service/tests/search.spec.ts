@@ -132,6 +132,14 @@ describe('buildFilterExpr golden expressions', () => {
     expect(buildFilterExpr({ ext: ' TS ' })).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
   })
 
+  it('normalizes the ext through the same canonical form the extractor stored', () => {
+    // core's normalizeExtension defines the spelling; a filter that keeps
+    // stray characters would silently match nothing.
+    expect(buildFilterExpr({ ext: ' TS ' })).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
+    expect(buildFilterExpr({ ext: 'ts,' })).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
+    expect(buildFilterExpr({ ext: '.' })).toBeUndefined()
+  })
+
   it('escapes quotes and backslashes inside quoted values', () => {
     const expr = buildFilterExpr({ sourcePath: 'notes/we"ird\\path.md' })
 

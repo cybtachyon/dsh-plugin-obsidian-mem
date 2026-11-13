@@ -28,8 +28,9 @@ import { homedir as osHomedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
 import { dbDir } from '../../../core/lib/index.js'
-import type { ProbeFactory } from './client.js'
-import { probeFor } from './client.js'
+import { describeError } from '../errors.js'
+import type { MilvusProbe, ProbeFactory } from './client.js'
+import { probeFor, PROBE_TIMEOUT_MS } from './client.js'
 
 /**
  * MilvusLiteVersion pins the certified milvus-lite release passed to
@@ -41,6 +42,11 @@ export const MILVUS_LITE_VERSION = '3.2.2'
 
 /** LiteVersionPrefix is what identifies a lite server in getVersion output. */
 export const LITE_VERSION_PREFIX = 'milvus_lite'
+
+/** IsLiteVersion tests a getVersion answer for the milvus-lite server prefix. */
+function isLiteVersion(version: string): boolean {
+  return version.startsWith(LITE_VERSION_PREFIX)
+}
 
 /** PortFileName is the port/pid record under dataDir; lite itself writes none. */
 export const PORT_FILE_NAME = '.memlite.json'
@@ -55,7 +61,8 @@ const DATA_DIR_LOCK_MARKER = 'DataDirLockedError'
 
 const DEFAULT_READINESS_TIMEOUT_MS = 90_000
 const DEFAULT_READINESS_INTERVAL_MS = 250
-const DEFAULT_PROBE_TIMEOUT_MS = 2_000
+// One probe budget, shared with the probe builder itself (client.ts).
+const DEFAULT_PROBE_TIMEOUT_MS = PROBE_TIMEOUT_MS
 const DEFAULT_KILL_GRACE_MS = 5_000
 const DEFAULT_RESPAWN_BASE_DELAY_MS = 1_000
 const DEFAULT_RESPAWN_MAX_DELAY_MS = 30_000
@@ -346,13 +353,9 @@ export class MilvusLauncher {
 
   /** TryAttach attaches when a milvus-lite answers; foreign servers throw. */
   private async tryAttach(address: string): Promise<MilvusStartResult | null> {
-    const probe = this.probeFactory(address)
     try {
-      if (probe.connectPromise) {
-        await probe.connectPromise
-      }
-      const { version } = await probe.getVersion()
-      if (!version.startsWith(LITE_VERSION_PREFIX)) {
+      const { version } = await this.probeVersion(address)
+      if (!isLiteVersion(version)) {
         throw new MilvusForeignServerError(
           `a non-milvus-lite Milvus (${version || 'unknown version'}) answers at ${address}. `
           + `Spawn mode refuses it; run it as { mode: 'external', address: '${address}' } `
@@ -367,9 +370,32 @@ export class MilvusLauncher {
         throw error
       }
       return null // nothing answering: not attachable
+    }
+  }
+
+  /**
+   * WithProbe opens one short-lived probe against address, waits for its
+   * channel, hands it to `use`, and always releases it. Every probe this
+   * launcher opens goes through here, so no path leaks a connection pool.
+   */
+  private async withProbe<T>(
+    address: string,
+    use: (probe: MilvusProbe) => Promise<T>,
+  ): Promise<T> {
+    const probe = this.probeFactory(address)
+    try {
+      if (probe.connectPromise) {
+        await probe.connectPromise
+      }
+      return await use(probe)
     } finally {
       await Promise.resolve(probe.close()).catch(() => undefined)
     }
+  }
+
+  /** ProbeVersion asks one fresh probe for the server version string. */
+  private probeVersion(address: string): Promise<{ version: string }> {
+    return this.withProbe(address, (probe) => probe.getVersion())
   }
 
   /** SpawnLite runs the one command verified in findings §5.1, pinned. */
@@ -413,15 +439,13 @@ export class MilvusLauncher {
       if (watch?.exit) {
         throw this.childDiedError(address, watch)
       }
-      const probe = this.probeFactory(address)
       try {
-        if (probe.connectPromise) {
-          await probe.connectPromise
-        }
-        const health = await probe.checkHealth()
-        if (health.isHealthy) {
-          const { version } = await probe.getVersion()
-          if (this.config.mode !== 'external' && !version.startsWith(LITE_VERSION_PREFIX)) {
+        const version = await this.withProbe(address, async (probe) => {
+          const health = await probe.checkHealth()
+          return health.isHealthy ? (await probe.getVersion()).version : null
+        })
+        if (version !== null) {
+          if (this.config.mode !== 'external' && !isLiteVersion(version)) {
             throw new MilvusForeignServerError(
               `the server spawned for ${address} reports ${version}, not ${LITE_VERSION_PREFIX}-*; `
               + `the version pin guards the 3.x storage layout`,
@@ -434,8 +458,6 @@ export class MilvusLauncher {
           throw error
         }
         lastError = error
-      } finally {
-        await Promise.resolve(probe.close()).catch(() => undefined)
       }
       if (Date.now() >= deadline) {
         break
@@ -445,7 +467,7 @@ export class MilvusLauncher {
     throw new Error(
       `milvus launcher: no healthy milvus-lite at ${address} within ${this.readinessTimeoutMs} ms `
       + `(cold uvx resolves and downloads the wheel set once; warm starts take ~0.5 s). `
-      + `Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+      + `Last error: ${describeError(lastError)}`,
     )
   }
 
@@ -500,10 +522,7 @@ export class MilvusLauncher {
           this.log(`milvus-lite respawned at ${result.address} (${result.version})`)
         },
         (error: unknown) => {
-          this.log(
-            `milvus-lite respawn failed: ${error instanceof Error ? error.message : String(error)}; `
-            + 'backing off',
-          )
+          this.log(`milvus-lite respawn failed: ${describeError(error)}; backing off`)
           this.scheduleRespawn()
         },
       )
@@ -569,7 +588,7 @@ export class MilvusLauncher {
       }
       return this.findUvx()
     } catch (error) {
-      this.log(`uv auto-install failed: ${error instanceof Error ? error.message : String(error)}`)
+      this.log(`uv auto-install failed: ${describeError(error)}`)
       return null
     }
   }

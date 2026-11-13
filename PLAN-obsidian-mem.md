@@ -73,7 +73,7 @@ task file lists explicit cross-phase prerequisites.
 - [x] [TASK-022-collection-schema](docs/PLAN-obsidian-mem-TASK-022-collection-schema.md)
 - [x] [TASK-023-indexer-manager](docs/PLAN-obsidian-mem-TASK-023-indexer-manager.md)
 - [x] [TASK-024-hybrid-search](docs/PLAN-obsidian-mem-TASK-024-hybrid-search.md)
-- [ ] [Refactor: review Phase 3 files for code risks](docs/PLAN-obsidian-mem-TASK-025-refactor-service.md)
+- [x] [Refactor: review Phase 3 files for code risks](docs/PLAN-obsidian-mem-TASK-025-refactor-service.md)
 
 ### Phase 4: Host service + tools (packages/service, packages/tools)
 
@@ -178,3 +178,15 @@ task file lists explicit cross-phase prerequisites.
   (no throws), explicit BM25 metric_type, `WeightedRanker([w1,w2])`, negative BM25 scores
   ⇒ RRF only, writes serialized in TS, `getLoadState` unreliable ⇒ loadCollectionSync
   after create. Partition-key + ARRAY filters + BM25 Function VERIFIED on lite.
+- 2026-11-12 **Phase 3 review-pass decisions** (TASK-025): the stat sweep stays on
+  beside a live watcher (a dead `fs.watch` handle is never re-armed; the sweep is
+  stat-only), now re-pointable or switchable off via
+  `VaultIndexerOptions.pollIntervalMs`. `Note.raw` stays the seam carrying
+  un-modelled frontmatter to trigger extraction (no gray-matter dep in service);
+  TASK-033 must merge `note.raw` back when rewriting an authored note, since
+  `serializeNote` renders the modelled keys only. Reuse these shared sources
+  instead of restating them: core `MILVUS_SCALAR_MAX_LENGTHS` (schema columns and
+  insert clamps), `MILVUS_CONSISTENCY_LEVEL` (create and every read),
+  `approxCharsForTokens` (token budgets), `normalizeExtension` (canonical trigger
+  extension for extraction AND filters), plus `service/serial-queue.ts`,
+  `service/errors.ts` (`describeError`), and `service/llm-refine.ts` (`LlmRefiner`).

@@ -1,5 +1,7 @@
 # TASK-023 Indexer manager (vault watchers → Milvus)
 
+Status: done
+
 Depends: TASK-013, TASK-015, TASK-022. `packages/service/src/indexer.ts`.
 
 ## Scope

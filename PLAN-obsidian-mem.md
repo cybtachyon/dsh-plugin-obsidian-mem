@@ -71,7 +71,7 @@ task file lists explicit cross-phase prerequisites.
 - [x] [TASK-020-embedder](docs/PLAN-obsidian-mem-TASK-020-embedder.md)
 - [x] [TASK-021-milvus-bootstrap](docs/PLAN-obsidian-mem-TASK-021-milvus-bootstrap.md)
 - [x] [TASK-022-collection-schema](docs/PLAN-obsidian-mem-TASK-022-collection-schema.md)
-- [ ] [TASK-023-indexer-manager](docs/PLAN-obsidian-mem-TASK-023-indexer-manager.md)
+- [x] [TASK-023-indexer-manager](docs/PLAN-obsidian-mem-TASK-023-indexer-manager.md)
 - [ ] [TASK-024-hybrid-search](docs/PLAN-obsidian-mem-TASK-024-hybrid-search.md)
 - [ ] [Refactor: review Phase 3 files for code risks](docs/PLAN-obsidian-mem-TASK-025-refactor-service.md)
 

@@ -5,6 +5,7 @@ import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import {
   dirSignalsOf,
+  fileTokensOf,
   importSnippetFrom,
   mountLifecycle,
 } from '../src/index.ts'
@@ -220,7 +221,7 @@ describe('request wiring and injected envelope', () => {
     expect(request.ext).toBe('.tsx')
     expect(request.k).toBe(2)
     expect(request.sectionTokens).toBe(350)
-    expect(request.fileTokens).toEqual(['work', 'project', 'src'])
+    expect(request.fileTokens).toEqual(['app', 'work', 'project', 'src', 'react', 'helper'])
     expect(request.snippet).toContain('import React from "react"')
     expect(request.snippet).toContain('import { helper } from "./helper"')
     expect(request.snippet).not.toContain('const App')
@@ -326,5 +327,35 @@ describe('extraction fixtures', () => {
       ['home', 'u', 'deep', 'dir', 'notes'],
     )
     expect(dirSignalsOf('relative/path.md')).toEqual(['relative'])
+  })
+})
+
+describe('fileTokensOf (TASK-010)', () => {
+  it('takes stem parts, directory segments, and import bindings/specifiers', () => {
+    expect(fileTokensOf(
+      '/work/project/src/App.tsx',
+      'import React from "react"\nimport { helper } from "./helper"',
+    )).toEqual(['app', 'work', 'project', 'src', 'react', 'helper'])
+  })
+
+  it('splits camel and snake identifiers and scoped specifiers', () => {
+    expect(fileTokensOf(
+      '/home/u/dev/search-utils/QueryBuilder.ts',
+      'import { buildQuery } from "@acme/query_builder"',
+    )).toEqual(['querybuilder', 'home', 'dev', 'search-utils', 'acme', 'query', 'builder', 'build'])
+  })
+
+  it('drops keywords and sub-two-char words; keeps single tokens out', () => {
+    // 'a' (stem and file name) fails the wake-term shape; no snippet words
+    // at all: only the directory signal survives.
+    expect(fileTokensOf('/v/notes/a.md', '')).toEqual(['notes'])
+  })
+
+  it('caps the token list', () => {
+    const snippet = Array.from(
+      { length: 40 },
+      (unused, n) => `import { mod${n} } from "./pkg${n}"`,
+    ).join('\n')
+    expect(fileTokensOf('/x/deep/File.ts', snippet).length).toBe(24)
   })
 })

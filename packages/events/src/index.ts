@@ -193,6 +193,7 @@ export { guidanceLine, installTurnStart, nodeManifestFs } from './turnStart.js'
 export type { TurnStartDeps } from './turnStart.js'
 export {
   dirSignalsOf,
+  fileTokensOf,
   HARNESS_READ_TOOL_NAME,
   importSnippetFrom,
   installReadIntercept,

@@ -20,9 +20,10 @@
  * ensureMemoryAccess returns it.
  * @module dsh-plugin-obsidian-mem/events/readIntercept
  */
-import { dirname, extname, isAbsolute, normalize, resolve, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, normalize, resolve, sep } from 'node:path';
 import { classifyPath, normalizeExtension, } from '../../core/lib/index.js';
 import { boundSummary } from './host.js';
+import { isWakeTerm } from './sessions.js';
 import { asRecord, collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
 /** The harness Read tool's registry name (verified live: `read`). */
 export const HARNESS_READ_TOOL_NAME = 'read';
@@ -84,11 +85,11 @@ function observeRead(deps, exec, result, warnOnce) {
     }
     const ext = normalizeExtension(extname(absPath));
     const snippet = importSnippetFrom(result.content);
-    const dirSignals = dirSignalsOf(absPath);
+    const fileTokens = fileTokensOf(absPath, snippet);
     const recall = runExactRecall(deps, agent, sessionId, absPath, {
         ...(ext === null ? {} : { ext }),
         ...(snippet === '' ? {} : { snippet }),
-        ...(dirSignals.length === 0 ? {} : { fileTokens: dirSignals }),
+        ...(fileTokens.length === 0 ? {} : { fileTokens }),
     }, dir, warnOnce);
     fireAndForget(deps.logger, 'read-intercept recall', recall);
 }
@@ -169,5 +170,62 @@ export function dirSignalsOf(absPath) {
         .slice(0, -1)
         .filter((segment) => segment !== '' && /^[A-Za-z][A-Za-z0-9_-]*$/.test(segment))
         .slice(-DIR_SIGNAL_MAX_SEGMENTS);
+}
+/** Upper bound on the file-derived wake tokens one fallback request carries. */
+const FILE_TOKENS_MAX = 24;
+// Import-line fragments: the package/path specifier, the braced named
+// bindings, and the default binding. Keywords (import/from/require) never
+// reach the token set; only bindings and specifier chunks do.
+const IMPORT_SPECIFIER_RE = /\bfrom\s+['"]([^'"]+)['"]|\brequire\(\s*['"]([^'"]+)['"]\s*\)/;
+const BRACED_BINDINGS_RE = /\{([^}]*)\}/;
+const DEFAULT_BINDING_RE = /^import\s+([A-Za-z_$][\w$]*)/;
+/**
+ * FileTokensOf derives the deterministic wake tokens of the file being
+ * read: the extensionless basename plus its `[-_\s]` parts, the
+ * dirSignalsOf segments, and the identifiers and specifier chunks of the
+ * import snippet (camel/snake split). Lower-cased, isWakeTerm-filtered,
+ * deduped, capped at FILE_TOKENS_MAX. The fallback leg's wake_keywords
+ * filter intersects exactly these tokens (TASK-008/010): a stored note
+ * sharing no token with the read file never answers the neighborhood.
+ */
+export function fileTokensOf(absPath, snippet) {
+    const tokens = new Set();
+    const addWord = (word) => {
+        // Camel/underscore split BEFORE lowering, then the shared shape guard.
+        for (const part of word.split(/[_\s]+|(?=[A-Z])/)) {
+            const term = part.toLowerCase();
+            if (isWakeTerm(term)) {
+                tokens.add(term);
+            }
+        }
+    };
+    for (const part of basename(absPath).replace(/\.[^.]*$/, '').split(/[-_\s]+/)) {
+        const term = part.toLowerCase();
+        if (isWakeTerm(term)) {
+            tokens.add(term);
+        }
+    }
+    for (const signal of dirSignalsOf(absPath)) {
+        addWord(signal);
+    }
+    for (const line of snippet.split('\n')) {
+        const specifier = IMPORT_SPECIFIER_RE.exec(line);
+        if (specifier !== null) {
+            for (const chunk of (specifier[1] ?? specifier[2] ?? '').split(/[^\p{L}\p{N}]+/u)) {
+                addWord(chunk);
+            }
+        }
+        const braced = BRACED_BINDINGS_RE.exec(line);
+        if (braced !== null) {
+            for (const binding of braced[1].split(/[\s,]+/)) {
+                addWord(binding);
+            }
+        }
+        const named = DEFAULT_BINDING_RE.exec(line);
+        if (named !== null) {
+            addWord(named[1]);
+        }
+    }
+    return [...tokens].slice(0, FILE_TOKENS_MAX);
 }
 //# sourceMappingURL=readIntercept.js.map

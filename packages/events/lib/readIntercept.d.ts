@@ -41,4 +41,14 @@ export declare function importSnippetFrom(content: readonly {
 }[]): string;
 /** DirSignalsOf feeds the path's directory names to the wake-signal filter. */
 export declare function dirSignalsOf(absPath: string): string[];
+/**
+ * FileTokensOf derives the deterministic wake tokens of the file being
+ * read: the extensionless basename plus its `[-_\s]` parts, the
+ * dirSignalsOf segments, and the identifiers and specifier chunks of the
+ * import snippet (camel/snake split). Lower-cased, isWakeTerm-filtered,
+ * deduped, capped at FILE_TOKENS_MAX. The fallback leg's wake_keywords
+ * filter intersects exactly these tokens (TASK-008/010): a stored note
+ * sharing no token with the read file never answers the neighborhood.
+ */
+export declare function fileTokensOf(absPath: string, snippet: string): string[];
 //# sourceMappingURL=readIntercept.d.ts.map

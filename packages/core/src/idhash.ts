@@ -13,6 +13,63 @@ import { createHash } from 'node:crypto'
 // distinguish header paths within one vault's chunk set.
 const HEADER_HASH_HEX_CHARS = 16
 
+// Chunk ids land in a Milvus Int64 column but must survive a JS number
+// round-trip, so the digest is masked to the low 53 bits (which also
+// clears the signed-int64 top bit): every id is a positive
+// Number.MAX_SAFE_INTEGER-safe integer. Tradeoff: 53-bit id space makes
+// a birthday collision roughly 1e-4 likely only around a million
+// chunks, negligible at this plugin's expected scale, and a collision
+// would mean one overlapping chunk row, not data corruption.
+const CHUNK_ID_53_BIT_MASK = (1n << 53n) - 1n
+
+/** The inputs that make one chunk's identity unique and model-scoped. */
+export interface ChunkIdParts {
+  /** Vault the source file belongs to. */
+  vault: string
+  /** Vault-relative source file path. */
+  source_path: string
+  /** headerHash of the section the chunk belongs to. */
+  header_hash: string
+  /** Part index within the section (from the long-chunk split). */
+  part: number
+  /** Embedding model id the chunk's vector came from. */
+  modelId: string
+  /** Vector width the model was used at. */
+  vectorDim: number
+}
+
+/**
+ * chunkId folds the sha256 of the canonical join
+ * "vault\nsource_path\nheader_hash\npart\nmodelId\nvectorDim" (first 8
+ * bytes read big-endian, masked to 53 bits) into a positive safe
+ * integer. Position and type are part of the identity: swapping two
+ * fields' values changes the id. modelId and vectorDim are baked in on
+ * purpose: a model or dim swap yields fresh ids for every chunk, so the
+ * indexer's state diff deletes stale rows instead of ever mixing
+ * dimensions in one collection (full re-embed on swap).
+ */
+export function chunkId(parts: ChunkIdParts): number {
+  const canonical = [
+    parts.vault,
+    parts.source_path,
+    parts.header_hash,
+    String(parts.part),
+    parts.modelId,
+    String(parts.vectorDim),
+  ].join('\n')
+  const wide = createHash('sha256').update(canonical, 'utf8').digest().readBigUInt64BE(0)
+  return Number(wide & CHUNK_ID_53_BIT_MASK)
+}
+
+/**
+ * contentHash renders data as its 64-char lowercase sha256 hex digest.
+ * The indexer compares it against stored hashes to skip unchanged
+ * files, and memory_write uses it for staleness checks.
+ */
+export function contentHash(data: string | Uint8Array): string {
+  return createHash('sha256').update(data).digest('hex')
+}
+
 /**
  * headerHash hashes a section key (header path plus a normalized text
  * fragment, concatenated) to a 16-char lowercase hex sha256 prefix.

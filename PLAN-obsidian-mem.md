@@ -63,7 +63,7 @@ task file lists explicit cross-phase prerequisites.
 - [x] [TASK-012-memory-note-format](docs/PLAN-obsidian-mem-TASK-012-memory-note-format.md)
 - [x] [TASK-013-markdown-chunker](docs/PLAN-obsidian-mem-TASK-013-markdown-chunker.md)
 - [x] [TASK-014-workspace-manifest](docs/PLAN-obsidian-mem-TASK-014-workspace-manifest.md)
-- [ ] [TASK-015-chunk-id-hashing](docs/PLAN-obsidian-mem-TASK-015-chunk-id-hashing.md)
+- [x] [TASK-015-chunk-id-hashing](docs/PLAN-obsidian-mem-TASK-015-chunk-id-hashing.md)
 - [ ] [Refactor: review Phase 2 files for code risks](docs/PLAN-obsidian-mem-TASK-016-refactor-core.md)
 
 ### Phase 3: Embeddings + Milvus backend (packages/service)

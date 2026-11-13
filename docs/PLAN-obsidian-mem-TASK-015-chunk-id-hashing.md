@@ -1,5 +1,7 @@
 # TASK-015 Deterministic chunk_id + content hashing
 
+Status: done
+
 Depends: TASK-010. `packages/core/src/idhash.ts`.
 
 ## Scope

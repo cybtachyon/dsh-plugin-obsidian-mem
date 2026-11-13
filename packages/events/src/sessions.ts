@@ -108,6 +108,13 @@ export interface SessionRecord {
   turnStartDone: boolean
   /** Last pre-step turn number observed; drives per-turn resets. */
   lastTurn: number
+  /**
+   * First user-sourced text of the current turn (TASK-044's trivial-turn
+   * guard); captured at the pre-step, reset by noteTurn.
+   */
+  firstUserTextThisTurn: string
+  /** A memory_* tool ran in the current turn (TASK-044's skip guard). */
+  memoryToolUsedThisTurn: boolean
   /** Think-intercept injections used in the current turn (TASK-043 consumes). */
   thinkShots: number
   /** Approx tokens the turn-start recall injected this session (TASK-045). */
@@ -225,6 +232,8 @@ export class SessionRegistry {
         ),
         turnStartDone: false,
         lastTurn: 0,
+        firstUserTextThisTurn: '',
+        memoryToolUsedThisTurn: false,
         thinkShots: 0,
         turnRecallTokensUsed: 0,
         readInjections: 0,
@@ -296,17 +305,46 @@ export class SessionRegistry {
 
   /**
    * NoteTurn folds one observed pre-step turn into the record: a new turn
-   * number resets the per-turn state (Think shots, per-turn Read dedupe).
+   * number resets the per-turn state (Think shots, per-turn Read dedupe,
+   * first-user-text, memory-tool-used). When `firstUserText` is supplied
+   * and the turn's slot is still empty, it is recorded (the first user
+   * message of the turn wins).
    */
-  noteTurn(sessionId: string, turn: number): void {
+  noteTurn(sessionId: string, turn: number, firstUserText?: string): void {
     const record = this.ensure(sessionId)
     if (turn === record.lastTurn) {
+      // Same turn: fill the first-user-text slot only if still empty.
+      if (firstUserText !== undefined && record.firstUserTextThisTurn === '' && firstUserText !== '') {
+        record.firstUserTextThisTurn = firstUserText
+      }
       return
     }
     record.lastTurn = turn
     record.thinkShots = 0
     record.readPathsThisTurn.clear()
+    record.firstUserTextThisTurn = firstUserText ?? ''
+    record.memoryToolUsedThisTurn = false
     this.touch(record)
+  }
+
+  /** FirstUserText answers the current turn's first user text (TASK-044). */
+  firstUserText(sessionId: string): string {
+    return this.ensure(sessionId).firstUserTextThisTurn
+  }
+
+  /** NoteMemoryToolUse flags the current turn as memory-tool-using. */
+  noteMemoryToolUse(sessionId: string): void {
+    const record = this.ensure(sessionId)
+    if (record.memoryToolUsedThisTurn) {
+      return
+    }
+    record.memoryToolUsedThisTurn = true
+    this.touch(record)
+  }
+
+  /** MemoryToolUsed answers whether the current turn used a memory_* tool. */
+  memoryToolUsed(sessionId: string): boolean {
+    return this.ensure(sessionId).memoryToolUsedThisTurn
   }
 
   /** ThinkBudgetLeft answers the per-turn Think-intercept cap (TASK-043). */

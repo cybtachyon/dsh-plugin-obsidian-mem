@@ -1,5 +1,7 @@
 # TASK-044 Turn-end reminder
 
+Status: done
+
 Depends: TASK-040. `packages/events/src/turnEnd.ts`. Study how
 dsh-longterm-memory subscribes to durable `turn/end` (`session/event` filtered on
 `event.type === 'turn/end'`; there is NO Cordis `turn/start|end` event) and what

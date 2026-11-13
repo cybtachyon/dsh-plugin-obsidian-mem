@@ -32,6 +32,7 @@ import type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope } from '.
 import { installReadIntercept } from './readIntercept.js'
 import { SESSIONS_FILE_NAME, SessionRegistry } from './sessions.js'
 import { installThinkIntercept } from './thinkIntercept.js'
+import { installMemoryToolWatch, installTurnEnd } from './turnEnd.js'
 import { installTurnStart } from './turnStart.js'
 
 export const name = 'obsidian-mem-events'
@@ -64,8 +65,8 @@ export function apply(ctx: Context, options: MountOptions = {}): void {
  * MountLifecycle wires one profile's lifecycle: session registry, seam
  * hookup, and the agent create/dispose pairing whose per-agent
  * `agent.ctx.effect()` carries every agent-scoped listener this row
- * installs (turn-start recall now; the Think-stream and turn-end hooks join
- * the same effect). Answers the registry (tests assert on it).
+ * installs (turn-start recall, the Think-stream intercept, and the turn-end
+ * reminder). Answers the registry (tests assert on it).
  */
 export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions = {}): SessionRegistry {
   const ctx = scope
@@ -115,6 +116,7 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
         const disposers = [
           installTurnStart(deps),
           installThinkIntercept(deps),
+          installTurnEnd(deps),
         ]
         return () => {
           for (const dispose of disposers) {
@@ -141,8 +143,10 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
   })
 
   // Plugin-level tool observation: tools/result is keyed by exec.agent and
-  // observed here (not per agent.ctx); see TASK-042.
+  // observed here (not per agent.ctx); see TASK-042 and the TASK-044
+  // memory-tool turn guard.
   installReadIntercept({ ctx, memory, registry, logger: logger as HookLogger })
+  installMemoryToolWatch({ ctx, registry, logger: logger as HookLogger })
 
   return registry
 }
@@ -200,3 +204,13 @@ export {
   THINK_SEARCH_TOP_K,
 } from './thinkIntercept.js'
 export type { ThinkInterceptDeps } from './thinkIntercept.js'
+export {
+  installMemoryToolWatch,
+  installTurnEnd,
+  isTrivialTurn,
+  TURN_END_REMINDER,
+  TRIVIAL_TURN_MAX_CHARS,
+  turnEndReminder,
+  WORK_MARKER,
+} from './turnEnd.js'
+export type { MemoryToolWatchDeps, TurnEndDeps } from './turnEnd.js'

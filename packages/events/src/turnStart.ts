@@ -91,7 +91,9 @@ function claimTurnStart(
   step: number,
 ): void {
   const sessionId = String(agent.id)
-  deps.registry.noteTurn(sessionId, turn)
+  // The first user text rides into the registry for TASK-044's trivial-turn
+  // guard (the turn-stopping payload carries no messages).
+  deps.registry.noteTurn(sessionId, turn, firstUserText(messages))
   if (step !== 1 || deps.registry.isTurnStartDone(sessionId)) {
     return
   }

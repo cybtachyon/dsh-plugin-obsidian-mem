@@ -14,7 +14,11 @@ Then address and resolve each risk.
 Phase-1 watch items (starting points, not exhaustive): the strip rule must
 have ONE home (helper in search.ts; harness imports, never restates); the
 stop-word list constant lives in exactly one place; eval README/flag naming
-matches the harness code.
+matches the harness code; the CJK maximal-run rule's single home is the
+sparseQueryText docblock (TASK-018), do not relocate; the TASK-005 zh
+probe exists only as prose in the findings doc with its raw dump in /tmp
+(not committed), so lift it into a re-runnable read-only script under
+docs/research/probes/ and reference it from the findings doc.
 
 Definition of Done: risks resolved or each explicitly waived with a
 one-line reason recorded here; gates still green.

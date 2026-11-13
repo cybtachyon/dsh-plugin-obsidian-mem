@@ -38,9 +38,24 @@ Answered inline below (Q1-Q6). See [Questionnaire Answers](#questionnaire-answer
 
 ### Phase 1: Git-tracking policy for DSH runtime output
 
-- [ ] [TASK-01-unignore-lib-build-output](docs/PLAN-release-prep-TASK-01-unignore-lib-build-output.md)
-- [ ] [TASK-02-update-agents-md-lib-policy](docs/PLAN-release-prep-TASK-02-update-agents-md-lib-policy.md)
-- [ ] [TASK-03-commit-tracking-policy](docs/PLAN-release-prep-TASK-03-commit-tracking-policy.md)
+- [x] [TASK-01-unignore-lib-build-output](docs/PLAN-release-prep-TASK-01-unignore-lib-build-output.md)
+- [x] [TASK-02-update-agents-md-lib-policy](docs/PLAN-release-prep-TASK-02-update-agents-md-lib-policy.md)
+- [x] [TASK-03-commit-tracking-policy](docs/PLAN-release-prep-TASK-03-commit-tracking-policy.md)
+
+### Phase 1b: Dispositions for the Phase 1 findings
+
+- [x] [TASK-22-untrack-coverage-output](docs/PLAN-release-prep-TASK-22-untrack-coverage-output.md)
+
+TASK-22's premise was a miscount: `coverage/` was never in the index, so nothing
+was untracked. `packages/*/tsconfig.tsbuildinfo` and `dsh/.build/` stay ignored.
+
+Two further findings closed without a task: the stale "(lib is git-ignored
+...)" clause in the AGENTS.md install-carrier bullet was already rewritten inside
+`76915a9`, and `packages/bundle` emits no `lib` directory because it is a meta
+package (TASK-06 and TASK-08 must not expect one). `RESEARCH-FINDINGS.md`
+(51 KB of pre-implementation scratch, cross-linked from `docs/research/`) and
+`docs/research/engramory-and-ext-findings.md` (cited by the AGENTS.md DSH Event
+Facts heading) are left as the user's call, outside release scope.
 
 ### Phase 2: Namespace-less npm packaging metadata
 

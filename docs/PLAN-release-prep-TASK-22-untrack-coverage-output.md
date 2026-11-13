@@ -1,19 +1,18 @@
 # TASK-22 Untrack the coverage output
 
-`.gitignore` ignores `coverage/` while 507 vitest coverage files are tracked
-under it, so a fresh `git clone` ships a stale report that a new run cannot
-replace cleanly. Coverage is test output, not a DSH runtime file: untrack it and
-leave the ignore rule in force.
+## Finding: the premise was wrong, no action needed
 
-```
-git rm -r --cached coverage
-git commit -m "chore: Stop tracking the vitest coverage report"
-```
+Phase 1 reported "507 vitest coverage files tracked under an ignored
+`coverage/`". That number is the on-disk file count of the local working
+directory, not the index:
+
+- `git ls-files coverage | wc -l` is 0.
+- `git log --oneline -- coverage` has no history, so nothing was ever committed.
+- `git check-ignore -v coverage/index.html` matches `.gitignore:18:coverage/`.
+
+Coverage is test output and stays ignored. No `git rm --cached`, no commit.
 
 ## Definition of Done
 
-- `git ls-files coverage | wc -l` is 0.
-- `git ls-files | grep -c .` dropped by the coverage file count only.
-- `git status --porcelain` shows no `coverage/` entries (the directory is
-  ignored), and `packages/*/lib` is still untracked at this point (TASK-08
-  commits it).
+- `git ls-files coverage | wc -l` is 0. (Met.)
+- `.gitignore` keeps the `coverage/` row. (Met.)

@@ -99,6 +99,7 @@ Ordered list; every task is defined in its own file.
  - [ ] [TASK-006-dream-diary-location](docs/PLAN-VAULT-LAYOUT-TASK-006-dream-diary-location.md)
  - [ ] [TASK-007-audit-inventory-layout](docs/PLAN-VAULT-LAYOUT-TASK-007-audit-inventory-layout.md)
  - [ ] [Refactor: Phase 2 review](docs/PLAN-VAULT-LAYOUT-TASK-R2-refactor-phase-2.md)
+ - [ ] [TASK-016-cordis-mount-isolation](docs/PLAN-VAULT-LAYOUT-TASK-016-cordis-mount-isolation.md)
 
 ### Phase 3 — Surfaces (tools, injection, routes, card)
  - [ ] [TASK-008-tools-wording-guards](docs/PLAN-VAULT-LAYOUT-TASK-008-tools-wording-guards.md)
@@ -116,6 +117,6 @@ Ordered list; every task is defined in its own file.
 ## Dependencies
 
 - TASK-001 → TASK-002 → TASK-003 → R1 → TASK-004 → TASK-005 → TASK-006 →
-  TASK-007 → R2 → TASK-008 → TASK-014 → TASK-015 → TASK-009 → TASK-010 →
-  R3 → TASK-011 → TASK-012 → TASK-013.
+  TASK-007 → R2 → TASK-016 → TASK-008 → TASK-014 → TASK-015 → TASK-009 →
+  TASK-010 → R3 → TASK-011 → TASK-012 → TASK-013.
 - All phases depend on the Questionnaire answers above being recorded.

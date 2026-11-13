@@ -10,7 +10,8 @@ Depends: TASK-060. `tests/integration/*.live.test.ts` — vitest excludes `*.liv
   1. transformers.js real model (download once into tmp cacheDir; assert output dim 384,
      cosine sanity: related pair > unrelated; norms ~1.000 (catches the normalize-vs-
      normalization v4 trap); query/passage prefixes used).
-  2. milvus-lite real spawn (uvx) into tmp db dir: ensureCollection → insert 20 chunks
+  2. milvus-lite real spawn (uvx; warm cache assumed; generous timeouts per G13) into
+     tmp db dir: ensureCollection → insert 20 chunks
      (from fixture vault via real chunker+embedder) → hybrid search returns expected
      source_path → ARRAY_CONTAINS ext filter excludes non-matching → delete by chunk_id →
      count drops; collection drop at teardown; child process killed (verify pid gone).

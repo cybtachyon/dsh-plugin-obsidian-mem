@@ -148,6 +148,16 @@ task file lists explicit cross-phase prerequisites.
   seam: `service.ensureMemoryAccess()` (idempotent; provisions default vault + .INTENTS.md
   + dbDir + Milvus + collection + indexer on first call and returns a one-time `notice`
   string with the path). Tasks affected: 011, 030..034, 041, 063.
+- 2026-11-12 **Live-stack gotchas G10-G13** (discovered by Phase 3A, appended to
+  docs/research/milvus-transformers-findings.md; launcher/client code already handles them):
+  G10 lite search/query projections OMIT the primary key unless `chunk_id` is listed in
+  output_fields (TASK-024 must always include it); G11 SDK keepalive defaults GOAWAY lite's
+  Python gRPC server (createMilvusClient pins keepalive channelOptions; never override);
+  G12 a client built against a not-yet-listening port never recovers (readiness uses fresh
+  probe clients; long-lived client only after ready); G13 cold uvx on empty cache can exceed
+  400 s (1.3 GB wheels) — ensureMemoryAccess takes a generous configurable
+  readinessTimeoutMs and the ui/status must surface first-run progress, never treat cold >
+  90 s as failure. Warm start ~1.5 s.
 - 2026-11-12 **Canonical ext patterns adopted** (docs/research/engramory-and-ext-findings.md
   is the dreaming/audit canon): turn-end reminder via `agent/turn-stopping` +
   `agent.steer` with once-per-turn guard (NOT session/event+followup); dreaming =

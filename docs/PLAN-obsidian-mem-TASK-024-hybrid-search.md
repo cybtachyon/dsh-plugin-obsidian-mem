@@ -30,8 +30,11 @@ Depends: TASK-022, TASK-023. `packages/service/src/search.ts`.
   ARRAY `WeightedRanker([0.7,0.3])` (two args crashes the server). `searchIterator` is
   broken against lite — use `queryIterator`/offset paging. Serialize ALL writes in TS
   (lite allows concurrent readers, not writers).
-- ALWAYS `loadCollection` before search (lite 'released' trap) and count(*)-guard empty
-  collections before dispatching BM25 (NaN crash).
+- ALWAYS `loadCollectionSync` before search (lite 'released' trap; getLoadState lies) and
+  count(*)-guard empty collections before dispatching BM25 (NaN crash).
+- G10: lite projections omit the PK unless `chunk_id` is EXPLICITLY in `output_fields` —
+  every search/query builder here must list it, plus scope/vault/source_path/
+  section_header/updated_at.
 - `ensureMemoryAccess` first (lazy default vault; Decision log).
 
 ## DoD

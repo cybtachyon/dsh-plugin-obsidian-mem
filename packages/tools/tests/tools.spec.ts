@@ -8,13 +8,15 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH } from '../../core/lib/index.js'
+import { TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
 import plugin, {
   createReadTool,
   createSearchTool,
+  createWriteTool,
   READ_TIMEOUT_MS,
   registerMemoryTools,
   SEARCH_TIMEOUT_MS,
+  WRITE_TIMEOUT_MS,
 } from '../src/index.ts'
 import type { MemoryToolScope, ToolDefinition } from '../src/index.ts'
 import { createFakeService, createRecordingScope } from './testkit.ts'
@@ -40,13 +42,13 @@ describe('obsidian-mem tools package row', () => {
     const scope = createRecordingScope()
     registerMemoryTools(scope as unknown as MemoryToolScope, fakeSeam())
     expect(scope.registered.map((definition) => definition.name))
-      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH])
+      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE])
     // Every registration is effect-owned: running the disposers unregisters
     // exactly the registered names (row unload closes the tool set).
     for (const dispose of scope.effectDisposers) {
       dispose()
     }
-    expect(scope.disposed).toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH])
+    expect(scope.disposed).toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE])
   })
 })
 
@@ -105,5 +107,44 @@ describe('memory_search definition shape', () => {
     expect(view?.card).toBe('generic')
     expect(view?.kind).toBe('search')
     expect(view?.title).toBe(`${TOOL_MEMORY_SEARCH} deploy notes`)
+  })
+})
+
+describe('memory_write definition shape', () => {
+  const definition: ToolDefinition = createWriteTool(fakeSeam())
+
+  it('carries the write timeout and the five required frontmatter parameters', () => {
+    expect(definition.timeoutMs).toBe(WRITE_TIMEOUT_MS)
+    expect(WRITE_TIMEOUT_MS).toBe(10_000)
+    expect(definition.parameters.required)
+      .toEqual(['path', 'index_title', 'index_description', 'type', 'contents'])
+    expect(Object.keys(definition.parameters.properties ?? {}))
+      .toEqual(['path', 'index_title', 'index_description', 'type', 'contents', 'archive'])
+  })
+
+  it('states the critical constraints in the description once', () => {
+    expect(definition.description).toContain('prior memory_read')
+    expect(definition.description).toContain('read-only vaults are refused')
+  })
+
+  it('declares a closed oneOf output keyed on kind', () => {
+    const kinds = (definition.output.schema.oneOf ?? [])
+      .map((member) => member.properties?.kind?.const)
+    expect(kinds).toEqual([
+      'written',
+      'read_required',
+      'stale',
+      'read_only_vault',
+      'outside_markdown',
+      'reserved_file',
+      'invalid_meta',
+    ])
+  })
+
+  it('presents a generic edit card', () => {
+    const view = definition.presentCall?.({ path: '/v/markdown/a.md' })
+    expect(view?.card).toBe('generic')
+    expect(view?.kind).toBe('edit')
+    expect(view?.title).toBe(`${TOOL_MEMORY_WRITE} /v/markdown/a.md`)
   })
 })

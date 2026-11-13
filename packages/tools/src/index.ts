@@ -1,7 +1,7 @@
 /**
- * The model-facing tools for the Obsidian Mem capability: `memory_read`
- * and `memory_search` are registered here (memory_write, memory_audit,
- * and memory_dream join in TASK-033..035), each with its own timeout
+ * The model-facing tools for the Obsidian Mem capability: `memory_read`,
+ * `memory_search`, and `memory_write` are registered here (memory_audit
+ * and memory_dream join in TASK-034/035), each with its own timeout
  * budget, and the system-prompt section lands in TASK-036.
  *
  * Mount shape (verified against the installed @deepseek-ai/cordis 4.1.0
@@ -65,6 +65,16 @@ export {
   searchParameters,
 } from './search.js'
 export type { SearchSection, SearchValue } from './search.js'
+export {
+  createWriteTool,
+  executeWrite,
+  renderWrite,
+  WRITE_DESCRIPTION,
+  WRITE_OUTPUT,
+  WRITE_PARAMETERS,
+  WRITE_TIMEOUT_MS,
+} from './write.js'
+export type { WriteValue } from './write.js'
 export type {
   JsonSchemaNode,
   MemoryService,

@@ -1,5 +1,7 @@
 # TASK-033 Tool: memory_write
 
+Status: done
+
 Depends: TASK-030, TASK-012. `packages/tools/src/write.ts`.
 
 ## Scope

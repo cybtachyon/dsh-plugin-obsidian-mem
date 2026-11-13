@@ -21,7 +21,11 @@
  * client-side on `-score` and a raw BM25 score is never thresholded
  * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
  * the exact formula lite's own fused scores show (radius-tuning-
- * findings §4), and minScore applies to those fused scores only;
+ * findings §4); the score floor (request minScore, else the default
+ * FUSED_SCORE_FLOOR = 1/(k+1) inclusive, TASK-009) applies to those
+ * fused scores only: the default keeps single-route rank-1 hits and
+ * drops rank >= 2-only hits, while every both-route hit inside the
+ * fetched window clears it;
  * output_fields ALWAYS include the primary key chunk_id (G10) plus the
  * columns the result rows are built from; a Strong-consistency count(*)
  * guards the empty collection before BM25 dispatch.
@@ -154,7 +158,12 @@ export interface SearchRequest {
   vaults?: readonly string[]
   /** Result count; default SEARCH_DEFAULT_TOP_K, cap SEARCH_MAX_RESULTS. */
   topK?: number
-  /** Floor on the RRF-fused score (NOT a BM25 threshold, G7). */
+  /**
+   * Floor on the RRF-fused score (NOT a BM25 threshold, G7). Omitted:
+   * the default 1 / (RRF_RANKER_K + 1) floor applies, inclusive. An
+   * explicitly passed value, including 0 (disables the cut), fully
+   * overrides the default.
+   */
   minScore?: number
   /** Per-result chunk_text token budget; overrides deps.defaultTokenCap. */
   tokenCap?: number
@@ -214,6 +223,15 @@ const DENSE_RANGE_MAX = 1.0
 // `-score >= SPARSE_SEARCH_RADIUS`; raising it raises required
 // relevancy and has no ceiling.
 const SPARSE_SEARCH_RADIUS = 2.5
+
+// FusedScoreFloor is the default FUSED-score floor hybridSearch applies
+// when the request carries no minScore (TASK-009): a single-route hit
+// scores 1/(k + rank), so the inclusive floor keeps exactly its rank 1
+// and drops rank >= 2. Every both-route hit inside the fetched window
+// clears it: the worst case takes the window's last rank on both routes
+// (limit topK 20 * oversample 2 = 40) and fuses to 2/(60+40) = 0.02 >
+// 1/61. An explicit minScore (including 0) fully overrides the default.
+const FUSED_SCORE_FLOOR = 1 / (RRF_RANKER_K + 1)
 
 // Each route asks for this many times the caller's limit, so dedupe and the
 // minScore floor still leave a full page of results to return.
@@ -283,14 +301,13 @@ export async function hybridSearch(
   const dense = await deps.embedder.embedQuery(request.query)
   const rows = await dispatchRoutes(deps, request.query, dense, expr, candidatesFor(topK))
 
-  let results = toResults(deps, rows, tokenCap)
-  if (request.minScore !== undefined) {
-    const floor = request.minScore
-    // Applies to RRF-fused scores only; BM25 raw scores are negated
-    // relevancy (G7, radius-tuning-findings §3) and never reach this
-    // comparison.
-    results = results.filter((row) => row.score >= floor)
-  }
+  // The floor rides fused scores only; BM25 raw scores are negated
+  // relevancy (G7, radius-tuning-findings §3) and never reach this
+  // comparison. An explicit minScore (including 0, which disables the
+  // cut) fully overrides the TASK-009 default.
+  const scoreFloor = request.minScore ?? FUSED_SCORE_FLOOR
+  const results = toResults(deps, rows, tokenCap)
+    .filter((result) => result.score >= scoreFloor)
   return topSections(results, topK)
 }
 

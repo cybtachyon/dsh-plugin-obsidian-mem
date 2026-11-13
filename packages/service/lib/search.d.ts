@@ -21,7 +21,11 @@
  * client-side on `-score` and a raw BM25 score is never thresholded
  * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
  * the exact formula lite's own fused scores show (radius-tuning-
- * findings §4), and minScore applies to those fused scores only;
+ * findings §4); the score floor (request minScore, else the default
+ * FUSED_SCORE_FLOOR = 1/(k+1) inclusive, TASK-009) applies to those
+ * fused scores only: the default keeps single-route rank-1 hits and
+ * drops rank >= 2-only hits, while every both-route hit inside the
+ * fetched window clears it;
  * output_fields ALWAYS include the primary key chunk_id (G10) plus the
  * columns the result rows are built from; a Strong-consistency count(*)
  * guards the empty collection before BM25 dispatch.
@@ -126,7 +130,12 @@ export interface SearchRequest {
     vaults?: readonly string[];
     /** Result count; default SEARCH_DEFAULT_TOP_K, cap SEARCH_MAX_RESULTS. */
     topK?: number;
-    /** Floor on the RRF-fused score (NOT a BM25 threshold, G7). */
+    /**
+     * Floor on the RRF-fused score (NOT a BM25 threshold, G7). Omitted:
+     * the default 1 / (RRF_RANKER_K + 1) floor applies, inclusive. An
+     * explicitly passed value, including 0 (disables the cut), fully
+     * overrides the default.
+     */
     minScore?: number;
     /** Per-result chunk_text token budget; overrides deps.defaultTokenCap. */
     tokenCap?: number;

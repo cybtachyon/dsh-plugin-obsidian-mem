@@ -12,11 +12,17 @@
  * - origin "in-domain:<topic>" means a hand-written query phrased like
  *   work in that project, to probe one known note on purpose.
  * - Cross-project control: lywa and guestwi.se queries measure whether
- *   one project's notes pollute another project's recall; the machinae-
- *   game queries have NO game-specific note in the collection (there is
- *   none; verified by read-only `chunk_text like "%machinae%"` queries),
- *   so everything but the TypeScript/simulation notes is noise by
- *   definition.
+ *   one project's notes pollute another project's recall. The machinae-
+ *   game queries originally had NO game-specific note (verified by
+ *   read-only `chunk_text like "%machinae%"` on 2026-11-12); two planted
+ *   tuning-test notes were indexed 2026-11-13
+ *   (machinae-game/machinae-game-bitecs-query-registration-for-sim-
+ *   tests.md, machinae-game/machinae-game-three-js-instanced-render-
+ *   batching.md) and are labeled relevant below; the planted decoys
+ *   (unity-dots-entity-query-chunk-iteration.md, react-three-fiber-
+ *   gallery-viewer-memoization.md) are labeled forbidden. All four are
+ *   ARCHIVED after the live tuning loop ends, which returns this set to
+ *   its pre-plant ground truth.
  *
  * Label semantics (all three lists are disjoint intents, not a partition):
  * - relevant: expected-relevant sources; a hit counts toward precision
@@ -235,6 +241,7 @@ export const EVAL_QUERIES = [
     query: 'In `/home/derek/src/machinae-game`, add Machine-versus-Machine combat to the simulation layer: a ground-mode Machine fires a laser with a reload cycle, a fighter-mode Machine fires from a finite missile supply, and target selection is a deterministic system that engages the nearest live enemy within range.',
     relevant: [
       'typescript-simulation-style.md',
+      'machinae-game/machinae-game-bitecs-query-registration-for-sim-tests.md',
     ],
     acceptable: [
       'typescript-verify-before-done.md',
@@ -245,11 +252,13 @@ export const EVAL_QUERIES = [
       'drupal/*',
       'guestwise/*',
       'lywa/*',
+      'unity-dots-entity-query-chunk-iteration.md',
+      'react-three-fiber-gallery-viewer-memoization.md',
       {
         source_path: 'data-model-leak-clean-seam.md',
       },
     ],
-    note: 'machinae-game has no own note in the collection; the ECS/simulation TS style note is the only expected-relevant source. data-model-leak-clean-seam.md is Drupal service-split lore that the dense route serves onto ECS queries.',
+    note: 'Updated 2026-11-13: the planted machinae note on ECS query registration is relevant here; before that the TS style note was the only expected-relevant source. data-model-leak-clean-seam.md is Drupal service-split lore that the dense route serves onto ECS queries.',
   },
   {
     id: 'machinae-save-restore',
@@ -277,6 +286,7 @@ export const EVAL_QUERIES = [
     query: 'In `/home/derek/src/machinae-game`, replace the renderer stub with a real three.js-backed renderer that draws each Machine (ground and air forms must be visually distinguishable), each Deposit, and each Building from component state. The renderer must be strictly read-only with respect to simulation state.',
     relevant: [
       'typescript-simulation-style.md',
+      'machinae-game/machinae-game-three-js-instanced-render-batching.md',
     ],
     acceptable: [
       'vitest-lazy-cjs-require-carrier.md',
@@ -288,8 +298,10 @@ export const EVAL_QUERIES = [
       'drupal/*',
       'guestwise/*',
       'lywa/*',
+      'unity-dots-entity-query-chunk-iteration.md',
+      'react-three-fiber-gallery-viewer-memoization.md',
     ],
-    note: 'The labeling probe surfaced drupal/bigpipe (a browser-JS note) three times on this query; drupal/* is forbidden as a family.',
+    note: 'Updated 2026-11-13 with the planted three.js render-batching note (relevant) and planted decoys (forbidden). The labeling probe surfaced drupal/bigpipe (a browser-JS note) three times on this query; drupal/* is forbidden as a family.',
   },
   {
     id: 'lywa-synonym-service-di',

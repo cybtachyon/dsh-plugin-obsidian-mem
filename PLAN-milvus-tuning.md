@@ -203,3 +203,55 @@ vocabulary-contamination source (harness queries never carried it, so
 offline under-measured production noise); (c) think-intercept
 stopword-only term lists look like a query-construction defect to
 file separately.
+
+### Iteration 2 (2026-11-13 01:44 restart; + fallback-leg floor 4abf302 + user-text-only turn-start queries 970e2f8)
+
+Same values as iteration 1 plus the two pipeline-hygiene changes;
+budget enabler 50000 active. Probe 826b1e03 (machinae-game fixed-step
+loop + draw-batching task).
+
+Observed 14 injections (4 turn-start, 3 think-intercept, 7
+read-intercept):
+- Turn-start page: GLOBAL + typescript-verify-before-done (acceptable)
+  + subagent-zero-recall + session-transcript-probe (both META notes
+  this experiment planted; the probe prompt's own protocol vocabulary
+  ("recall/probe/injection") recalled them).
+- Think-intercept: drupal kernel-test + declarative-TS + npm-cli notes
+  (cross-domain); term lists echo note slugs of previously recalled
+  notes: a self-amplification loop in the think channel.
+- Read-intercept: 7 pages on machinae files, all generic-process or
+  cross-project (guestwise x3, pnpm-dir, vitest, throwaway-tsconfig).
+POS recalled: 0/2 again. NEG recalled: 0/2 (still clean).
+
+Root-cause replay (user-text-only production-shape sim of the probe's
+prompt): POS-2 three-js dense rank-1 fused 0.01639 PASSES the floor;
+POS-1 bitecs dense rank-2 single-route fused 0.01613 = 1/62 DROPS
+exactly one rank below the 1/(k+1) floor. On the live page POS-2 was
+additionally squeezed out by turn-start token-budget fit behind two
+long meta-notes (page had 4 slots). Read-intercept pages survive the
+fallback floor because it only removes single-route rank-2-and-below:
+every rank-1 survivor passes; ext-fallback "neighborhood" search over
+generic .ts/.md vocabulary is inherently weak (design issue, not a
+constant; recorded as a follow-up recommendation).
+
+Offline re-comparison with the planted notes added to the machinae
+labels (17 queries, radii 0.78/2.5, k=60; floor off P@k 0.225
+forbRate 0.275 recall 0.708 returned 102):
+
+| single-route rank allowed | P@k | forbRate | recall | returned |
+| --- | --- | --- | --- | --- |
+| rank-1 only (1/(k+1)) | 0.311 | 0.197 | 0.625 | 61 |
+| rank<=2 (1/(k+2)) | 0.276 | 0.211 | 0.667 | 76 |
+| rank<=3 (1/(k+3)) | 0.242 | 0.264 | 0.667 | 91 |
+| rank<=4 | 0.224 | 0.265 | 0.667 | 98 |
+
+Knee at 1/(k+2): the extra recall (planted POS-1 on
+machinae-combat-systems, recall 0.5 -> 1.0) is gained there and one
+step looser buys zero recall for +8 forbidden rows. Decision (TASK-007
+iteration): FUSED_SCORE_FLOOR 1/(k+1) -> 1/(k+2) per the user rule
+"adjust the values back if relevant memories stop showing up"; the
+live loop showed exactly that failure mode. Remaining residual noise
+(think-intercept stopword/self-echo vocabulary; read-intercept ext
+fallback; turn-start token-budget fit displacing short relevant notes)
+is query-construction and budget design, out of tuning scope: recorded
+as follow-up recommendations for the user.

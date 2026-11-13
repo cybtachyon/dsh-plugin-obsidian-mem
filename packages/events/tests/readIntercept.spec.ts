@@ -211,7 +211,7 @@ describe('tools/result filter matrix', () => {
 })
 
 describe('request wiring and injected envelope', () => {
-  it('asks for readSections x readSectionTokens with ext, signals, snippet', async () => {
+  it('asks for readSections x readSectionTokens with ext, fileTokens, snippet', async () => {
     const { memory, read } = readHarness({ exactResults: [sectionA] })
     read()
     await settled()
@@ -220,7 +220,7 @@ describe('request wiring and injected envelope', () => {
     expect(request.ext).toBe('.tsx')
     expect(request.k).toBe(2)
     expect(request.sectionTokens).toBe(350)
-    expect(request.dirSignals).toEqual(['work', 'project', 'src'])
+    expect(request.fileTokens).toEqual(['work', 'project', 'src'])
     expect(request.snippet).toContain('import React from "react"')
     expect(request.snippet).toContain('import { helper } from "./helper"')
     expect(request.snippet).not.toContain('const App')

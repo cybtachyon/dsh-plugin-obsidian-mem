@@ -959,6 +959,7 @@ describe('search', () => {
       filePath: '/work/src/App.tsx',
       ext: '.tsx',
       snippet: 'import { App } from "./App"',
+      fileTokens: ['app', 'src'],
     })
     expect(results[0]?.chunk_id).toBe(7)
     expect(h.client.calls).toContain('search')

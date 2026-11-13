@@ -178,8 +178,15 @@ export interface ExactSectionRequest {
   filePath: string
   /** Extension of that file, e.g. ".tsx"; filters trigger_extensions. */
   ext?: string
-  /** Workspace directory signals ("src/"); wake-keyword fallback only. */
-  dirSignals?: readonly string[]
+  /**
+   * File-derived wake tokens: the read file's name parts, directory
+   * signals, and import/symbol identifiers (lower-cased, wake-term-
+   * shaped; the Read intercept fills them). The fallback leg REQUIRES a
+   * stored wake_keywords overlap on these: only chunks whose
+   * wake_keywords contain at least one token may answer. Absent, or none
+   * usable: the fallback answers [] (no intersection is possible).
+   */
+  fileTokens?: readonly string[]
   /** Query text (usually the Read result snippet); path when absent. */
   snippet?: string
   /** Sections to return; default RECALL_READ_MAX_SECTIONS. */
@@ -340,10 +347,14 @@ export async function hybridSearch(
  * SearchExactSections serves the Read intercept: with a vault-relative
  * filePath, chunks of that exact file (source_path == filter) come first,
  * unfloored; otherwise (absolute path, or no indexed chunks) a fallback
- * search by trigger_extensions (ext), frameworks, and the query text
- * takes the same fused-score floor as hybridSearch (TASK-014). Same
- * section budget per result as the main search; offline degrades to
- * IndexOfflineError. Output source_paths are absolute (see toResults).
+ * neighborhood search by trigger_extensions (ext), frameworks, and the
+ * query text takes the same fused-score floor as hybridSearch (TASK-014)
+ * and REQUIRES the stored wake_keywords to intersect the request's
+ * fileTokens (TASK-008): a chunk with no keyword overlap with the file
+ * the agent is reading never answers the fallback, and without tokens the
+ * leg is skipped and answers empty. Same section budget per result as the
+ * main search; offline degrades to IndexOfflineError. Output source_paths
+ * are absolute (see toResults).
  */
 export async function searchExactSections(
   deps: SearchDependencies,
@@ -380,30 +391,48 @@ export async function searchExactSections(
 
   // Fallback: a general neighborhood search by ext/framework filters on
   // the query text, so it takes the same fused-score floor as
-  // hybridSearch (TASK-009 rule, TASK-014 reach).
-  const fallbackExpr = fallbackFilterExpr(request, ext)
+  // hybridSearch (TASK-009 rule, TASK-014 reach). The wake-keyword
+  // intersection is REQUIRED (TASK-008): without fileTokens nothing can
+  // intersect, so the leg is skipped and answers empty instead of
+  // widening to a token-free neighborhood search.
+  const wakeKeywords = fileWakeKeywordsOf(request)
+  if (wakeKeywords.length === 0) {
+    return []
+  }
+  const fallbackExpr = fallbackFilterExpr(request, ext, wakeKeywords)
   const fallbackRows = await dispatchRoutes(deps, queryText, dense, fallbackExpr, candidatesFor(k))
   return flooredSections(deps, fallbackRows, sectionTokens, k, request.minScore)
 }
 
+// FileWakeKeywordsOf normalizes the request's fileTokens into
+// wake_keywords filter values: trailing separators trimmed, blanks
+// dropped. Their intersection with stored wake_keywords gates the
+// fallback leg (TASK-008).
+function fileWakeKeywordsOf(request: ExactSectionRequest): string[] {
+  return (request.fileTokens ?? [])
+    .map((token) => token.replace(/\/+$/, ''))
+    .filter((token) => token !== '')
+}
+
 // FallbackFilterExpr renders the neighborhood leg's scalar filter: the
-// normalized ext, frameworks (request plus EXT_FRAMEWORK_HINTS), and
-// vaults. Directory signals join as wake keywords only when nothing
-// else narrows, so the clause never over-restricts an already-filtered
-// query.
-function fallbackFilterExpr(request: ExactSectionRequest, ext: string | null): string | undefined {
+// wake-keyword intersection (always present, TASK-008), the normalized
+// ext, frameworks (request plus EXT_FRAMEWORK_HINTS), and vaults.
+function fallbackFilterExpr(
+  request: ExactSectionRequest,
+  ext: string | null,
+  wakeKeywords: readonly string[],
+): string | undefined {
   const frameworks = [
     ...(request.frameworks ?? []),
     ...(ext === null ? [] : EXT_FRAMEWORK_HINTS[ext] ?? []),
   ]
-  const wakeKeywords = request.dirSignals?.map((signal) => signal.replace(/\/+$/, '')) ?? []
+  // wakeKeywords is always non-empty at the call site (checked before
+  // dispatch), so buildFilterExpr never answers undefined here.
   return buildFilterExpr({
     ...(ext === null ? {} : { ext }),
     ...(frameworks.length > 0 ? { frameworks } : {}),
     ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
-    ...(frameworks.length === 0 && request.ext === undefined && wakeKeywords.length > 0
-      ? { wakeKeywords }
-      : {}),
+    wakeKeywords,
   })
 }
 

@@ -149,8 +149,15 @@ export interface ExactSectionRequest {
     filePath: string;
     /** Extension of that file, e.g. ".tsx"; filters trigger_extensions. */
     ext?: string;
-    /** Workspace directory signals ("src/"); wake-keyword fallback only. */
-    dirSignals?: readonly string[];
+    /**
+     * File-derived wake tokens: the read file's name parts, directory
+     * signals, and import/symbol identifiers (lower-cased, wake-term-
+     * shaped; the Read intercept fills them). The fallback leg REQUIRES a
+     * stored wake_keywords overlap on these: only chunks whose
+     * wake_keywords contain at least one token may answer. Absent, or none
+     * usable: the fallback answers [] (no intersection is possible).
+     */
+    fileTokens?: readonly string[];
     /** Query text (usually the Read result snippet); path when absent. */
     snippet?: string;
     /** Sections to return; default RECALL_READ_MAX_SECTIONS. */
@@ -249,10 +256,14 @@ export declare function hybridSearch(deps: SearchDependencies, request: SearchRe
  * SearchExactSections serves the Read intercept: with a vault-relative
  * filePath, chunks of that exact file (source_path == filter) come first,
  * unfloored; otherwise (absolute path, or no indexed chunks) a fallback
- * search by trigger_extensions (ext), frameworks, and the query text
- * takes the same fused-score floor as hybridSearch (TASK-014). Same
- * section budget per result as the main search; offline degrades to
- * IndexOfflineError. Output source_paths are absolute (see toResults).
+ * neighborhood search by trigger_extensions (ext), frameworks, and the
+ * query text takes the same fused-score floor as hybridSearch (TASK-014)
+ * and REQUIRES the stored wake_keywords to intersect the request's
+ * fileTokens (TASK-008): a chunk with no keyword overlap with the file
+ * the agent is reading never answers the fallback, and without tokens the
+ * leg is skipped and answers empty. Same section budget per result as the
+ * main search; offline degrades to IndexOfflineError. Output source_paths
+ * are absolute (see toResults).
  */
 export declare function searchExactSections(deps: SearchDependencies, request: ExactSectionRequest): Promise<MemorySearchResult[]>;
 //# sourceMappingURL=search.d.ts.map

@@ -4,7 +4,8 @@
  * session with exact-section recall for the file it just read: top
  * `budgets.readSections` sections at `budgets.readSectionTokens` tokens
  * each, from `service.searchExactSections` (exact-file chunks first, ext/
- * framework ARRAY_CONTAINS fallback). Filtered to the harness Read tool by
+ * framework ARRAY_CONTAINS fallback narrowed to chunks whose wake_keywords
+ * intersect the file's tokens). Filtered to the harness Read tool by
  * name: `memory_read` never appears here because it is a different tool
  * name and reads through the service, not the harness registry.
  *

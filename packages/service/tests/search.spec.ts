@@ -569,6 +569,7 @@ describe('searchExactSections', () => {
       filePath: 'src/widget.tsx',
       ext: '.tsx',
       snippet: 'widget lifecycle',
+      fileTokens: ['widget', 'src'],
     })
 
     expect(results).toHaveLength(1)
@@ -579,24 +580,56 @@ describe('searchExactSections', () => {
     }
     for (const dispatch of dispatches.slice(2)) {
       expect(dispatch.expr)
-        .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"])')
+        .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["widget", "src"])')
     }
   })
 
-  it('uses directory signals as wake keywords only when nothing else narrows', async () => {
+  it('always carries the fileTokens wake-keyword clause (TASK-008)', async () => {
     const { client, calls } = stubSequenced([[], [row()]])
 
     await searchExactSections(deps(client), {
       filePath: 'notes/plain.md',
-      dirSignals: ['src/', 'app/'],
+      fileTokens: ['src/', 'app/'],
       snippet: 'deployment notes',
     })
 
     const dispatches = searchDispatches(calls)
     expect(dispatches).toHaveLength(4)
     for (const dispatch of dispatches.slice(2)) {
+      // Trailing separators are trimmed; the clause is no longer gated on
+      // "nothing else narrows" (TASK-008).
       expect(dispatch.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"])')
     }
+  })
+
+  it('joins the wake-keyword clause with framework filters (TASK-008)', async () => {
+    const { client, calls } = stubSequenced([[], [row()]])
+
+    await searchExactSections(deps(client), {
+      filePath: 'notes/plain.md',
+      frameworks: ['milvus'],
+      fileTokens: ['notes'],
+      snippet: 'ops notes',
+    })
+
+    for (const dispatch of searchDispatches(calls).slice(2)) {
+      expect(dispatch.expr)
+        .toBe('ARRAY_CONTAINS_ANY(trigger_frameworks, ["milvus"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["notes"])')
+    }
+  })
+
+  it('skips the fallback without fileTokens that could intersect (TASK-008)', async () => {
+    const { client, calls } = stubSequenced([[], [row()]])
+
+    const results = await searchExactSections(deps(client), {
+      filePath: 'notes/plain.md',
+      ext: '.md',
+      snippet: 'deployment notes',
+    })
+
+    // No possible intersection: the leg is skipped without dispatching.
+    expect(results).toEqual([])
+    expect(searchDispatches(calls)).toHaveLength(2)
   })
 
   // One page feeds both routes of a dispatch pair (stubSequenced), so a
@@ -618,6 +651,7 @@ describe('searchExactSections', () => {
       filePath: 'src/widget.tsx',
       ext: '.tsx',
       snippet: 'widget lifecycle',
+      fileTokens: ['widget'],
       k: 4,
     })
 
@@ -636,6 +670,7 @@ describe('searchExactSections', () => {
       filePath: 'src/widget.tsx',
       ext: '.tsx',
       snippet: 'widget lifecycle',
+      fileTokens: ['widget'],
       k: 4,
       minScore: 0,
     })
@@ -677,7 +712,10 @@ describe('searchExactSections', () => {
   it('returns empty when both exact and fallback dispatches find nothing', async () => {
     const { client } = stubMilvus({ results: [] })
 
-    const results = await searchExactSections(deps(client), { filePath: 'notes/missing.md' })
+    const results = await searchExactSections(deps(client), {
+      filePath: 'notes/missing.md',
+      fileTokens: ['notes'],
+    })
 
     expect(results).toEqual([])
   })

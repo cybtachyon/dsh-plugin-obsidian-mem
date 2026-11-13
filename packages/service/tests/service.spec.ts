@@ -4,12 +4,12 @@ import type { Context } from '@deepseek-ai/cordis'
 
 import {
   DREAM_NEAR_DUPLICATE_THRESHOLD,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   GLOBAL_MEMORY_TOKENS,
   INTENTS_FILE,
   VECTOR_DIM_DEFAULT,
   dbDir,
   defaultVaultPath,
-  markdownDir,
   metadataDir,
   parseNote,
   stateDir,
@@ -443,10 +443,10 @@ describe('ensureMemoryAccess', () => {
       `Obsidian Mem is using the default memory vault at ${DEFAULT_VAULT}. `
       + 'Add your own vaults in the Obsidian Mem settings card to override.',
     )
-    expect(h.fs.dirs.has(markdownDir(DEFAULT_VAULT))).toBe(true)
+    // TASK-004 test adaptation: provisioning creates root + metadata only.
+    expect(h.fs.dirs.has(DEFAULT_VAULT)).toBe(true)
     expect(h.fs.dirs.has(metadataDir(DEFAULT_VAULT))).toBe(true)
-    expect(h.fs.dirs.has(join(DEFAULT_VAULT, 'markdown'))).toBe(true)
-    // The .INTENTS.md seed lives at the vault root, never in markdown/.
+    // The .INTENTS.md seed lives at the vault root.
     expect(h.fs.files.has(join(DEFAULT_VAULT, INTENTS_FILE))).toBe(true)
     expect(h.fs.content(join(DEFAULT_VAULT, INTENTS_FILE))).toContain('## investigate')
     expect(h.fs.dirs.has(DB_PATH)).toBe(true)
@@ -541,16 +541,31 @@ describe('vault registry and vaults.json', () => {
       },
     })
     expect(h.service.listVaults()).toEqual([
-      { path: '/settings-vault', mode: 'shared', source: 'settings' },
-      { path: '/card-vault', mode: 'read-only', source: 'card' },
+      {
+        path: '/settings-vault',
+        mode: 'shared',
+        globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+        source: 'settings',
+      },
+      {
+        path: '/card-vault',
+        mode: 'read-only',
+        globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+        source: 'card',
+      },
     ])
   })
 
   it('addVault creates a shared layout and persists card additions atomically', () => {
     const h = harness()
     const added = h.service.addVault({ path: '/data/notes', mode: 'shared' })
-    expect(added).toEqual({ path: '/data/notes', mode: 'shared', source: 'card' })
-    expect(h.fs.dirs.has(markdownDir('/data/notes'))).toBe(true)
+    expect(added).toEqual({
+      path: '/data/notes',
+      mode: 'shared',
+      globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+      source: 'card',
+    })
+    expect(h.fs.dirs.has('/data/notes')).toBe(true)
     expect(h.fs.dirs.has(metadataDir('/data/notes'))).toBe(true)
     const persisted = JSON.parse(h.fs.content(VAULTS_JSON) ?? 'null')
     expect(persisted).toEqual({ version: 1, vaults: [{ path: '/data/notes', mode: 'shared' }] })
@@ -623,7 +638,7 @@ describe('vault registry and vaults.json', () => {
 })
 
 describe('read: stats, slicing, read-only skip, registry', () => {
-  const notePath = join(markdownDir(DEFAULT_VAULT), 'topic.md')
+  const notePath = join(DEFAULT_VAULT, 'topic.md')
   const seededNote = `---
 index_title: "Topic: scenario"
 index_description: what this note decides
@@ -654,7 +669,7 @@ line three
   })
 
   it('skips the stats write on read-only vaults and flags it', async () => {
-    const target = join(markdownDir('/ro'), 'note.md')
+    const target = join('/ro', 'note.md')
     const h = harness({
       config: { vaults: [{ path: '/ro', mode: 'read-only' }] },
       seedDirs: ['/ro'],
@@ -681,7 +696,7 @@ line three
     const h = harness()
     await h.service.ensureMemoryAccess()
     await expect(h.service.read('/etc/passwd')).rejects.toThrow(/not inside any registered vault/)
-    await expect(h.service.read(join(markdownDir(DEFAULT_VAULT), 'gone.md')))
+    await expect(h.service.read(join(DEFAULT_VAULT, 'gone.md')))
       .rejects.toThrow(/does not exist/)
   })
 })
@@ -690,7 +705,7 @@ describe('applyWrite and write', () => {
   const meta = testMeta()
 
   it('merges un-modelled raw frontmatter back before serializing', async () => {
-    const target = join(markdownDir(DEFAULT_VAULT), 'keep.md')
+    const target = join(DEFAULT_VAULT, 'keep.md')
     const existing = `---
 index_title: Old title
 index_description: old
@@ -710,35 +725,35 @@ old body
     await h.service.ensureMemoryAccess()
     const result = await h.service.applyWrite(target, { ...meta, index_title: 'New title' }, 'new body\n')
     expect(result.created).toBe(false)
-    expect(result.relPath).toBe('markdown/keep.md')
+    expect(result.relPath).toBe('keep.md')
     const roundTrip = parseNote(h.fs.content(target) ?? '')
     expect(roundTrip.meta.index_title).toBe('New title')
     expect(roundTrip.body.trim()).toBe('new body')
     // TASK-025 carry-over #1: the un-modelled keys survive the rewrite.
     expect(roundTrip.raw?.keywords).toEqual(['alpha'])
     expect(roundTrip.raw?.trigger_extensions).toEqual(['.ts'])
-    // Write-through: the indexer got the vault-relative path.
-    expect(h.indexer.indexFile).toHaveBeenCalledWith(DEFAULT_VAULT, 'markdown/keep.md')
+    // Write-through: the indexer got the vault-root-relative path.
+    expect(h.indexer.indexFile).toHaveBeenCalledWith(DEFAULT_VAULT, 'keep.md')
   })
 
   it('creates files inside shared vaults', async () => {
     const h = harness()
     await h.service.ensureMemoryAccess()
-    const fresh = join(markdownDir(DEFAULT_VAULT), 'fresh.md')
+    const fresh = join(DEFAULT_VAULT, 'fresh.md')
     const result = await h.service.applyWrite(fresh, meta, 'body\n')
     expect(result.created).toBe(true)
     expect(h.fs.has(fresh)).toBe(true)
   })
 
-  it('refuses read-only vaults, non-markdown paths, reserved files, and invalid meta', async () => {
+  it('refuses read-only vaults, out-of-tree paths, reserved files, and invalid meta', async () => {
     const h = harness({
       config: { vaults: [{ path: '/ro', mode: 'read-only' }, { path: '/shared', mode: 'shared' }] },
       seedDirs: ['/ro', '/shared'],
     })
     await h.service.ensureMemoryAccess()
     await expect(h.service.applyWrite('/ro/markdown/x.md', meta, 'b')).rejects.toThrow(/read-only vault/)
-    await expect(h.service.applyWrite('/shared/notes/x.md', meta, 'b'))
-      .rejects.toThrow(/outside the indexed markdown\/ dir/)
+    await expect(h.service.applyWrite('/shared/.obsidian-mem/x.md', meta, 'b'))
+      .rejects.toThrow(/outside the indexed note tree/)
     await expect(h.service.applyWrite('/shared/.INTENTS.md', meta, 'b'))
       .rejects.toThrow(/reserved non-indexed/)
     await expect(h.service.write({
@@ -750,7 +765,7 @@ old body
     const h = harness()
     await h.service.ensureMemoryAccess()
     const result = await h.service.write({
-      path: join(markdownDir(DEFAULT_VAULT), 'w.md'), meta, body: 'b\n',
+      path: join(DEFAULT_VAULT, 'w.md'), meta, body: 'b\n',
     })
     expect(result.created).toBe(true)
   })

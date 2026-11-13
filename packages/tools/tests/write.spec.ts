@@ -92,17 +92,19 @@ function onDisk(path: string): ReturnType<typeof parseNote> {
 }
 
 describe('memory_write guards', () => {
-  it('refuses paths outside a vault markdown dir, listing shared note dirs', async () => {
+  it('refuses paths outside the note tree, listing shared vault roots', async () => {
     const outside = await write({ path: join(tree.root, 'notes', 'a.md') })
     expect(outside.kind).toBe('outside_markdown')
     if (outside.kind !== 'outside_markdown') return
-    expect(outside.shared_note_dirs).toEqual([join(sharedRoot, 'markdown')])
+    expect(outside.shared_note_dirs).toEqual([sharedRoot])
     expect(matchesOutput(createWriteTool(service), outside)).toEqual([])
 
-    const inVaultRoot = await write({ path: join(sharedRoot, 'stray.md') })
-    expect(inVaultRoot.kind).toBe('outside_markdown')
-    if (inVaultRoot.kind === 'outside_markdown') {
-      expect(inVaultRoot.message).toContain('outside its markdown/ directory')
+    // TASK-008 adaptation: root .md files ARE notes now; the refused
+    // in-vault shape is plugin-internal.
+    const inPluginDir = await write({ path: join(sharedRoot, '.obsidian-mem', 'stray.md') })
+    expect(inPluginDir.kind).toBe('outside_markdown')
+    if (inPluginDir.kind === 'outside_markdown') {
+      expect(inPluginDir.message).toContain('outside its note tree')
     }
   })
 
@@ -115,11 +117,14 @@ describe('memory_write guards', () => {
     expect(service.writeRequests).toEqual([])
   })
 
-  it('refuses reserved protocol files anywhere under markdown/', async () => {
+  it('refuses reserved protocol files anywhere in the tree', async () => {
+    // TASK-008 adaptation: with root notes, reserved names are outside the
+    // note tree everywhere, so the note-tree guard answers first; the
+    // reserved_file ladder moves with that task's guard reshuffle.
     const dreams = await write({ path: join(sharedRoot, 'markdown', 'DREAMS.md') })
-    expect(dreams.kind).toBe('reserved_file')
+    expect(dreams.kind).toBe('outside_markdown')
     const history = await write({ path: join(sharedRoot, 'markdown', 'topic_history.md') })
-    expect(history.kind).toBe('reserved_file')
+    expect(history.kind).toBe('outside_markdown')
     expect(service.writeRequests).toEqual([])
   })
 

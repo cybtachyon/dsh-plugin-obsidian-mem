@@ -126,16 +126,18 @@ describe('memory_read execution', () => {
     const value = await read({ path: join(tree.root, 'elsewhere', 'a.md') })
     expect(value.kind).toBe('outside_vault')
     if (value.kind !== 'outside_vault') return
-    expect(value.vaults).toEqual([join(sharedRoot, 'markdown'), join(readOnlyRoot, 'markdown')])
+    expect(value.vaults).toEqual([sharedRoot, readOnlyRoot])
     expect(value.message).toContain('not inside any registered vault')
     expect(matchesOutput(createReadTool(service), value)).toEqual([])
   })
 
-  it('answers outside_vault for in-vault paths outside markdown/', async () => {
-    const value = await read({ path: join(sharedRoot, 'notes', 'a.md') })
+  it('answers outside_vault for in-vault plugin-internal paths', async () => {
+    // TASK-008 adaptation: the vault root is the note tree now; the
+    // `.obsidian-mem` dir is the refused shape that stays refused.
+    const value = await read({ path: join(sharedRoot, '.obsidian-mem', 'a.md') })
     expect(value.kind).toBe('outside_vault')
     if (value.kind !== 'outside_vault') return
-    expect(value.message).toContain('outside its markdown/ directory')
+    expect(value.message).toContain('outside its note tree')
   })
 
   it('answers not_found for a missing note under markdown/', async () => {
@@ -181,6 +183,6 @@ describe('memory_read rendering', () => {
     const value = await read({ path: join(tree.root, 'elsewhere', 'a.md') })
     const text = renderRead(value)
     expect(text).toContain('not inside any registered vault')
-    expect(text).toContain(`- ${join(sharedRoot, 'markdown')}`)
+    expect(text).toContain(`- ${sharedRoot}`)
   })
 })

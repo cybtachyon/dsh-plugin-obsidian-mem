@@ -1,8 +1,8 @@
 /**
  * Indexer keeps every registered vault's chunks in the `obsidian_mem`
  * collection (TASK-023): per-vault diff state under
- * `<vault>/metadata/obsidian-mem-state.json`, the parse → chunk →
- * trigger-extract → embed → delete-stale → insert pipeline, the
+ * `<vault>/.obsidian-mem/metadata/obsidian-mem-state.json`, the parse →
+ * chunk → trigger-extract → embed → delete-stale → insert pipeline, the
  * activation/watcher/write-through triggers, progress counters for ui and
  * audit, and the optional LLM refinement pass that merges onto the core
  * heuristics and never blocks indexing.
@@ -26,7 +26,7 @@ import type { LlmFetch, LlmRefineConfig } from './llm-refine.js';
 export type { LlmFetch, LlmRefineConfig } from './llm-refine.js';
 /** Schema version of the per-vault state file. */
 export declare const INDEX_STATE_VERSION = 1;
-/** State file name inside `<vault>/metadata/`. */
+/** State file name inside `<vault>/.obsidian-mem/metadata/`. */
 export declare const STATE_FILE_NAME = "obsidian-mem-state.json";
 /** Watcher debounce window; memsearch watchdog value. */
 export declare const WATCH_DEBOUNCE_MS = 1500;
@@ -56,7 +56,7 @@ export interface IndexState {
     modelId: string;
     /** Vector width the stored vectors were built at. */
     vectorDim: number;
-    /** Vault-relative path ("markdown/note.md", posix separators) keyed. */
+    /** Vault-root-relative path ("note.md" or "sub/note.md", posix separators) keyed. */
     files: Record<string, IndexFileState>;
 }
 /** Live progress counters consumed by ui status and memory_audit. */

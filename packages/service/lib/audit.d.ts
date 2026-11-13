@@ -191,10 +191,11 @@ export interface AuditDeps {
     collection: (() => Promise<CollectionProbeResult>) | null;
 }
 /**
- * InventoryVault walks one vault read-only: the markdown/ note tree
- * (size-before-read, read cap, reserved placement, dot-dir skips), the
- * whole-tree disk usage minus the model cache, and the indexer state file.
- * Shared by the audit report and the dream plan (single source of truth).
+ * InventoryVault walks one vault read-only: the root note tree (the vault
+ * root IS the note root; size-before-read, read cap, reserved placement,
+ * dot-dir skips), the whole-tree disk usage minus the model cache, and the
+ * indexer state file. Shared by the audit report and the dream plan (single
+ * source of truth).
  */
 export declare function inventoryVault(vault: VaultEntry, fs: AuditFs): VaultInventory;
 /** ReadLastDreamAt answers the dream stamp from the plugin state dir. */

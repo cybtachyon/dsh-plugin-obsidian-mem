@@ -27,7 +27,9 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync
 import { homedir as osHomedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { classifyPath, contentHash, firstSharedVault, formatLocalDate, isReservedNonIndexed, isVaultMode, markdownDir, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, } from '../../core/lib/index.js';
+import { classifyPath, contentHash, firstSharedVault, formatLocalDate,
+// TASK-004: placeholder until the card/config globalFile wiring lands.
+GLOBAL_MEMORY_FILE_DEFAULT, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, } from '../../core/lib/index.js';
 import { expandHomePath, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js';
 import { DreamOrchestrator } from './dream.js';
@@ -177,8 +179,8 @@ export class ObsidianMemService extends Service {
     }
     /**
      * AddVault registers a card-side vault: `shared` paths are created
-     * (root + markdown/ + metadata/), `read-only` paths must already exist,
-     * duplicates are refused with the current registration named, and
+     * (root + `.obsidian-mem/metadata/`), `read-only` paths must already
+     * exist, duplicates are refused with the current registration named, and
      * settings-managed paths cannot be shadowed. New card vaults persist to
      * <stateDir>/vaults.json atomically.
      */
@@ -191,7 +193,8 @@ export class ObsidianMemService extends Service {
         const registry = this.loadRegistry();
         if (mode === 'shared') {
             this.fs.mkdirp(rawPath);
-            this.fs.mkdirp(markdownDir(rawPath));
+            // TASK-004: no markdown/ dir anymore; the vault root is the note root,
+            // provisioning creates root + .obsidian-mem/metadata only.
             this.fs.mkdirp(metadataDir(rawPath));
         }
         else if (!this.fs.exists(rawPath)) {
@@ -203,7 +206,13 @@ export class ObsidianMemService extends Service {
         if (existing !== undefined) {
             throw new Error(this.duplicateVaultMessage(existing, mode));
         }
-        const entry = { path: canonical, mode, source: 'card' };
+        const entry = {
+            path: canonical,
+            mode,
+            source: 'card',
+            // TASK-004: addVault gains the globalFile knob; default until then.
+            globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+        };
         registry.vaults.push(entry);
         this.persistVaultsFile();
         this.restartIndexer();
@@ -342,8 +351,10 @@ export class ObsidianMemService extends Service {
             && isReservedNonIndexed(fileName)) {
             throw new Error(`obsidian-mem write: ${target} is a reserved non-indexed vault file`);
         }
-        if (!classified.insideMarkdownDir) {
-            throw new Error(`obsidian-mem write: ${target} is outside the indexed markdown/ dir of vault ${classified.vault.path}`);
+        // TASK-004: the insideNotes rename is the classifyPath field swap; the
+        // guard shape is unchanged.
+        if (!classified.insideNotes) {
+            throw new Error(`obsidian-mem write: ${target} is outside the indexed note tree of vault ${classified.vault.path}`);
         }
         const existing = this.fs.readFile(target);
         const created = existing === null;

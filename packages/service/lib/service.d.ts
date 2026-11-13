@@ -76,7 +76,7 @@ export interface ObsidianMemWriteResult {
     path: string;
     created: boolean;
     vaultPath: string;
-    /** Path relative to the vault root, e.g. `markdown/topic.md`. */
+    /** Path relative to the vault root, e.g. `topic.md`. */
     relPath: string;
 }
 /** The global recall-budget view (TASK-045): configured budget vs injected usage. */
@@ -252,8 +252,8 @@ export declare class ObsidianMemService extends Service {
     listVaults(): VaultEntry[];
     /**
      * AddVault registers a card-side vault: `shared` paths are created
-     * (root + markdown/ + metadata/), `read-only` paths must already exist,
-     * duplicates are refused with the current registration named, and
+     * (root + `.obsidian-mem/metadata/`), `read-only` paths must already
+     * exist, duplicates are refused with the current registration named, and
      * settings-managed paths cannot be shadowed. New card vaults persist to
      * <stateDir>/vaults.json atomically.
      */

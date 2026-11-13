@@ -10,11 +10,14 @@
  * @module dsh-plugin-obsidian-mem/core/vaults
  */
 
-import { isAbsolute, join, normalize, sep } from 'node:path'
+import { isAbsolute, join, normalize, relative, sep } from 'node:path'
 import {
   defaultVaultPath,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   INTENTS_FILE,
   INTENT_MARKERS,
+  isReservedNonIndexed,
+  PLUGIN_VAULT_DIR,
   VAULT_METADATA_DIR,
 } from './constants.js'
 import type { IntentMarker } from './constants.js'
@@ -35,10 +38,17 @@ export function isVaultMode(value: string): value is VaultMode {
   return (VAULT_MODES as readonly string[]).includes(value)
 }
 
-/** A registered vault: an absolute path plus its access mode. */
+/**
+ * A registered vault: an absolute path, its access mode, and the vault-root
+ * relative path of its global memory file. globalFile is always resolved:
+ * resolveVaults defaults a blank or omitted VaultConfigLike value to
+ * GLOBAL_MEMORY_FILE_DEFAULT.
+ */
 export interface VaultConfig {
   path: string
   mode: VaultMode
+  /** Vault-root-relative path of this vault's global memory file. */
+  globalFile: string
 }
 
 /**
@@ -69,6 +79,8 @@ export interface VaultFs extends FsProbe {
 export interface VaultConfigLike {
   path: string
   mode: string
+  /** Blank or omitted resolves to GLOBAL_MEMORY_FILE_DEFAULT. */
+  globalFile?: string
 }
 
 /** Why resolveVaults dropped one candidate config. */
@@ -94,21 +106,31 @@ export interface VaultResolution {
   rejected: VaultRejection[]
 }
 
-// Transitional value only: the vault root IS the note root in the current
-// layout, so nothing new may join on it. markdownDir stays solely so the
-// service/tools callers still compile until each task re-points them to the
-// vault path; delete this const with the helper.
-const LEGACY_MARKDOWN_DIR = 'markdown'
-
-/** Builds the removed-shape note directory of a vault root; do not call for
- * new layout work, the vault root itself is the note root. */
-export function markdownDir(vaultPath: string): string {
-  return join(vaultPath, LEGACY_MARKDOWN_DIR)
+/**
+ * Builds the plugin-internal directory of a vault root
+ * (`<vault>/.obsidian-mem`). The dot-directory rule keeps it and everything
+ * below it out of the index; the sidecar metadata lives inside it.
+ */
+export function pluginDir(vaultPath: string): string {
+  return join(vaultPath, PLUGIN_VAULT_DIR)
 }
 
-/** Builds the sidecar metadata directory of a vault root. */
+/**
+ * Builds the sidecar metadata directory of a vault root
+ * (`<vault>/.obsidian-mem/metadata`), holding the indexer state file and the
+ * dream diary.
+ */
 export function metadataDir(vaultPath: string): string {
-  return join(vaultPath, VAULT_METADATA_DIR)
+  return join(vaultPath, PLUGIN_VAULT_DIR, VAULT_METADATA_DIR)
+}
+
+/**
+ * IsPluginInternalPath reports whether absPath lies inside the vault's
+ * plugin-internal directory, the read/write guards' refusal for
+ * `.obsidian-mem/…` targets. Containment is lexical like classifyPath's.
+ */
+export function isPluginInternalPath(vaultPath: string, absPath: string): boolean {
+  return isWithin(pluginDir(vaultPath), normalize(absPath))
 }
 
 /**
@@ -146,7 +168,11 @@ export function resolveVaults(
       continue
     }
     seen.add(canonical)
-    vaults.push({ path: canonical, mode: config.mode })
+    vaults.push({
+      path: canonical,
+      mode: config.mode,
+      globalFile: resolveGlobalFile(config.globalFile),
+    })
   }
 
   return {
@@ -154,6 +180,13 @@ export function resolveVaults(
     hasSharedVault: vaults.some((vault) => vault.mode === VAULT_MODE_SHARED),
     rejected,
   }
+}
+
+// Blank, whitespace-only, and omitted globalFile config all take the layout
+// default; anything else is used verbatim as the vault-root-relative path.
+function resolveGlobalFile(value: string | undefined): string {
+  const trimmed = value?.trim() ?? ''
+  return trimmed === '' ? GLOBAL_MEMORY_FILE_DEFAULT : trimmed
 }
 
 /**
@@ -165,9 +198,8 @@ export function resolveVaults(
 export function provisionDefaultVault(fs: VaultFs, homedir: string): VaultConfig {
   const path = defaultVaultPath(homedir)
   fs.mkdirp(path)
-  fs.mkdirp(markdownDir(path))
   fs.mkdirp(metadataDir(path))
-  return { path, mode: VAULT_MODE_SHARED }
+  return { path, mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT }
 }
 
 /** Returns the first shared vault in list order, or null. Read-only vaults
@@ -182,8 +214,8 @@ export interface ClassifiedPath {
   vault: VaultConfig
   /** The containing vault's access mode, for the write guard. */
   mode: VaultMode
-  /** Whether the path lies under the vault's note directory specifically. */
-  insideMarkdownDir: boolean
+  /** Whether the path lies in the vault's indexed note tree. */
+  insideNotes: boolean
 }
 
 /**
@@ -219,8 +251,23 @@ export function classifyPath(
   return {
     vault: best,
     mode: best.mode,
-    insideMarkdownDir: isWithin(markdownDir(best.path), target),
+    insideNotes: isNotesPath(best.path, target),
   }
+}
+
+// Note-tree containment for classifyPath: inside the vault root (the root IS
+// the note root), outside every dot directory and dot file (that covers
+// `.obsidian-mem/…`, `.obsidian/…`, and `.INTENTS.md`), and never a reserved
+// protocol file (.INTENTS.md, DREAMS.md, <slug>_history.md).
+function isNotesPath(vaultPath: string, target: string): boolean {
+  if (!isWithin(vaultPath, target) || target === vaultPath) {
+    return false
+  }
+  const parts = relative(vaultPath, target).split(sep)
+  if (parts.some((part) => part.startsWith('.'))) {
+    return false
+  }
+  return !isReservedNonIndexed(parts[parts.length - 1] ?? '')
 }
 
 // Directory-or-equal containment on normalized absolute paths. The trailing

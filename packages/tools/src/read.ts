@@ -14,7 +14,6 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import {
   classifyPath,
-  markdownDir,
   serializeNote,
   TOOL_MEMORY_READ,
   wrapRecalled,
@@ -122,15 +121,17 @@ export async function executeRead(service: MemoryService, args: unknown): Promis
 
   const target = expandHomePath(path, homedir())
   const vaults = service.listVaults()
+  // TASK-008: mechanical insideNotes swap; the guard wording gets its full
+  // pass in that task.
   const classified = classifyPath(vaults, target)
-  if (classified === null || !classified.insideMarkdownDir) {
+  if (classified === null || !classified.insideNotes) {
     return withNotice({
       kind: 'outside_vault' as const,
       path: target,
       message: classified === null
-        ? `${target} is not inside any registered vault. Memory notes live under a vault's markdown/ directory.`
-        : `${target} is inside vault ${classified.vault.path} but outside its markdown/ directory.`,
-      vaults: vaults.map((vault) => markdownDir(vault.path)),
+        ? `${target} is not inside any registered vault. Memory notes live in a vault's note tree.`
+        : `${target} is inside vault ${classified.vault.path} but outside its note tree.`,
+      vaults: vaults.map((vault) => vault.path),
     }, notice)
   }
   if (!existsSync(target)) {

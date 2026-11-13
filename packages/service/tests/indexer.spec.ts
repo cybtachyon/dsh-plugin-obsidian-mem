@@ -91,7 +91,7 @@ class MemFs implements IndexerFs {
   }
 
   state(vaultPath = '/vault'): unknown {
-    const raw = this.files.get(`${vaultPath}/metadata/${STATE_FILE_NAME}`)?.content
+    const raw = this.files.get(`${vaultPath}/.obsidian-mem/metadata/${STATE_FILE_NAME}`)?.content
     return raw === undefined ? null : JSON.parse(raw) as unknown
   }
 }
@@ -276,8 +276,8 @@ describe('reindex first run', () => {
     expect(Object.keys(state).sort()).toEqual(['markdown/a.md', 'markdown/arch.md', 'markdown/sub/b.md'])
     expect(state['markdown/arch.md']!.chunkIds).toEqual([])
     expect(fs.renames).toContainEqual({
-      from: `/vault/metadata/${STATE_FILE_NAME}.tmp`,
-      to: `/vault/metadata/${STATE_FILE_NAME}`,
+      from: `/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}.tmp`,
+      to: `/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`,
     })
     expect(indexer.progress.indexed).toBe(2)
   })
@@ -420,9 +420,9 @@ describe('watcher triggers', () => {
 
     fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nWatcher edit\n`, 6666)
     const listener = listeners[0]!
-    listener('a.md')
-    listener('a.md')
-    listener('sub/../b.tmp')
+    listener('markdown/a.md')
+    listener('markdown/a.md')
+    listener('markdown/sub/../b.tmp')
 
     vi.advanceTimersByTime(1499)
     await settle()
@@ -442,7 +442,7 @@ describe('watcher triggers', () => {
     await settle()
     const baseline = writer.calls.length
 
-    listeners[0]!('a.md')
+    listeners[0]!('markdown/a.md')
     vi.advanceTimersByTime(1500)
     await settle()
 
@@ -695,12 +695,12 @@ describe('caps and manager', () => {
     // queued work must be dropped, and events after stop must be ignored.
     fs.add('/vaults/one/markdown/a.md', `${ALPHA_NOTE}\nedit\n`, 7)
     fs.add('/vaults/two/markdown/b.md', `${BETA_NOTE}\nedit\n`, 8)
-    listeners[0]!('a.md')
-    listeners[1]!('b.md')
+    listeners[0]!('markdown/a.md')
+    listeners[1]!('markdown/b.md')
     const before = writer.calls.length
 
     manager.stop()
-    listeners[0]!('a.md')
+    listeners[0]!('markdown/a.md')
     vi.advanceTimersByTime(2_000)
     await settle()
 
@@ -1015,7 +1015,7 @@ describe('run-loop failure accounting', () => {
     await settle()
 
     fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nWatcher edit\n`, 6666)
-    listeners[0]!('a.md')
+    listeners[0]!('markdown/a.md')
     vi.advanceTimersByTime(1_500)
     await settle()
 
@@ -1043,7 +1043,7 @@ describe('run-loop failure accounting', () => {
 describe('state file and path guards', () => {
   it('starts fresh when the state file is unreadable', async () => {
     const { fs, indexer } = makeFixture()
-    fs.add(`/vault/metadata/${STATE_FILE_NAME}`, '{not json', 5)
+    fs.add(`/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`, '{not json', 5)
 
     const summary = await indexer.reindex()
 
@@ -1058,7 +1058,7 @@ describe('state file and path guards', () => {
     // Downgrade the stamp on disk: same hashes, old schema version. A
     // freshly built indexer (the service restart shape) must treat every
     // file as unproven, not content-diff its way to a no-op.
-    const state = fs.files.get(`/vault/metadata/${STATE_FILE_NAME}`)!
+    const state = fs.files.get(`/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`)!
     const parsed = JSON.parse(state.content) as { version: number }
     state.content = JSON.stringify({ ...parsed, version: 0 })
     const before = writer.calls.length
@@ -1074,7 +1074,7 @@ describe('state file and path guards', () => {
 
     expect(summary.indexed).toBe(2)
     expect(writer.calls.length).toBeGreaterThan(before)
-    expect((JSON.parse(fs.files.get(`/vault/metadata/${STATE_FILE_NAME}`)!.content) as { version: number }).version)
+    expect((JSON.parse(fs.files.get(`/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`)!.content) as { version: number }).version)
       .toBe(1)
   })
 

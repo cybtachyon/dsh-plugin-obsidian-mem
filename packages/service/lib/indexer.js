@@ -1,8 +1,8 @@
 /**
  * Indexer keeps every registered vault's chunks in the `obsidian_mem`
  * collection (TASK-023): per-vault diff state under
- * `<vault>/metadata/obsidian-mem-state.json`, the parse → chunk →
- * trigger-extract → embed → delete-stale → insert pipeline, the
+ * `<vault>/.obsidian-mem/metadata/obsidian-mem-state.json`, the parse →
+ * chunk → trigger-extract → embed → delete-stale → insert pipeline, the
  * activation/watcher/write-through triggers, progress counters for ui and
  * audit, and the optional LLM refinement pass that merges onto the core
  * heuristics and never blocks indexing.
@@ -23,14 +23,14 @@
 import { watch as fsWatch } from 'node:fs';
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { chunkId, chunkMarkdown, contentHash, extractTriggers, isArchived, isReservedNonIndexed, isScopeType, markdownDir, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS, parseNote, SCOPE_GLOBAL, stripNoise, } from '../../core/lib/index.js';
+import { chunkId, chunkMarkdown, contentHash, extractTriggers, isArchived, isReservedNonIndexed, isScopeType, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS, parseNote, SCOPE_GLOBAL, stripNoise, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { LlmRefiner } from './llm-refine.js';
 import { assertOk } from './milvus/ok.js';
 import { createSerialQueue } from './serial-queue.js';
 /** Schema version of the per-vault state file. */
 export const INDEX_STATE_VERSION = 1;
-/** State file name inside `<vault>/metadata/`. */
+/** State file name inside `<vault>/.obsidian-mem/metadata/`. */
 export const STATE_FILE_NAME = 'obsidian-mem-state.json';
 /** Watcher debounce window; memsearch watchdog value. */
 export const WATCH_DEBOUNCE_MS = 1500;
@@ -185,7 +185,8 @@ export class VaultIndexer {
      */
     start() {
         this.stopped = false;
-        this.watchHandle = this.watchFactory(markdownDir(this.vault.path), (fileName) => {
+        // TASK-005: the vault root is the watched note root now.
+        this.watchHandle = this.watchFactory(this.vault.path, (fileName) => {
             this.onWatchEvent(fileName);
         });
         if (this.pollTimer === null && this.pollIntervalMs > 0) {
@@ -436,9 +437,9 @@ export class VaultIndexer {
         this.saveState();
         return 'purged';
     }
-    // Recursive walk of `<vault>/markdown/**/*.md`. Dotfiles, dot dirs, and
-    // reserved non-indexed names (.INTENTS.md, DREAMS.md, *_history.md)
-    // never enter the index.
+    // Recursive walk of the vault root (`<vault>/**/*.md`, TASK-005). Dotfiles,
+    // dot dirs (that covers `.obsidian-mem/`), and reserved non-indexed names
+    // (.INTENTS.md, DREAMS.md, *_history.md) never enter the index.
     listMarkdownFiles() {
         const files = [];
         const walk = (dirAbsolute, relDir) => {
@@ -449,7 +450,7 @@ export class VaultIndexer {
             for (const entry of entries) {
                 if (entry.directory) {
                     if (!entry.name.startsWith('.')) {
-                        walk(join(dirAbsolute, entry.name), `${relDir}/${entry.name}`);
+                        walk(join(dirAbsolute, entry.name), relDir === '' ? entry.name : `${relDir}/${entry.name}`);
                     }
                     continue;
                 }
@@ -457,10 +458,10 @@ export class VaultIndexer {
                     || isReservedNonIndexed(entry.name)) {
                     continue;
                 }
-                files.push(`${relDir}/${entry.name}`);
+                files.push(relDir === '' ? entry.name : `${relDir}/${entry.name}`);
             }
         };
-        walk(markdownDir(this.vault.path), 'markdown');
+        walk(this.vault.path, '');
         files.sort();
         if (files.length > MAX_FILES_PER_VAULT) {
             this.log(`${this.vault.path}: ${files.length} files exceeds cap ${MAX_FILES_PER_VAULT}; tail dropped`);
@@ -524,7 +525,9 @@ export class VaultIndexer {
             this.dirtyAll = true;
         }
         else {
-            const rel = this.normalizeRel(`markdown/${fileName.replace(/\\/g, '/')}`);
+            // TASK-005: the watch root is the vault root, so the event name is
+            // already the vault-relative path.
+            const rel = this.normalizeRel(fileName.replace(/\\/g, '/'));
             if (rel === null) {
                 return;
             }
@@ -592,18 +595,19 @@ export class VaultIndexer {
             }
         }
     }
-    // Accept vault-relative or vault-absolute paths; anything outside
-    // <vault>/markdown or not a candidate .md file normalizes to null.
+    // Accept vault-relative or vault-absolute paths; anything that is not a
+    // candidate .md file in the note tree (dot components included, TASK-005:
+    // this is the root-relative shape now) normalizes to null.
     normalizeRel(input) {
         let rel = input.replace(/\\/g, '/');
         if (rel.startsWith(`${this.vault.path.replace(/\\/g, '/')}/`)) {
             rel = rel.slice(this.vault.path.length + 1);
         }
-        if (!rel.startsWith('markdown/') || !rel.endsWith('.md')) {
+        if (!rel.endsWith('.md') || rel.split('/').some((part) => part.startsWith('.'))) {
             return null;
         }
         const base = rel.slice(rel.lastIndexOf('/') + 1);
-        if (base.startsWith('.') || isReservedNonIndexed(base)) {
+        if (isReservedNonIndexed(base)) {
             return null;
         }
         return rel;

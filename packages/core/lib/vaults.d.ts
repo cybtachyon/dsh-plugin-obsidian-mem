@@ -20,10 +20,17 @@ export declare const VAULT_MODES: readonly ["shared", "read-only"];
 export type VaultMode = typeof VAULT_MODES[number];
 /** Tests whether value names one of the two vault modes. */
 export declare function isVaultMode(value: string): value is VaultMode;
-/** A registered vault: an absolute path plus its access mode. */
+/**
+ * A registered vault: an absolute path, its access mode, and the vault-root
+ * relative path of its global memory file. globalFile is always resolved:
+ * resolveVaults defaults a blank or omitted VaultConfigLike value to
+ * GLOBAL_MEMORY_FILE_DEFAULT.
+ */
 export interface VaultConfig {
     path: string;
     mode: VaultMode;
+    /** Vault-root-relative path of this vault's global memory file. */
+    globalFile: string;
 }
 /**
  * FsProbe is the read-only fs surface vault validation needs. The service
@@ -51,6 +58,8 @@ export interface VaultFs extends FsProbe {
 export interface VaultConfigLike {
     path: string;
     mode: string;
+    /** Blank or omitted resolves to GLOBAL_MEMORY_FILE_DEFAULT. */
+    globalFile?: string;
 }
 /** Why resolveVaults dropped one candidate config. */
 export type VaultRejectKind = 'path-not-absolute' | 'path-missing' | 'mode-invalid' | 'duplicate';
@@ -68,11 +77,24 @@ export interface VaultResolution {
     /** Dropped candidates with their machine-readable reasons. */
     rejected: VaultRejection[];
 }
-/** Builds the removed-shape note directory of a vault root; do not call for
- * new layout work, the vault root itself is the note root. */
-export declare function markdownDir(vaultPath: string): string;
-/** Builds the sidecar metadata directory of a vault root. */
+/**
+ * Builds the plugin-internal directory of a vault root
+ * (`<vault>/.obsidian-mem`). The dot-directory rule keeps it and everything
+ * below it out of the index; the sidecar metadata lives inside it.
+ */
+export declare function pluginDir(vaultPath: string): string;
+/**
+ * Builds the sidecar metadata directory of a vault root
+ * (`<vault>/.obsidian-mem/metadata`), holding the indexer state file and the
+ * dream diary.
+ */
 export declare function metadataDir(vaultPath: string): string;
+/**
+ * IsPluginInternalPath reports whether absPath lies inside the vault's
+ * plugin-internal directory, the read/write guards' refusal for
+ * `.obsidian-mem/…` targets. Containment is lexical like classifyPath's.
+ */
+export declare function isPluginInternalPath(vaultPath: string, absPath: string): boolean;
 /**
  * Validates and de-dupes candidate vault configs against probe, with zero
  * fs side effects. Candidates must be absolute and exist; mode must be one
@@ -97,8 +119,8 @@ export interface ClassifiedPath {
     vault: VaultConfig;
     /** The containing vault's access mode, for the write guard. */
     mode: VaultMode;
-    /** Whether the path lies under the vault's note directory specifically. */
-    insideMarkdownDir: boolean;
+    /** Whether the path lies in the vault's indexed note tree. */
+    insideNotes: boolean;
 }
 /**
  * Finds the deepest registered vault containing absPath, or null when no

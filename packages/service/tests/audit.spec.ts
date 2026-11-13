@@ -203,7 +203,7 @@ function healthyVault(path = '/vault/notes'): { dirs: string[], files: Record<st
     [`${path}/${INTENTS_FILE}`]: renderIntentsFile(),
     [`${path}/markdown/alpha.md`]: noteFixture({ index_title: 'Alpha: one', read_count: 5, last_read_at: '2026-11-05' }),
     [`${path}/markdown/beta.md`]: noteFixture({ index_title: 'Beta: two', type: 'domain', read_count: 1, last_read_at: '2026-10-01' }),
-    [`${path}/metadata/${STATE_FILE_NAME}`]: JSON.stringify({
+    [`${path}/.obsidian-mem/metadata/${STATE_FILE_NAME}`]: JSON.stringify({
       version: 1,
       modelId: 'Xenova/multilingual-e5-small',
       vectorDim: 384,
@@ -213,7 +213,7 @@ function healthyVault(path = '/vault/notes'): { dirs: string[], files: Record<st
       },
     }),
   }
-  return { dirs: [path, `${path}/markdown`, `${path}/metadata`], files }
+  return { dirs: [path, `${path}/markdown`, `${path}/.obsidian-mem/metadata`], files }
 }
 
 function seedHealthy(): MemAuditFs {
@@ -318,8 +318,10 @@ describe('runStoreAudit: vault problems', () => {
     expect(findIssue(report, 'vault.missing')?.remediation).toContain('restart')
   })
 
-  it('reports a missing markdown/ dir as ISSUE and metadata/ as INFO', async () => {
-    const fs = new MemAuditFs({ dirs: ['/vault/notes'] })
+  it('reports a vault root that is not a directory as ISSUE and missing metadata/ as INFO', async () => {
+    // TASK-007 fixture adaptation: the vault root IS the note root, so the
+    // markdownPresent failure shape is a root that is a plain file.
+    const fs = new MemAuditFs({ files: { '/vault/notes': 'not a directory' } })
     const report = await run({ fs })
     expect(findIssue(report, 'vault.markdown')?.severity).toBe('ISSUE')
     expect(findIssue(report, 'vault.metadata')?.severity).toBe('INFO')
@@ -424,25 +426,25 @@ describe('runStoreAudit: index pipeline', () => {
 
   it('reads the per-vault state file: missing, corrupt, and stale builds', async () => {
     const noState = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata'],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
       files: { '/v/markdown/a.md': noteFixture() },
     })
     expect(findIssue(await run({ fs: noState, vaults: [vault('/v')] }), 'state.missing')?.severity).toBe('INFO')
 
     const corrupt = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata'],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
       files: {
         '/v/markdown/a.md': noteFixture(),
-        [`/v/metadata/${STATE_FILE_NAME}`]: '{ broken',
+        [`/v/.obsidian-mem/metadata/${STATE_FILE_NAME}`]: '{ broken',
       },
     })
     expect(findIssue(await run({ fs: corrupt, vaults: [vault('/v')] }), 'state.unreadable')?.severity).toBe('ISSUE')
 
     const stale = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata'],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
       files: {
         '/v/markdown/a.md': noteFixture(),
-        [`/v/metadata/${STATE_FILE_NAME}`]: JSON.stringify({ version: 1, modelId: 'other/model', vectorDim: 256, files: {} }),
+        [`/v/.obsidian-mem/metadata/${STATE_FILE_NAME}`]: JSON.stringify({ version: 1, modelId: 'other/model', vectorDim: 256, files: {} }),
       },
     })
     const report = await run({ fs: stale, vaults: [vault('/v')] })
@@ -452,7 +454,7 @@ describe('runStoreAudit: index pipeline', () => {
 
   it('flags reserved protocol files misplaced inside markdown/', async () => {
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata'],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
       files: {
         '/v/markdown/DREAMS.md': '# diary in the wrong place',
         '/v/markdown/a.md': noteFixture(),
@@ -469,7 +471,7 @@ describe('runStoreAudit: note bloat classes', () => {
   it('flags a huge note WITHOUT reading it', async () => {
     const huge = `${'x'.repeat(4 * 1024 * 1024 + 16)}`
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata'],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
       files: { '/v/markdown/planted.md': huge, '/v/markdown/a.md': noteFixture() },
     })
     const report = await run({ fs, vaults: [vault('/v')] })
@@ -486,7 +488,7 @@ describe('runStoreAudit: note bloat classes', () => {
   it('reports oversized notes as the timeline INFO with the _history remediation', async () => {
     const fat = noteFixture({ index_title: 'Timeline: pr by pr' }) + 'y'.repeat(12 * 1024)
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata'],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
       files: { '/v/markdown/timeline.md': fat },
     })
     const report = await run({ fs, vaults: [vault('/v')] })
@@ -498,7 +500,7 @@ describe('runStoreAudit: note bloat classes', () => {
 
   it('reports malformed frontmatter as an ISSUE with the parse error echoed quoted', async () => {
     const fs = new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata'],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'],
       files: { '/v/markdown/bad.md': '---\nfoo: [unclosed\nbar: "unterminated\n---\nbody\n' },
     })
     const report = await run({ fs, vaults: [vault('/v')] })
@@ -540,7 +542,7 @@ describe('runStoreAudit: model cache and dreaming lines', () => {
 describe('runStoreAudit: global budget section', () => {
   function budgetFs(): MemAuditFs {
     return new MemAuditFs({
-      dirs: ['/v', '/v/markdown', '/v/metadata', modelCacheDir(HOME)],
+      dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata', modelCacheDir(HOME)],
       files: {
         '/v/markdown/unread.md': noteFixture({ index_title: 'Unread: global', type: 'global' }),
         '/v/markdown/read-once.md': noteFixture({ index_title: 'Once: global', type: 'global', read_count: 1, last_read_at: '2026-10-01' }),
@@ -600,7 +602,7 @@ describe('runStoreAudit: bounded views', () => {
       meta: meta({ index_title: 'Archived: note', type: 'domain', archive: true }),
       body: 'gone',
     })
-    return new MemAuditFs({ dirs: ['/v', '/v/markdown', '/v/metadata'], files })
+    return new MemAuditFs({ dirs: ['/v', '/v/markdown', '/v/.obsidian-mem/metadata'], files })
   }
 
   it('full lists every note by path and bounds rows by limit', async () => {

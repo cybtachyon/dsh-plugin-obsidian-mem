@@ -89,7 +89,7 @@ Ordered list; every task is defined in its own file.
 
 ### Phase 1 — Layout model (core + config schema)
  - [x] [TASK-001-core-layout-constants](docs/PLAN-VAULT-LAYOUT-TASK-001-core-layout-constants.md)
- - [ ] [TASK-002-core-vault-registry-model](docs/PLAN-VAULT-LAYOUT-TASK-002-core-vault-registry-model.md)
+ - [x] [TASK-002-core-vault-registry-model](docs/PLAN-VAULT-LAYOUT-TASK-002-core-vault-registry-model.md)
  - [ ] [TASK-003-service-config-global-file](docs/PLAN-VAULT-LAYOUT-TASK-003-service-config-global-file.md)
  - [ ] [Refactor: Phase 1 review](docs/PLAN-VAULT-LAYOUT-TASK-R1-refactor-phase-1.md)
 

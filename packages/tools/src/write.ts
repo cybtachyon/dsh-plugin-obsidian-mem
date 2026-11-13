@@ -22,7 +22,6 @@ import {
   ensureWhyAndHow,
   formatLocalDate,
   isReservedNonIndexed,
-  markdownDir,
   parseNote,
   titleToFilename,
   TOOL_MEMORY_WRITE,
@@ -194,19 +193,20 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
 
   const target = expandHomePath(path, homedir())
 
-  // Guard 1: shared vault note dir only; read-only vaults name themselves.
+  // TASK-008: mechanical insideNotes swap; the guard wording and kind name
+  // get their full pass in that task.
   const vaults = service.listVaults()
   const classified = classifyPath(vaults, target)
-  if (classified === null || !classified.insideMarkdownDir) {
+  if (classified === null || !classified.insideNotes) {
     return withNotice({
       kind: 'outside_markdown' as const,
       path: target,
       message: classified === null
-        ? `${target} is not inside any registered vault. memory_write targets a shared vault's markdown/ directory.`
-        : `${target} is inside vault ${classified.vault.path} but outside its markdown/ directory, so it would never be indexed.`,
+        ? `${target} is not inside any registered vault. memory_write targets the note tree of a shared vault.`
+        : `${target} is inside vault ${classified.vault.path} but outside its note tree, so it would never be indexed.`,
       shared_note_dirs: vaults
         .filter((vault) => vault.mode === 'shared')
-        .map((vault) => markdownDir(vault.path)),
+        .map((vault) => vault.path),
     }, notice)
   }
   if (classified.mode !== 'shared') {

@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { INTENT_MARKERS, INTENTS_FILE } from '../src/constants.ts'
+import {
+  GLOBAL_MEMORY_FILE_DEFAULT,
+  INTENT_MARKERS,
+  INTENTS_FILE,
+} from '../src/constants.ts'
 import {
   classifyPath,
   firstSharedVault,
-  markdownDir,
+  isPluginInternalPath,
   metadataDir,
+  pluginDir,
   provisionDefaultVault,
   resolveVaults,
   seedIntentsFile,
@@ -74,8 +79,8 @@ describe('resolveVaults', () => {
     ], fs)
 
     expect(result.vaults).toEqual([
-      { path: '/vaults/team', mode: VAULT_MODE_SHARED },
-      { path: '/vaults/personal', mode: VAULT_MODE_READ_ONLY },
+      { path: '/vaults/team', mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+      { path: '/vaults/personal', mode: VAULT_MODE_READ_ONLY, globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
     ])
     expect(result.hasSharedVault).toBe(true)
     expect(result.rejected).toEqual([])
@@ -115,7 +120,9 @@ describe('resolveVaults', () => {
       { path: '/vaults/team', mode: VAULT_MODE_SHARED },
     ], fs)
 
-    expect(result.vaults).toEqual([{ path: '/vaults/team', mode: VAULT_MODE_SHARED }])
+    expect(result.vaults).toEqual([
+      { path: '/vaults/team', mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+    ])
     expect(result.rejected.map((entry) => entry.kind)).toEqual([
       'path-not-absolute', 'mode-invalid', 'path-missing', 'duplicate',
     ])
@@ -129,7 +136,9 @@ describe('resolveVaults', () => {
       { path: '/vaults/team', mode: VAULT_MODE_READ_ONLY },
     ], fs)
 
-    expect(result.vaults).toEqual([{ path: '/vaults/team', mode: VAULT_MODE_SHARED }])
+    expect(result.vaults).toEqual([
+      { path: '/vaults/team', mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+    ])
     expect(result.rejected).toHaveLength(1)
     expect(result.rejected[0]?.kind).toBe('duplicate')
   })
@@ -145,12 +154,36 @@ describe('resolveVaults', () => {
     expect(result.rejected).toEqual([])
     expect(result.vaults).toHaveLength(2)
   })
+
+  it('defaults blank or omitted globalFile and keeps an explicit one', () => {
+    const fs = new MemoryFs(['/vaults/a', '/vaults/b', '/vaults/c'])
+    const result = resolveVaults([
+      { path: '/vaults/a', mode: VAULT_MODE_SHARED },
+      { path: '/vaults/b', mode: VAULT_MODE_SHARED, globalFile: '  ' },
+      { path: '/vaults/c', mode: VAULT_MODE_SHARED, globalFile: ' notes/GLOBALS.md ' },
+    ], fs)
+
+    expect(result.vaults.map((vault) => vault.globalFile)).toEqual([
+      GLOBAL_MEMORY_FILE_DEFAULT,
+      GLOBAL_MEMORY_FILE_DEFAULT,
+      'notes/GLOBALS.md',
+    ])
+  })
 })
 
 describe('vault dir accessors', () => {
-  it('join the layout subdirs onto a vault root', () => {
-    expect(markdownDir('/vaults/team')).toBe('/vaults/team/markdown')
-    expect(metadataDir('/vaults/team')).toBe('/vaults/team/metadata')
+  it('join the plugin-internal layout subdirs onto a vault root', () => {
+    expect(pluginDir('/vaults/team')).toBe('/vaults/team/.obsidian-mem')
+    expect(metadataDir('/vaults/team')).toBe('/vaults/team/.obsidian-mem/metadata')
+  })
+
+  it('isPluginInternalPath covers the plugin dir subtree and nothing else', () => {
+    expect(isPluginInternalPath('/vaults/team', '/vaults/team/.obsidian-mem/metadata/DREAMS.md'))
+      .toBe(true)
+    expect(isPluginInternalPath('/vaults/team', '/vaults/team/.obsidian-mem')).toBe(true)
+    expect(isPluginInternalPath('/vaults/team', '/vaults/team/topic.md')).toBe(false)
+    // A sibling whose name merely starts with the plugin dir name stays out.
+    expect(isPluginInternalPath('/vaults/team', '/vaults/team/.obsidian-memx/x.md')).toBe(false)
   })
 })
 
@@ -159,11 +192,15 @@ describe('provisionDefaultVault', () => {
     const fs = new MemoryFs()
     const vault = provisionDefaultVault(fs, HOME)
 
-    expect(vault).toEqual({ path: DEFAULT_VAULT, mode: VAULT_MODE_SHARED })
+    expect(vault).toEqual({
+      path: DEFAULT_VAULT,
+      mode: VAULT_MODE_SHARED,
+      globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+    })
+    // The vault root IS the note root: only root + sidecar dirs get created.
     expect(fs.dirs).toEqual(new Set([
       DEFAULT_VAULT,
-      `${DEFAULT_VAULT}/markdown`,
-      `${DEFAULT_VAULT}/metadata`,
+      `${DEFAULT_VAULT}/.obsidian-mem/metadata`,
     ]))
     expect(fs.writeCalls).toBe(0)
   })
@@ -173,8 +210,12 @@ describe('provisionDefaultVault', () => {
     provisionDefaultVault(fs, HOME)
     const second = provisionDefaultVault(fs, HOME)
 
-    expect(second).toEqual({ path: DEFAULT_VAULT, mode: VAULT_MODE_SHARED })
-    expect(fs.dirs.size).toBe(3)
+    expect(second).toEqual({
+      path: DEFAULT_VAULT,
+      mode: VAULT_MODE_SHARED,
+      globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+    })
+    expect(fs.dirs.size).toBe(2)
   })
 
   it('stays the only creator: an empty registry never touches the fs', () => {
@@ -184,17 +225,21 @@ describe('provisionDefaultVault', () => {
     expect(fs.mkdirCalls).toBe(0)
 
     provisionDefaultVault(fs, HOME)
-    expect(fs.mkdirCalls).toBe(3)
+    expect(fs.mkdirCalls).toBe(2)
   })
 })
 
 describe('firstSharedVault', () => {
-  const shared: VaultConfig = { path: '/vaults/a', mode: VAULT_MODE_SHARED }
-  const readOnly: VaultConfig = { path: '/vaults/b', mode: VAULT_MODE_READ_ONLY }
+  const shared: VaultConfig = {
+    path: '/vaults/a', mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+  }
+  const readOnly: VaultConfig = {
+    path: '/vaults/b', mode: VAULT_MODE_READ_ONLY, globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+  }
 
   it('takes the first shared vault in list order', () => {
     expect(firstSharedVault([readOnly, shared, {
-      path: '/vaults/c', mode: VAULT_MODE_SHARED,
+      path: '/vaults/c', mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
     }])).toEqual(shared)
   })
 
@@ -205,26 +250,43 @@ describe('firstSharedVault', () => {
 })
 
 describe('classifyPath', () => {
-  const shared: VaultConfig = { path: '/vaults/team', mode: VAULT_MODE_SHARED }
-  const readOnly: VaultConfig = { path: '/vaults/docs', mode: VAULT_MODE_READ_ONLY }
+  const shared: VaultConfig = {
+    path: '/vaults/team', mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+  }
+  const readOnly: VaultConfig = {
+    path: '/vaults/docs', mode: VAULT_MODE_READ_ONLY, globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+  }
   const vaults = [shared, readOnly]
 
-  it('maps a note path to its vault, mode, and markdown membership', () => {
-    expect(classifyPath(vaults, '/vaults/team/markdown/topic.md')).toEqual({
+  it('maps a root note path to its vault, mode, and note membership', () => {
+    expect(classifyPath(vaults, '/vaults/team/topic.md')).toEqual({
       vault: shared,
       mode: VAULT_MODE_SHARED,
-      insideMarkdownDir: true,
+      insideNotes: true,
     })
-    expect(classifyPath(vaults, '/vaults/docs/markdown/ref.md')?.mode)
+    // Nested dirs inside the vault root are indexed notes dirs too.
+    expect(classifyPath(vaults, '/vaults/team/sub/topic.md')?.insideNotes).toBe(true)
+    expect(classifyPath(vaults, '/vaults/docs/ref.md')?.mode)
       .toBe(VAULT_MODE_READ_ONLY)
   })
 
-  it('separates vault-root-level paths from markdown ones', () => {
+  it('refuses plugin-internal and dot-dir paths', () => {
+    expect(classifyPath(vaults, '/vaults/team/.obsidian-mem/metadata/DREAMS.md')?.insideNotes)
+      .toBe(false)
+    expect(classifyPath(vaults, '/vaults/team/.obsidian/workspace.json')?.insideNotes)
+      .toBe(false)
+    expect(classifyPath(vaults, '/vaults/team/.hidden.md')?.insideNotes).toBe(false)
+  })
+
+  it('refuses the reserved root files and the vault root itself', () => {
     expect(classifyPath(vaults, `/vaults/team/${INTENTS_FILE}`)).toEqual({
       vault: shared,
       mode: VAULT_MODE_SHARED,
-      insideMarkdownDir: false,
+      insideNotes: false,
     })
+    expect(classifyPath(vaults, '/vaults/team/DREAMS.md')?.insideNotes).toBe(false)
+    expect(classifyPath(vaults, '/vaults/team/topic_history.md')?.insideNotes).toBe(false)
+    expect(classifyPath(vaults, '/vaults/team')?.insideNotes).toBe(false)
   })
 
   it('returns null outside every vault and for relative paths', () => {
@@ -235,9 +297,13 @@ describe('classifyPath', () => {
   })
 
   it('lets a nested vault claim its own files', () => {
-    const outer: VaultConfig = { path: '/vaults', mode: VAULT_MODE_READ_ONLY }
-    const inner: VaultConfig = { path: '/vaults/team', mode: VAULT_MODE_SHARED }
-    const nested = classifyPath([outer, inner], '/vaults/team/markdown/a.md')
+    const outer: VaultConfig = {
+      path: '/vaults', mode: VAULT_MODE_READ_ONLY, globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+    }
+    const inner: VaultConfig = {
+      path: '/vaults/team', mode: VAULT_MODE_SHARED, globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+    }
+    const nested = classifyPath([outer, inner], '/vaults/team/topic.md')
 
     expect(nested?.vault).toEqual(inner)
     expect(nested?.mode).toBe(VAULT_MODE_SHARED)

@@ -20,6 +20,10 @@ Steps:
 5. Indexer-state reads and the model-cache check follow the updated
    `metadataDir` / `modelCacheDir` helpers automatically; adjust the
    strings that name the old paths.
+6. Re-root `packages/service/tests/audit.spec.ts` fixtures that seed
+   `${vault}/markdown/…` note paths to vault-root relative notes; resolve
+   the `markdownPresent` field-name debt (TASK-002 marker) by renaming it to
+   what it now means.
 
 Definition of Done: audit specs updated for root inventory, new remediation
 wording, state path; `pnpm build` clean; emit committed with the change.

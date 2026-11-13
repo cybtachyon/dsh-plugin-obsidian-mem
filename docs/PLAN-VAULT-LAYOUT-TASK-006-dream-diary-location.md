@@ -13,6 +13,9 @@ Steps:
    existing DREAMS.md files belongs to TASK-013, not here).
 3. Update the dream prompt/doc wording that says "DREAMS.md at the first
    shared vault root".
+4. Re-root `packages/service/tests/dream.spec.ts` fixtures that seed
+   `${vault}/markdown/…` note paths (left by TASK-005's audit) to vault-root
+   relative notes.
 
 Definition of Done: dream specs pin the new diary path and parent-creation;
 `pnpm build` clean; emit committed with the change.

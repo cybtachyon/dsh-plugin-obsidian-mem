@@ -3,6 +3,9 @@
 Objective: the whole tree passes every repo gate on the final layout code.
 
 Steps:
+0. Re-root `packages/service/tests/integration/live-pipeline.live.test.ts`
+   (asserts legacy `markdown/…` source_paths; skipped in normal runs but must
+   be layout-correct when exercised).
 1. `pnpm build` (tsc -b --force, build-client, build-format, verify-emit);
    commit any emitted drift in this commit.
 2. A second consecutive `pnpm build` leaves `git status --porcelain` empty.

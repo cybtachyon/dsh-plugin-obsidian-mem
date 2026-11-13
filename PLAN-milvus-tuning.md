@@ -42,7 +42,7 @@ All resolved; see Answers below.
 - [x] [TASK-005-offline-metric-compare](docs/PLAN-milvus-tuning-TASK-005-offline-metric-compare.md)
 - [x] [TASK-006-live-restart-recall-test](docs/PLAN-milvus-tuning-TASK-006-live-restart-recall-test.md)
 - [x] [TASK-007-iterate-tuning](docs/PLAN-milvus-tuning-TASK-007-iterate-tuning.md)
-- [ ] [Refactor-review-phase-b](docs/PLAN-milvus-tuning-TASK-008-refactor-review-phase-b.md)
+- [x] [Refactor-review-phase-b](docs/PLAN-milvus-tuning-TASK-008-refactor-review-phase-b.md)
 
 ### Phase C: Optional tuning (metrics-gated; run only on the questionnaire's decided scope)
 

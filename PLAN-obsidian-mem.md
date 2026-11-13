@@ -98,7 +98,7 @@ task file lists explicit cross-phase prerequisites.
 
 ### Phase 6: Settings card (packages/client + routes)
 
-- [ ] [TASK-050-host-routes](docs/PLAN-obsidian-mem-TASK-050-host-routes.md)
+- [x] [TASK-050-host-routes](docs/PLAN-obsidian-mem-TASK-050-host-routes.md)
 - [ ] [TASK-051-client-card](docs/PLAN-obsidian-mem-TASK-051-client-card.md)
 - [ ] [TASK-052-client-build-pipeline](docs/PLAN-obsidian-mem-TASK-052-client-build-pipeline.md)
 

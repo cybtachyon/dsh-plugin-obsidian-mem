@@ -1,5 +1,7 @@
 # TASK-050 Host routes for the card
 
+Status: done
+
 Depends: TASK-030. `packages/ui/src/routes.ts` (+ ops). Pattern: local-infer
 `packages/ui/src/route.ts` (`scope.webServer.register(route)` on scoped inject of the web
 server service — verify service name via cordis inspection `Service listService`).

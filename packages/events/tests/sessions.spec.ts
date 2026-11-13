@@ -130,6 +130,99 @@ describe('once-per-session injection rule', () => {
   })
 })
 
+describe('written-source ledger (mem-loop-tuning TASK-001)', () => {
+  it('records a written source and answers membership per session', () => {
+    const { file } = tempFile()
+    const registry = makeRegistry(file)
+    expect(registry.wasWrittenIn('s1', 'vaultA\u0000a.md')).toBe(false)
+    registry.noteWrittenSource('s1', 'vaultA\u0000a.md')
+    expect(registry.wasWrittenIn('s1', 'vaultA\u0000a.md')).toBe(true)
+    // A different session keeps its own ledger (subagents included).
+    expect(registry.wasWrittenIn('s2', 'vaultA\u0000a.md')).toBe(false)
+  })
+
+  it('persists the ledger for a fresh registry over the same sessions.json', () => {
+    const { file } = tempFile()
+    const clock = fakeClock()
+    const first = makeRegistry(file, { now: clock.now })
+    first.noteWrittenSource('s1', 'vaultA\u0000a.md')
+    first.noteWrittenSource('s1', 'vaultA\u0000b.md', 1_234)
+    first.flush()
+
+    const second = makeRegistry(file, { now: clock.now })
+    expect(second.wasWrittenIn('s1', 'vaultA\u0000a.md')).toBe(true)
+    expect(second.wasWrittenIn('s1', 'vaultA\u0000b.md')).toBe(true)
+    // The write times survived; the clock default and the explicit `at`.
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as {
+      sessions: Record<string, { written: Record<string, number> }>
+    }
+    expect(saved.sessions.s1?.written).toEqual({
+      'vaultA\u0000a.md': clock.now(),
+      'vaultA\u0000b.md': 1_234,
+    })
+  })
+
+  it('answers false for an unknown key after hydration', () => {
+    const { file } = tempFile()
+    const first = makeRegistry(file)
+    first.noteWrittenSource('s1', 'vaultA\u0000a.md')
+    first.flush()
+    const second = makeRegistry(file)
+    expect(second.wasWrittenIn('s1', 'vaultA\u0000unknown.md')).toBe(false)
+    expect(second.wasWrittenIn('unseen-session', 'vaultA\u0000a.md')).toBe(false)
+  })
+
+  it('prunes the written ledger with the session on TTL and LRU eviction', () => {
+    const { file } = tempFile()
+    const clock = fakeClock()
+    const registry = makeRegistry(file, { now: clock.now, maxSessions: 2 })
+    // LRU: three live sessions, the least-recently-touched goes first.
+    registry.noteWrittenSource('a', 'note')
+    clock.advance(1_000)
+    registry.noteWrittenSource('b', 'note')
+    clock.advance(1_000)
+    registry.noteWrittenSource('c', 'note')
+    registry.flush()
+
+    let saved = JSON.parse(readFileSync(file, 'utf8')) as {
+      sessions: Record<string, { written: Record<string, number> }>
+    }
+    expect(Object.keys(saved.sessions).sort()).toEqual(['b', 'c'])
+    expect(registry.wasWrittenIn('a', 'note')).toBe(false)
+
+    // TTL: the whole store ages past the 30-day bound; only a fresh touch stays.
+    clock.advance(31 * 24 * 60 * 60 * 1000)
+    registry.noteWrittenSource('fresh', 'note')
+    registry.flush()
+    saved = JSON.parse(readFileSync(file, 'utf8')) as {
+      sessions: Record<string, { written: Record<string, number> }>
+    }
+    expect(Object.keys(saved.sessions)).toEqual(['fresh'])
+    expect(registry.wasWrittenIn('b', 'note')).toBe(false)
+
+    const reopened = makeRegistry(file, { now: clock.now })
+    expect(reopened.wasWrittenIn('fresh', 'note')).toBe(true)
+    expect(reopened.wasWrittenIn('a', 'note')).toBe(false)
+  })
+
+  it('treats a ledger row without a written map as empty', () => {
+    const { dir, file } = tempFile()
+    mkdirSync(dir, { recursive: true })
+    // A pre-TASK-001 v1 row: no `written` key at all.
+    const stamp = Date.now()
+    writeFileSync(file, `${JSON.stringify({
+      version: 1,
+      sessions: {
+        s1: { injected: { note: { at: stamp } }, subagent: false, createdAt: stamp, updatedAt: stamp },
+      },
+    })}\n`, 'utf8')
+    const registry = makeRegistry(file)
+    expect(registry.wasWrittenIn('s1', 'note')).toBe(false)
+    // The injection ledger still hydrates from the same row.
+    expect(registry.shouldInject('s1', 'note')).toBe(false)
+  })
+})
+
 describe('think budget (TASK-043 input)', () => {
   it('caps shots per turn and resets when a new turn appears', () => {
     const { file } = tempFile()

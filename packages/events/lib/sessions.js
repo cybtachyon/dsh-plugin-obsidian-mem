@@ -12,7 +12,11 @@
  * session, even across resumed days, until the source's content fingerprint
  * changes after injection (a note rewritten by dreaming or the user gets
  * re-indexed and its indexed `updated_at` moves, which is the fingerprint
- * search results carry). Live records die with `disposeSession` on
+ * search results carry). Alongside it the ledger records every source the
+ * session itself authored (`noteWrittenSource`, keyed by the same
+ * {@link sourceKeyFor} identity), so recall flows can exclude memories the
+ * session wrote; it is process-wide by session id, so every agent instance
+ * of one session shares the ledger. Live records die with `disposeSession` on
  * `agent/disposed`; the persisted ledger at
  * `<dbPath>/state/sessions.json` survives restarts (LRU-capped, TTL-bounded)
  * so a session resumed next week still honors the rule.
@@ -136,6 +140,9 @@ export class SessionRegistry {
                         at: value.at,
                         ...(typeof value.fingerprint === 'string' ? { fingerprint: value.fingerprint } : {}),
                     }])),
+                writtenSources: new Map(Object.entries(persisted?.written ?? {})
+                    .filter(([, value]) => typeof value === 'number')
+                    .map(([key, value]) => [key, value])),
                 turnStartDone: false,
                 lastTurn: 0,
                 firstUserTextThisTurn: '',
@@ -191,6 +198,23 @@ export class SessionRegistry {
     /** InjectedSources snapshots the session's ledger keys (test/audit view). */
     injectedSources(sessionId) {
         return new Map(this.ensure(sessionId).injectedSources);
+    }
+    /**
+     * NoteWrittenSource records one source the session authored (a successful
+     * `memory_write`) and persists. `at` overrides the write time (default:
+     * the registry clock); later recall flows consult
+     * {@link SessionRegistry.wasWrittenIn} and skip what the session itself
+     * wrote.
+     */
+    noteWrittenSource(sessionId, sourceKey, at) {
+        const record = this.ensure(sessionId);
+        record.writtenSources.set(sourceKey, at ?? this.now());
+        this.touch(record);
+        this.schedulePersist();
+    }
+    /** WasWrittenIn answers whether the session already authored this source. */
+    wasWrittenIn(sessionId, sourceKey) {
+        return this.ensure(sessionId).writtenSources.has(sourceKey);
     }
     /** IsTurnStartDone answers whether turn-start recall already fired. */
     isTurnStartDone(sessionId) {
@@ -399,6 +423,7 @@ export class SessionRegistry {
                 }
                 this.store.set(sessionId, {
                     injected: typeof entry.injected === 'object' && entry.injected !== null ? entry.injected : {},
+                    written: typeof entry.written === 'object' && entry.written !== null ? entry.written : {},
                     subagent: entry.subagent === true,
                     createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : entry.updatedAt,
                     updatedAt: entry.updatedAt,
@@ -423,6 +448,7 @@ export class SessionRegistry {
         record.updatedAt = this.now();
         this.store.set(record.sessionId, {
             injected: Object.fromEntries(record.injectedSources),
+            written: Object.fromEntries(record.writtenSources),
             subagent: record.subagent,
             createdAt: record.createdAt,
             updatedAt: record.updatedAt,

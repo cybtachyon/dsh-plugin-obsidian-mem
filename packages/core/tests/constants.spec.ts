@@ -11,6 +11,7 @@ import {
   defaultVaultPath,
   defangRecalled,
   DREAMS_FILE,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   GLOBAL_MEMORY_TOKENS,
   INTENTS_FILE,
   INTENT_MARKERS,
@@ -27,6 +28,7 @@ import {
   modelCacheDir,
   PASSAGE_PREFIX,
   PLUGIN_SOURCE_KIND,
+  PLUGIN_VAULT_DIR,
   QUERY_PREFIX,
   RECALL_READ_MAX_SECTIONS,
   RECALL_READ_SECTION_TOKENS,
@@ -49,7 +51,6 @@ import {
   TOOL_MEMORY_WRITE,
   TRANSFORMERS_PIPELINE_OPTIONS,
   unwrapRecalled,
-  VAULT_MARKDOWN_DIR,
   VAULT_METADATA_DIR,
   VECTOR_DIM_DEFAULT,
   wrapRecalled,
@@ -109,9 +110,13 @@ describe('scope values', () => {
 })
 
 describe('vault layout and reserved files', () => {
-  it('names the two vault subdirs', () => {
-    expect(VAULT_MARKDOWN_DIR).toBe('markdown')
+  it('names the plugin-internal dir and the metadata sidecar under it', () => {
+    expect(PLUGIN_VAULT_DIR).toBe('.obsidian-mem')
     expect(VAULT_METADATA_DIR).toBe('metadata')
+  })
+
+  it('defaults a vault global memory file to root GLOBAL.md', () => {
+    expect(GLOBAL_MEMORY_FILE_DEFAULT).toBe('GLOBAL.md')
   })
 
   it('lists the reserved root files and covers the suffix rule', () => {
@@ -131,7 +136,7 @@ describe('default paths', () => {
     expect(defaultVaultPath(homedir)).toBe(`${homedir}/.dsh/obsidian-mem`)
     expect(dbDir(homedir)).toBe(`${homedir}/.dsh/obsidian-mem-db`)
     expect(dbFile(homedir)).toBe(`${homedir}/.dsh/obsidian-mem-db/memory.db`)
-    expect(modelCacheDir(homedir)).toBe(`${homedir}/.dsh/obsidian-mem/models`)
+    expect(modelCacheDir(homedir)).toBe(`${homedir}/.dsh/obsidian-mem-db/models`)
     expect(stateDir(homedir)).toBe(`${homedir}/.dsh/obsidian-mem-db/state`)
   })
 

@@ -10,7 +10,7 @@
  * @module dsh-plugin-obsidian-mem/core/vaults
  */
 import { isAbsolute, join, normalize, sep } from 'node:path';
-import { defaultVaultPath, INTENTS_FILE, INTENT_MARKERS, VAULT_MARKDOWN_DIR, VAULT_METADATA_DIR, } from './constants.js';
+import { defaultVaultPath, INTENTS_FILE, INTENT_MARKERS, VAULT_METADATA_DIR, } from './constants.js';
 /** Mode with full access: the plugin indexes and writes into the vault. */
 export const VAULT_MODE_SHARED = 'shared';
 /** Mode with recall only: the plugin reads and never writes the vault. */
@@ -21,9 +21,15 @@ export const VAULT_MODES = [VAULT_MODE_SHARED, VAULT_MODE_READ_ONLY];
 export function isVaultMode(value) {
     return VAULT_MODES.includes(value);
 }
-/** Builds the note directory of a vault root. */
+// Transitional value only: the vault root IS the note root in the current
+// layout, so nothing new may join on it. markdownDir stays solely so the
+// service/tools callers still compile until each task re-points them to the
+// vault path; delete this const with the helper.
+const LEGACY_MARKDOWN_DIR = 'markdown';
+/** Builds the removed-shape note directory of a vault root; do not call for
+ * new layout work, the vault root itself is the note root. */
 export function markdownDir(vaultPath) {
-    return join(vaultPath, VAULT_MARKDOWN_DIR);
+    return join(vaultPath, LEGACY_MARKDOWN_DIR);
 }
 /** Builds the sidecar metadata directory of a vault root. */
 export function metadataDir(vaultPath) {

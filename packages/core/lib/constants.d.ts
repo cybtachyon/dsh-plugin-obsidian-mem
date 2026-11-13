@@ -33,16 +33,29 @@ export type ScopeType = typeof SCOPE_TYPES[number];
 export declare function isScopeSlug(value: string): boolean;
 /** Tests whether value is a named scope constant or a valid project slug. */
 export declare function isScopeType(value: string): boolean;
-/** Vault subdirectory holding the indexed Markdown notes. */
-export declare const VAULT_MARKDOWN_DIR = "markdown";
-/** Vault subdirectory holding sidecar metadata, never indexed. */
+/**
+ * PLUGIN_VAULT_DIR names the plugin-internal directory inside every vault
+ * root. The indexer skips it through the dot-directory rule; the vault root
+ * itself is the indexed note root, so notes need no directory constant.
+ */
+export declare const PLUGIN_VAULT_DIR = ".obsidian-mem";
+/** VAULT_METADATA_DIR names the sidecar dir under PLUGIN_VAULT_DIR. */
 export declare const VAULT_METADATA_DIR = "metadata";
 /** Vault-root file listing the intent markers; never indexed. */
 export declare const INTENTS_FILE = ".INTENTS.md";
-/** Vault-root dream diary appended by memory_dream; never indexed. */
+/**
+ * DREAMS_FILE is the dream diary memory_dream appends, kept at
+ * `<vault>/.obsidian-mem/metadata/DREAMS.md`. Its name stays reserved at the
+ * vault root so a stray root copy is never indexed.
+ */
 export declare const DREAMS_FILE = "DREAMS.md";
 /** Suffix of archive-history notes moved out of oversized notes. */
 export declare const ARCHIVE_HISTORY_SUFFIX = "_history.md";
+/**
+ * GLOBAL_MEMORY_FILE_DEFAULT is a vault's global memory file path relative
+ * to the vault root when its config leaves globalFile blank or omitted.
+ */
+export declare const GLOBAL_MEMORY_FILE_DEFAULT = "GLOBAL.md";
 /**
  * RESERVED_NON_INDEXED lists the vault-root files the indexer and the audit
  * note enumeration must skip. Archive-history notes join them by suffix;
@@ -57,7 +70,11 @@ export declare function defaultVaultPath(homedir: string): string;
 export declare function dbDir(homedir: string): string;
 /** Builds the Milvus-Lite database location under dbDir. */
 export declare function dbFile(homedir: string): string;
-/** Builds the transformers.js model cache dir inside the default vault. */
+/**
+ * Builds the transformers.js model cache dir under the Milvus db dir
+ * (`$HOME/.dsh/obsidian-mem-db/models`). It sits outside the vaults so a
+ * vault holds notes plus sidecars only.
+ */
 export declare function modelCacheDir(homedir: string): string;
 /** Builds the plugin state dir (indexer + audit state) under dbDir. */
 export declare function stateDir(homedir: string): string;

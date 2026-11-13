@@ -68,7 +68,8 @@ export interface VaultResolution {
     /** Dropped candidates with their machine-readable reasons. */
     rejected: VaultRejection[];
 }
-/** Builds the note directory of a vault root. */
+/** Builds the removed-shape note directory of a vault root; do not call for
+ * new layout work, the vault root itself is the note root. */
 export declare function markdownDir(vaultPath: string): string;
 /** Builds the sidecar metadata directory of a vault root. */
 export declare function metadataDir(vaultPath: string): string;

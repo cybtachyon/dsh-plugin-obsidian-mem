@@ -15,7 +15,6 @@ import {
   defaultVaultPath,
   INTENTS_FILE,
   INTENT_MARKERS,
-  VAULT_MARKDOWN_DIR,
   VAULT_METADATA_DIR,
 } from './constants.js'
 import type { IntentMarker } from './constants.js'
@@ -95,9 +94,16 @@ export interface VaultResolution {
   rejected: VaultRejection[]
 }
 
-/** Builds the note directory of a vault root. */
+// Transitional value only: the vault root IS the note root in the current
+// layout, so nothing new may join on it. markdownDir stays solely so the
+// service/tools callers still compile until each task re-points them to the
+// vault path; delete this const with the helper.
+const LEGACY_MARKDOWN_DIR = 'markdown'
+
+/** Builds the removed-shape note directory of a vault root; do not call for
+ * new layout work, the vault root itself is the note root. */
 export function markdownDir(vaultPath: string): string {
-  return join(vaultPath, VAULT_MARKDOWN_DIR)
+  return join(vaultPath, LEGACY_MARKDOWN_DIR)
 }
 
 /** Builds the sidecar metadata directory of a vault root. */

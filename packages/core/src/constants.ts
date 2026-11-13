@@ -65,17 +65,30 @@ export function isScopeType(value: string): boolean {
   return (SCOPE_TYPES as readonly string[]).includes(value) || isScopeSlug(value)
 }
 
-/** Vault subdirectory holding the indexed Markdown notes. */
-export const VAULT_MARKDOWN_DIR = 'markdown'
-/** Vault subdirectory holding sidecar metadata, never indexed. */
+/**
+ * PLUGIN_VAULT_DIR names the plugin-internal directory inside every vault
+ * root. The indexer skips it through the dot-directory rule; the vault root
+ * itself is the indexed note root, so notes need no directory constant.
+ */
+export const PLUGIN_VAULT_DIR = '.obsidian-mem'
+/** VAULT_METADATA_DIR names the sidecar dir under PLUGIN_VAULT_DIR. */
 export const VAULT_METADATA_DIR = 'metadata'
 
 /** Vault-root file listing the intent markers; never indexed. */
 export const INTENTS_FILE = '.INTENTS.md'
-/** Vault-root dream diary appended by memory_dream; never indexed. */
+/**
+ * DREAMS_FILE is the dream diary memory_dream appends, kept at
+ * `<vault>/.obsidian-mem/metadata/DREAMS.md`. Its name stays reserved at the
+ * vault root so a stray root copy is never indexed.
+ */
 export const DREAMS_FILE = 'DREAMS.md'
 /** Suffix of archive-history notes moved out of oversized notes. */
 export const ARCHIVE_HISTORY_SUFFIX = '_history.md'
+/**
+ * GLOBAL_MEMORY_FILE_DEFAULT is a vault's global memory file path relative
+ * to the vault root when its config leaves globalFile blank or omitted.
+ */
+export const GLOBAL_MEMORY_FILE_DEFAULT = 'GLOBAL.md'
 
 /**
  * RESERVED_NON_INDEXED lists the vault-root files the indexer and the audit
@@ -114,9 +127,13 @@ export function dbFile(homedir: string): string {
   return join(dbDir(homedir), DB_FILE)
 }
 
-/** Builds the transformers.js model cache dir inside the default vault. */
+/**
+ * Builds the transformers.js model cache dir under the Milvus db dir
+ * (`$HOME/.dsh/obsidian-mem-db/models`). It sits outside the vaults so a
+ * vault holds notes plus sidecars only.
+ */
 export function modelCacheDir(homedir: string): string {
-  return join(defaultVaultPath(homedir), MODELS_DIR)
+  return join(dbDir(homedir), MODELS_DIR)
 }
 
 /** Builds the plugin state dir (indexer + audit state) under dbDir. */

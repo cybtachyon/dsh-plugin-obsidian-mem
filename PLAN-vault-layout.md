@@ -99,7 +99,7 @@ Ordered list; every task is defined in its own file.
  - [x] [TASK-006-dream-diary-location](docs/PLAN-VAULT-LAYOUT-TASK-006-dream-diary-location.md)
  - [x] [TASK-007-audit-inventory-layout](docs/PLAN-VAULT-LAYOUT-TASK-007-audit-inventory-layout.md)
  - [x] [Refactor: Phase 2 review](docs/PLAN-VAULT-LAYOUT-TASK-R2-refactor-phase-2.md)
- - [ ] [TASK-016-cordis-mount-isolation](docs/PLAN-VAULT-LAYOUT-TASK-016-cordis-mount-isolation.md)
+ - [x] [TASK-016-cordis-mount-isolation](docs/PLAN-VAULT-LAYOUT-TASK-016-cordis-mount-isolation.md)
 
 ### Phase 3 — Surfaces (tools, injection, routes, card)
  - [ ] [TASK-008-tools-wording-guards](docs/PLAN-VAULT-LAYOUT-TASK-008-tools-wording-guards.md)

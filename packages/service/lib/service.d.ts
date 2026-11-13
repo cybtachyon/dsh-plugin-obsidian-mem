@@ -388,4 +388,18 @@ export declare class ObsidianMemService extends Service {
     private registerTeardown;
     private teardown;
 }
+/**
+ * WithObsidianMemHooks returns a mountable row class whose constructor
+ * pre-binds {@link ObsidianMemHooks} to the seam parameter. cordis only ever
+ * calls `new callback(ctx, config)` (Fiber._runner.execute), so a hooks-aware
+ * mount needs the seam bound at the constructor; this is that binding, not a
+ * second construction path. The returned class inherits the static Config and
+ * inject entries and publishes the same `obsidianMem` seam, so `ctx.plugin()`
+ * activation behaves exactly as with the bare class. Tests and non-default
+ * hosts (an embedder redirecting home/state/db defaults into a scratch dir)
+ * are the intended users; production bundle rows mount the class itself.
+ *
+ * @param hooks - the seams to bind; each keeps its own default when omitted.
+ */
+export declare function withObsidianMemHooks(hooks: ObsidianMemHooks): typeof ObsidianMemService;
 //# sourceMappingURL=service.d.ts.map

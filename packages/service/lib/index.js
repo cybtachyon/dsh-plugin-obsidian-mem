@@ -20,7 +20,7 @@
  * @module dsh-plugin-obsidian-mem/service
  */
 import { ObsidianMemService } from './service.js';
-export { nodeServiceFs, OBSIDIAN_MEM_SEAM, ObsidianMemService, VAULTS_FILE_NAME, } from './service.js';
+export { nodeServiceFs, OBSIDIAN_MEM_SEAM, ObsidianMemService, VAULTS_FILE_NAME, withObsidianMemHooks, } from './service.js';
 export { DEFAULT_READINESS_TIMEOUT_MS, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 export default ObsidianMemService;
 //# sourceMappingURL=index.js.map

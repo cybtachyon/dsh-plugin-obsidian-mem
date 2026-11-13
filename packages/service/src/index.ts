@@ -34,6 +34,7 @@ export {
   OBSIDIAN_MEM_SEAM,
   ObsidianMemService,
   VAULTS_FILE_NAME,
+  withObsidianMemHooks,
 } from './service.js'
 export type {
   GlobalMemoryIndex,

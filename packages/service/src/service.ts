@@ -1313,6 +1313,27 @@ export class ObsidianMemService extends Service {
   }
 }
 
+/**
+ * WithObsidianMemHooks returns a mountable row class whose constructor
+ * pre-binds {@link ObsidianMemHooks} to the seam parameter. cordis only ever
+ * calls `new callback(ctx, config)` (Fiber._runner.execute), so a hooks-aware
+ * mount needs the seam bound at the constructor; this is that binding, not a
+ * second construction path. The returned class inherits the static Config and
+ * inject entries and publishes the same `obsidianMem` seam, so `ctx.plugin()`
+ * activation behaves exactly as with the bare class. Tests and non-default
+ * hosts (an embedder redirecting home/state/db defaults into a scratch dir)
+ * are the intended users; production bundle rows mount the class itself.
+ *
+ * @param hooks - the seams to bind; each keeps its own default when omitted.
+ */
+export function withObsidianMemHooks(hooks: ObsidianMemHooks): typeof ObsidianMemService {
+  return class extends ObsidianMemService {
+    constructor(ctx: Context, config: ObsidianMemConfig = {}) {
+      super(ctx, config, hooks)
+    }
+  }
+}
+
 /** DefaultUvxPrewarm warms the uv cache for the pinned milvus-lite wheel. */
 function defaultUvxPrewarm(command: string, args: readonly string[]): void {
   // Detached from any lifecycle: if uvx is absent or fails, the launcher's

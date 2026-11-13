@@ -508,6 +508,12 @@ function formatAge(epochMs, nowMs) {
   }
   return `${String(Math.floor(delta / DAY_MS))} d ago`;
 }
+function formatLocalDate(epochMs) {
+  const date = new Date(epochMs);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${String(date.getFullYear())}-${month}-${day}`;
+}
 function budgetPercent(used, budget) {
   if (!(budget > 0) || !Number.isFinite(used)) {
     return 0;
@@ -588,6 +594,13 @@ function AuditSection(props) {
 // packages/client/src/sections/dreaming.tsx
 var TOAST_HOLD_MS = 4e3;
 var PLAN_PREVIEW_CHARS = 2e3;
+function lastRunFailureText(lastRun) {
+  if (lastRun === null || lastRun.ok) {
+    return null;
+  }
+  const detail = lastRun.error ?? lastRun.summary;
+  return `Last dream run failed (${formatLocalDate(lastRun.finishedAt)}): ${detail}`;
+}
 function DreamingSection(props) {
   const [promptPath, setPromptPath] = react.useState(null);
   const [plan, setPlan] = react.useState(null);
@@ -670,7 +683,8 @@ function DreamingSection(props) {
   const blocked = dream?.blocked ?? null;
   const running = dream?.state === "running";
   const lastDreamAt = dream?.lastDreamAt ?? null;
-  return /* @__PURE__ */ react.createElement(react.Fragment, null, toast !== null && renderToast(toast, () => setToast(null)), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Last dream"), /* @__PURE__ */ react.createElement("span", null, formatAge(lastDreamAt, Date.now())), running && renderTag("info", "run in flight"), promptPath !== null && /* @__PURE__ */ react.createElement(react.Fragment, null, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Prompt"), /* @__PURE__ */ react.createElement("span", { style: MONO_STYLE, title: promptPath }, truncate(promptPath, 56)))), blocked !== null && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, `Dreaming cannot launch: ${blocked}`), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, renderButton({
+  const failedRun = lastRunFailureText(dream?.lastRun ?? null);
+  return /* @__PURE__ */ react.createElement(react.Fragment, null, toast !== null && renderToast(toast, () => setToast(null)), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Last dream"), /* @__PURE__ */ react.createElement("span", null, formatAge(lastDreamAt, Date.now())), running && renderTag("info", "run in flight"), promptPath !== null && /* @__PURE__ */ react.createElement(react.Fragment, null, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Prompt"), /* @__PURE__ */ react.createElement("span", { style: MONO_STYLE, title: promptPath }, truncate(promptPath, 56)))), blocked !== null && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, `Dreaming cannot launch: ${blocked}`), failedRun !== null && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, failedRun), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, renderButton({
     label: "Preview plan",
     busy: busyPlan,
     disabled: blocked !== null,

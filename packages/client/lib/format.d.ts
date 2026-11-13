@@ -1,6 +1,7 @@
 /**
  * Pure display logic for the card: string truncation (long vault paths and
- * chunk texts never overflow the card), count and age formatting, the budget
+ * chunk texts never overflow the card), count and age formatting, the local
+ * calendar date the failed-dream banner dates with, the budget
  * meter's percent math, and the schedule-slug rule the Dreaming add form uses
  * to derive a trigger id from its label. Everything here is a total function
  * the vitest specs cover directly; nothing touches fetch, DOM, or react.
@@ -18,6 +19,13 @@ export declare function formatBytes(bytes: number): string;
  * the future reads "just now" (a skewed clock never renders a negative age).
  */
 export declare function formatAge(epochMs: number | null, nowMs: number): string;
+/**
+ * FormatLocalDate renders an epoch-ms stamp as the local calendar date
+ * "YYYY-MM-DD" (zero-padded). A hand-built date instead of
+ * toLocaleDateString: the copy stays stable across host locales and the
+ * specs assert it literally.
+ */
+export declare function formatLocalDate(epochMs: number): string;
 /**
  * BudgetPercent clamps used/budget to a 0..100 meter percent. A non-positive
  * budget (or a non-finite ratio) reads 0: the meter never divides by zero and

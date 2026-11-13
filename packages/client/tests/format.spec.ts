@@ -13,6 +13,7 @@ import {
   formatAge,
   formatBytes,
   formatCount,
+  formatLocalDate,
   slugId,
   truncate,
 } from '../src/format.ts'
@@ -51,6 +52,15 @@ describe('formatAge', () => {
     expect(formatAge(now - 5 * 60_000, now)).toBe('5 min ago')
     expect(formatAge(now - 3 * 3_600_000, now)).toBe('3 h ago')
     expect(formatAge(now - 2 * 86_400_000, now)).toBe('2 d ago')
+  })
+})
+
+describe('formatLocalDate', () => {
+  // Anchored at local noon so the calendar date is the same in every zone.
+  it('renders the local calendar date zero-padded', () => {
+    expect(formatLocalDate(new Date(2026, 10, 12, 12).getTime())).toBe('2026-11-12')
+    expect(formatLocalDate(new Date(2026, 0, 5, 12).getTime())).toBe('2026-01-05')
+    expect(formatLocalDate(new Date(2025, 8, 30, 12).getTime())).toBe('2025-09-30')
   })
 })
 

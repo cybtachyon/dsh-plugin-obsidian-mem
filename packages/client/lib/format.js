@@ -1,6 +1,7 @@
 /**
  * Pure display logic for the card: string truncation (long vault paths and
- * chunk texts never overflow the card), count and age formatting, the budget
+ * chunk texts never overflow the card), count and age formatting, the local
+ * calendar date the failed-dream banner dates with, the budget
  * meter's percent math, and the schedule-slug rule the Dreaming add form uses
  * to derive a trigger id from its label. Everything here is a total function
  * the vitest specs cover directly; nothing touches fetch, DOM, or react.
@@ -54,6 +55,18 @@ export function formatAge(epochMs, nowMs) {
         return `${String(Math.floor(delta / HOUR_MS))} h ago`;
     }
     return `${String(Math.floor(delta / DAY_MS))} d ago`;
+}
+/**
+ * FormatLocalDate renders an epoch-ms stamp as the local calendar date
+ * "YYYY-MM-DD" (zero-padded). A hand-built date instead of
+ * toLocaleDateString: the copy stays stable across host locales and the
+ * specs assert it literally.
+ */
+export function formatLocalDate(epochMs) {
+    const date = new Date(epochMs);
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${String(date.getFullYear())}-${month}-${day}`;
 }
 /**
  * BudgetPercent clamps used/budget to a 0..100 meter percent. A non-positive

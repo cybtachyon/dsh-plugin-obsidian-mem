@@ -2,7 +2,9 @@
  * The Dreaming section: the dream orchestrator (last run, editable prompt
  * path, plan preview, run-now launch), and the DSH schedule triggers the
  * plugin's dreaming wake-ins ride (live entries, the read-only config echo,
- * and the add/remove forms).
+ * and the add/remove forms). A failed recorded run (status dream.lastRun,
+ * trustworthy since TASK-003) surfaces here as a warning banner naming the
+ * error and the finished date; a successful run adds nothing to the card.
  *
  * Runs are single-flight host-side: run-now fires POST /dream/run and the
  * route answers 202 { started, id } without awaiting, so the card reports
@@ -15,7 +17,7 @@
  */
 
 import type { ReactNode } from 'react'
-import type { DreamPlan } from '../../../service/lib/dream.js'
+import type { DreamPlan, DreamRunSummary } from '../../../service/lib/dream.js'
 import {
   deleteSchedule,
   ERROR_CODES,
@@ -30,7 +32,7 @@ import {
   type SchedulesPayload,
   type StatusPayload,
 } from '../api.js'
-import { formatAge, slugId, truncate } from '../format.js'
+import { formatAge, formatLocalDate, slugId, truncate } from '../format.js'
 import {
   renderButton,
   renderInput,
@@ -54,6 +56,21 @@ export const TOAST_HOLD_MS = 4_000
 
 /** The plan text preview cap (the full plan lives on the host side). */
 const PLAN_PREVIEW_CHARS = 2_000
+
+/**
+ * LastRunFailureText turns the orchestrator's last recorded run into the
+ * warning banner copy: `null` (render nothing) when there is no run yet or
+ * the run succeeded; otherwise the failed-run line naming the error (the
+ * summary already prefixes it, so prefer the raw error) with the local date
+ * the run finished. A successful run stays covered by the Last dream row.
+ */
+export function lastRunFailureText(lastRun: DreamRunSummary | null): string | null {
+  if (lastRun === null || lastRun.ok) {
+    return null
+  }
+  const detail = lastRun.error ?? lastRun.summary
+  return `Last dream run failed (${formatLocalDate(lastRun.finishedAt)}): ${detail}`
+}
 
 export interface DreamingSectionProps {
   status: StatusPayload | null
@@ -156,6 +173,7 @@ export function DreamingSection(props: DreamingSectionProps): ReactNode {
   const blocked = dream?.blocked ?? null
   const running = dream?.state === 'running'
   const lastDreamAt = dream?.lastDreamAt ?? null
+  const failedRun = lastRunFailureText(dream?.lastRun ?? null)
 
   return (
     <>
@@ -174,6 +192,7 @@ export function DreamingSection(props: DreamingSectionProps): ReactNode {
       {blocked !== null && (
         <div style={WARNING_BANNER_STYLE}>{`Dreaming cannot launch: ${blocked}`}</div>
       )}
+      {failedRun !== null && <div style={WARNING_BANNER_STYLE}>{failedRun}</div>}
       <div style={ROW_STYLE}>
         {renderButton({
           label: 'Preview plan',

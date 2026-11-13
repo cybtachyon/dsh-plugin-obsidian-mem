@@ -2,7 +2,7 @@
  * Bump the `version` field of every package.json in the workspace to a single
  * release version. Run via `npx tsx scripts/release/bump-versions.ts <version>`.
  *
- * The root package.json is the installable bundle (`dsh-plugin-local-infer`);
+ * The root package.json is the installable bundle (`dsh-plugin-obsidian-mem`);
  * the packages/* workspace members ship inside it, so a release bumps them all
  * to the same version.
  */

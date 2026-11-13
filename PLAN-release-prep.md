@@ -84,10 +84,10 @@ Facts heading) stays.
 
 ### Phase 5: `act` framework setup
 
-- [ ] [TASK-15-mise-and-prek-act-pins](docs/PLAN-release-prep-TASK-15-mise-and-prek-jactionlint.md)
-- [ ] [TASK-27-fix-release-script-identity](docs/PLAN-release-prep-TASK-27-fix-release-script-identity.md)
-- [ ] [TASK-16-actrc-and-agents-act-docs](docs/PLAN-release-prep-TASK-16-actrc-and-agents-act-docs.md)
-- [ ] [TASK-17-lint-workflows-and-commit](docs/PLAN-release-prep-TASK-17-lint-workflows-and-commit.md)
+- [x] [TASK-15-mise-and-prek-act-pins](docs/PLAN-release-prep-TASK-15-mise-and-prek-jactionlint.md)
+- [x] [TASK-27-fix-release-script-identity](docs/PLAN-release-prep-TASK-27-fix-release-script-identity.md)
+- [x] [TASK-16-actrc-and-agents-act-docs](docs/PLAN-release-prep-TASK-16-actrc-and-agents-act-docs.md)
+- [x] [TASK-17-lint-workflows-and-commit](docs/PLAN-release-prep-TASK-17-lint-workflows-and-commit.md)
 
 ### Phase 6: Clean-tree and live-runtime verification
 

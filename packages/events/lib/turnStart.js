@@ -11,10 +11,11 @@
  * cold-starting index would stall the loop).
  *
  * The flow: ensureMemoryAccess (the one-time default-vault notice is
- * injected first), TASK-045's budget switch (an over-budget session gets the
- * memory_dream compaction pointer instead of anything below and returns
- * early), TASK-014's pinned injection of each shared vault's global memory
- * file within the remaining global budget, one workspace manifest scan at
+ * injected first), TASK-045's budget switch (an over-budget session is
+ * suppressed: nothing below runs and the flow returns early; the compaction
+ * reminder rides the turn-end steer instead), TASK-014's pinned injection
+ * of each shared vault's global memory file within the remaining global
+ * budget, one workspace manifest scan at
  * the agent's session cwd, search over the first user text plus the manifest
  * query text, budget trimming to `budgets.turnStartRecallTokens`, the
  * once-per-session source filter, `core.wrapRecalled` envelopes (defang
@@ -27,7 +28,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { approxCharsForTokens, approxTokens, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js';
 import { describeError } from '../../service/lib/errors.js';
-import { compactionInstruction, isGlobalBudgetSpent } from './budget.js';
+import { isGlobalBudgetSpent } from './budget.js';
 import { firstUserText } from './host.js';
 import { sourceKeyFor } from './sessions.js';
 import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
@@ -96,13 +97,11 @@ async function runTurnStartRecall(deps, sessionId, messages) {
     injectedTokens += deliverProvisionNotice(deps.agent, newId, registry);
     // TASK-045: the global memory budget. While the summed recall injections
     // since the last successful dream or host restart sit past
-    // `budgets.globalMemoryTokens`, fresh recall is replaced by the
-    // compaction pointer (the audit's budget.over line names the same remedy
-    // with the same numbers).
+    // `budgets.globalMemoryTokens`, fresh recall is suppressed; the compaction
+    // reminder moved to the turn-end steer (TASK-003), and the audit's
+    // budget.over line still names the remedy with the same numbers.
     const budgetTokens = memory.config.budgets.globalMemoryTokens;
     if (isGlobalBudgetSpent(registry, budgetTokens)) {
-        const usedTokens = registry.totalRecallTokensUsed();
-        injectedTokens += injectNotice(deps.agent, newId(), 'obsidian-mem: global memory budget spent, run memory_dream', [compactionInstruction(usedTokens, budgetTokens)]);
         registry.addRecallTokens(sessionId, injectedTokens);
         return;
     }

@@ -11,10 +11,11 @@
  * cold-starting index would stall the loop).
  *
  * The flow: ensureMemoryAccess (the one-time default-vault notice is
- * injected first), TASK-045's budget switch (an over-budget session gets the
- * memory_dream compaction pointer instead of anything below and returns
- * early), TASK-014's pinned injection of each shared vault's global memory
- * file within the remaining global budget, one workspace manifest scan at
+ * injected first), TASK-045's budget switch (an over-budget session is
+ * suppressed: nothing below runs and the flow returns early; the compaction
+ * reminder rides the turn-end steer instead), TASK-014's pinned injection
+ * of each shared vault's global memory file within the remaining global
+ * budget, one workspace manifest scan at
  * the agent's session cwd, search over the first user text plus the manifest
  * query text, budget trimming to `budgets.turnStartRecallTokens`, the
  * once-per-session source filter, `core.wrapRecalled` envelopes (defang

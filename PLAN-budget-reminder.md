@@ -67,7 +67,7 @@ Task bodies live in the linked files. Execute top to bottom.
 ### Phase 1: behavior change
 
 - [x] [TASK-001-reminder-text](docs/PLAN-budget-reminder-TASK-001-reminder-text.md)
-- [ ] [TASK-002-turnstart-drop-pointer](docs/PLAN-budget-reminder-TASK-002-turnstart-drop-pointer.md)
+- [x] [TASK-002-turnstart-drop-pointer](docs/PLAN-budget-reminder-TASK-002-turnstart-drop-pointer.md)
 - [ ] [TASK-003-turnend-budget-section](docs/PLAN-budget-reminder-TASK-003-turnend-budget-section.md)
 
 ### Phase 2: tests

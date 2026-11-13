@@ -14,6 +14,9 @@ Steps:
    path" field and the `GLOBAL.md` default; document `vaults[].globalFile`
    in the row-config sample if a sample exists.
 3. AGENTS.md: update path wording that says notes live under `markdown/`.
+4. Document the note-target contract pinned by TASK-008 (README usage
+   section): a new note's path is `<vault>/<slug>.md` (or a subdirectory);
+   the bare vault root as a directory target is refused.
 
 Definition of Done: docs grep shows no claim that the plugin indexes a
 `markdown/` subdir (research docs excepted); commit (no code touched).

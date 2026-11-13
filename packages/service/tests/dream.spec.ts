@@ -371,6 +371,25 @@ describe('plan: candidate ranking', () => {
       '5. Skipped check: near-duplicate analysis (no stored vectors available: the vector index is cold or the candidates are unindexed).',
     ].join('\n'))
   })
+
+  it('answers the windowed headroom work plan for a measured, under-budget tracker', async () => {
+    const orchestrator = new DreamOrchestrator(deps({
+      inventories: [inventory(SHARED, 'shared', [
+        note(SHARED, 'GLOBAL'),
+        // Oversized regardless of budget: keeps the plan past the
+        // "No candidates found" short-circuit so the headroom line prints.
+        note(SHARED, 'timeline', { meta: { type: 'domain', read_count: 2, last_read_at: '2026-11-09' }, sizeBytes: NOTE_TIMELINE_BYTES + 1 }),
+      ])],
+      globalIndex: { budgetTokens: 1500, usedTokens: 1200, remainingTokens: 300 },
+    }))
+    const plan = await orchestrator.plan()
+    expect(plan.budget.overBudget).toBe(false)
+    expect(plan.plan).toBe([
+      '1. Split timeline /vault/shared/timeline.md: keep the conclusion in it and move the history into a /vault/shared/timeline_history.md note at the vault root (reserved, never indexed).',
+      '2. Global budget headroom: 1200 of 1500 tokens used, injected since the last successful dream or host restart, 1 live global notes.',
+      '3. Skipped check: near-duplicate analysis (no stored vectors available: the vector index is cold or the candidates are unindexed).',
+    ].join('\n'))
+  })
 })
 
 describe('prompt: seed once, render tunables on every load', () => {

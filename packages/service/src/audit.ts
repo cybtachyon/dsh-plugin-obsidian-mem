@@ -147,7 +147,7 @@ export interface CollectionProbeResult {
 export interface GlobalBudgetReport {
   budgetTokens: number
   usedTokens: number
-  /** False when the tracker reported nothing measurable this process. */
+  /** False when nothing has been injected since the last successful dream or host restart. */
   measured: boolean
   overBudget: boolean
   /** Live global notes in FULL, protected global files counted (they inject). */
@@ -859,7 +859,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   const budget = globalBudgetReport(allNotes, deps.vaults, deps.globalIndex)
   if (!budget.measured) {
     issue('budget.tracker', 'INFO', `no recall budget spent since the last successful dream or host restart; configured budget is ${String(budget.budgetTokens)} tokens`,
-      'none: usage counts from the first turn-start recall injection')
+      'none: usage counts tokens injected since the last successful dream or host restart')
   }
   if (budget.overBudget) {
     issue('budget.over', 'ISSUE',

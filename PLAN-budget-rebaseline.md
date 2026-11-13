@@ -89,7 +89,7 @@ TASK-003 flagged the same sentence family still naming no window:
 - Phrase matches TASK-002/003 exactly. Update every spec pin that quotes
   these sentences.
 
-### TASK-005 wording tails + headroom pin + gates
+### TASK-005 wording tails + headroom pin + gates [x]
 
 TASK-004 flags, ruled in:
 

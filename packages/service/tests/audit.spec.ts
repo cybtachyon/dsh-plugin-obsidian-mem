@@ -306,6 +306,7 @@ describe('runStoreAudit: healthy store', () => {
     const report = await run({ fs: seedHealthy() })
     const budget = findIssue(report, 'budget.tracker')
     expect(budget?.detail).toContain('no recall budget spent since the last successful dream or host restart')
+    expect(budget?.remediation).toBe('none: usage counts tokens injected since the last successful dream or host restart')
     expect(report.budget.measured).toBe(false)
     expect(report.budget.overBudget).toBe(false)
   })

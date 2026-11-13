@@ -107,7 +107,7 @@ export interface CollectionProbeResult {
 export interface GlobalBudgetReport {
     budgetTokens: number;
     usedTokens: number;
-    /** False when the tracker reported nothing measurable this process. */
+    /** False when nothing has been injected since the last successful dream or host restart. */
     measured: boolean;
     overBudget: boolean;
     /** Live global notes in FULL, protected global files counted (they inject). */

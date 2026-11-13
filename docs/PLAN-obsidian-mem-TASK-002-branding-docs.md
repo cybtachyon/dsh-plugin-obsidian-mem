@@ -1,5 +1,7 @@
 # TASK-002 Branding, docs, display metadata
 
+Status: done
+
 Depends: TASK-001.
 
 ## Scope

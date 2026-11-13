@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Obsidian Mem: a vault book with vector recall nodes">
+  <!-- Original glyph: an open vault book (the Markdown memory vault) with a
+       recall graph (the Milvus vector index) rising from its spine. -->
+  <defs>
+    <linearGradient id="memVaultGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6C8EFF"/>
+      <stop offset="1" stop-color="#3B5BDB"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Vault book: two open pages with a center spine. -->
+  <g stroke="url(#memVaultGrad)" stroke-width="6" stroke-linejoin="round" fill="none">
+    <path d="M64 66c-9-9-22-12-38-12v46c16 0 29 3 38 12V66z" fill="#E7EDFF"/>
+    <path d="M64 66c9-9 22-12 38-12v46c-16 0-29 3-38 12V66z" fill="#F5F7FF"/>
+  </g>
+  <!-- Page rule lines echo Markdown lines inside the vault. -->
+  <g stroke="#9DB2FF" stroke-width="4" stroke-linecap="round">
+    <line x1="38" y1="72" x2="54" y2="76"/>
+    <line x1="38" y1="84" x2="54" y2="88"/>
+    <line x1="74" y1="76" x2="90" y2="72"/>
+    <line x1="74" y1="88" x2="90" y2="84"/>
+  </g>
+
+  <!-- Recall graph: three nodes linked above the spine, one per memory hit. -->
+  <g stroke="url(#memVaultGrad)" stroke-width="5" stroke-linecap="round" fill="none">
+    <path d="M64 58V34"/>
+    <path d="M64 40 42 26"/>
+    <path d="M64 40 86 26"/>
+  </g>
+  <g fill="url(#memVaultGrad)">
+    <circle cx="64" cy="60" r="6"/>
+    <circle cx="40" cy="24" r="7"/>
+    <circle cx="88" cy="24" r="7"/>
+    <circle cx="64" cy="30" r="7"/>
+  </g>
+</svg>

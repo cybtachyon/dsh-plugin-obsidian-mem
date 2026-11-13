@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Obsidian Mem",
+    "description": "Turns Obsidian-style Markdown vaults into shared agent memory: vector recall over a locally managed Milvus-Lite database, human-editable memory notes, the memory_read/search/write/dream/audit tools, and lifecycle hooks that inject automatic recall. Vaults are adopted as shared or read-only; with none configured a default vault is created on first memory use."
+  }
+}

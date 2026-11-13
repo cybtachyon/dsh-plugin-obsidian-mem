@@ -348,7 +348,7 @@ describe('plan: candidate ranking', () => {
     expect(plan.budget.globalNoteCount).toBe(1)
     expect(plan.budget.compactableGlobalNotePaths).toEqual([])
     expect(plan.plan).toBe([
-      '1. Global memory is over budget (1800 of 1500 tokens used), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; manually tighten /vault/shared/GLOBAL.md to reclaim budget.',
+      '1. Global memory is over budget (1800 of 1500 tokens used, injected since the last successful dream or host restart), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; manually tighten /vault/shared/GLOBAL.md to reclaim budget.',
       '2. Skipped check: near-duplicate analysis (no candidates to compare).',
     ].join('\n'))
   })
@@ -367,7 +367,7 @@ describe('plan: candidate ranking', () => {
       '1. Split timeline /vault/shared/timeline.md: keep the conclusion in it and move the history into a /vault/shared/timeline_history.md note at the vault root (reserved, never indexed).',
       '2. Compact global note /vault/shared/stale-global.md: it injects into every session; tighten it to a conclusion pointer.',
       '3. Review (unread-since-last-dream, global-over-budget): /vault/shared/stale-global.md: verify it with memory_read; correct it or set archive=true when it no longer holds.',
-      '4. Global memory is over budget (1800 of 1500 tokens used). 1 live global notes inject; compact least-read first: /vault/shared/stale-global.md.',
+      '4. Global memory is over budget (1800 of 1500 tokens used, injected since the last successful dream or host restart). 1 live global notes inject; compact least-read first: /vault/shared/stale-global.md.',
       '5. Skipped check: near-duplicate analysis (no stored vectors available: the vector index is cold or the candidates are unindexed).',
     ].join('\n'))
   })

@@ -845,8 +845,9 @@ export class ObsidianMemService extends Service {
    * GlobalMemoryIndex is the global recall-budget view (TASK-045): the
    * configured budget against the recall tokens the wired
    * {@link ObsidianMemService.sessionRegistry} sums across every session it
-   * knows. Before the events row wires a registry the view reports zero use
-   * (nothing in this process has injected anything yet).
+   * knows. Before the events row wires a registry the view reports zero
+   * use (nothing has been injected since the last successful dream or
+   * host restart).
    */
   globalMemoryIndex(): GlobalMemoryIndex {
     const budgetTokens = this.config.budgets.globalMemoryTokens

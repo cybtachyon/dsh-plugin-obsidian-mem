@@ -895,12 +895,12 @@ function renderPlanText(input: {
   }
   if (input.budget.overBudget) {
     if (budgetProtectedOnly(input.budget)) {
-      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; manually tighten ${input.budget.globalNotePaths.join(', ')} to reclaim budget.`)
+      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; manually tighten ${input.budget.globalNotePaths.join(', ')} to reclaim budget.`)
     } else {
-      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used). ${String(input.budget.globalNoteCount)} live global notes inject; compact least-read first: ${input.budget.compactableGlobalNotePaths.join(', ')}.`)
+      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart). ${String(input.budget.globalNoteCount)} live global notes inject; compact least-read first: ${input.budget.compactableGlobalNotePaths.join(', ')}.`)
     }
   } else {
-    lines.push(`${next()} Global budget headroom: ${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, ${String(input.budget.globalNoteCount)} live global notes.`)
+    lines.push(`${next()} Global budget headroom: ${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart, ${String(input.budget.globalNoteCount)} live global notes.`)
   }
   for (const skip of input.skipped) {
     lines.push(`${next()} Skipped check: ${skip}.`)

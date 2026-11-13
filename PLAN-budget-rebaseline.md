@@ -71,7 +71,7 @@ sentences, and those are the sentences the dreaming agent reads from
 - Do not touch the service `audit.ts` / events `budget.ts` wording;
   TASK-002 landed it.
 
-### TASK-004 service-side budget sentences alignment
+### TASK-004 service-side budget sentences alignment [x]
 
 TASK-003 flagged the same sentence family still naming no window:
 

@@ -577,7 +577,7 @@ export async function runStoreAudit(deps, request = {}) {
     // 8. Global memory budget (TASK-045 tracker echo; instruction on over).
     const budget = globalBudgetReport(allNotes, deps.vaults, deps.globalIndex);
     if (!budget.measured) {
-        issue('budget.tracker', 'INFO', `no recall budget spent in this process yet; configured budget is ${String(budget.budgetTokens)} tokens`, 'none: usage counts from the first turn-start recall injection');
+        issue('budget.tracker', 'INFO', `no recall budget spent since the last successful dream or host restart; configured budget is ${String(budget.budgetTokens)} tokens`, 'none: usage counts from the first turn-start recall injection');
     }
     if (budget.overBudget) {
         issue('budget.over', 'ISSUE', `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used, injected since the last successful dream or host restart`, budgetOverRemediation(budget, limit));

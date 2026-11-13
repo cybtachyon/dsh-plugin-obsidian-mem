@@ -1,0 +1,3277 @@
+{
+  "harness": "scripts/eval/recall-eval.mjs",
+  "server": {
+    "version": "milvus_lite-3.2.2",
+    "rowCount": 196
+  },
+  "collection": "obsidian_mem",
+  "config": {
+    "mode": "legacy-hybrid",
+    "topK": 6,
+    "oversample": 2,
+    "rrfK": 60,
+    "minScore": null,
+    "denseRadius": null,
+    "denseRange": null,
+    "sparseRadius": null,
+    "denseEf": 64,
+    "embedder": "Xenova/multilingual-e5-small",
+    "embedCalls": 17
+  },
+  "aggregates": {
+    "queries": 17,
+    "returned": 102,
+    "relevant": 22,
+    "acceptable": 29,
+    "forbidden": 30,
+    "neutral": 21,
+    "relevantLabels": 22,
+    "relevantLabelHits": 15,
+    "relevantMissed": 7,
+    "precisionAtK": 0.21568627450980393,
+    "forbiddenRate": 0.29411764705882354,
+    "recallOfLabeled": 0.6818181818181818
+  },
+  "queries": [
+    {
+      "id": "milvus-irrelevant-context",
+      "origin": "transcript:--home-derek-src-dsh-plugin-obsidian-mem--/session-46361e57-aa6c-4397-95f7-e7efd5f150c8",
+      "query": "The Milvus vector search is returning too much irrelevant context, clouding agent sessions.",
+      "labels": {
+        "relevant": [
+          "milvus-lite-verified-bootstrap-command-and-stack-traps.md"
+        ],
+        "acceptable": [
+          "memory-hooks-name-the-activity.md",
+          "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "obsidian-mem-global-budget-number-is-injected-tokens-cumulative-not-note-size.md",
+          "dsh-session-transcript-probe.md",
+          "dsh-session-cwd-header-gate.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "lywa/*",
+          "drupal/*",
+          "archive/*",
+          "npm-cli-lockout-devengines-onfail-download-ebaddevengines.md",
+          "api-docs-html-to-markdown.md"
+        ]
+      },
+      "note": "The tuning-plan request itself; the milvus stack-traps note is the one real answer, other memory-system notes are adjacent.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "4671862396039113",
+            "score": 0.8583488464355469
+          },
+          {
+            "chunk_id": "1279181758409550",
+            "score": 0.8473708629608154
+          },
+          {
+            "chunk_id": "4037477109495657",
+            "score": 0.8472731113433838
+          },
+          {
+            "chunk_id": "5246557592373861",
+            "score": 0.8465225696563721
+          },
+          {
+            "chunk_id": "6314401237305352",
+            "score": 0.8406513929367065
+          },
+          {
+            "chunk_id": "5749885455587312",
+            "score": 0.8364059925079346
+          },
+          {
+            "chunk_id": "6879787817087959",
+            "score": 0.8344851732254028
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": 0.8322051763534546
+          },
+          {
+            "chunk_id": "4073239535450344",
+            "score": 0.8301491737365723
+          },
+          {
+            "chunk_id": "1926443610517379",
+            "score": 0.830135703086853
+          },
+          {
+            "chunk_id": "8372513843119560",
+            "score": 0.8297634124755859
+          },
+          {
+            "chunk_id": "8879282696010406",
+            "score": 0.8297090530395508
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "224927858187931",
+            "score": -11.345352172851562
+          },
+          {
+            "chunk_id": "1092249149278917",
+            "score": -9.44626522064209
+          },
+          {
+            "chunk_id": "8045573333170898",
+            "score": -6.705220699310303
+          },
+          {
+            "chunk_id": "6879787817087959",
+            "score": -6.442697525024414
+          },
+          {
+            "chunk_id": "7639601981404456",
+            "score": -6.292989730834961
+          },
+          {
+            "chunk_id": "4477829133452207",
+            "score": -5.891022682189941
+          },
+          {
+            "chunk_id": "2644185143870945",
+            "score": -5.36653470993042
+          },
+          {
+            "chunk_id": "6812182211662749",
+            "score": -4.886981010437012
+          },
+          {
+            "chunk_id": "2326783591048158",
+            "score": -4.7212324142456055
+          },
+          {
+            "chunk_id": "5200239290384130",
+            "score": -4.665236949920654
+          },
+          {
+            "chunk_id": "5178495568027769",
+            "score": -4.250416278839111
+          },
+          {
+            "chunk_id": "3767523581078523",
+            "score": -4.104642391204834
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "6879787817087959",
+          "source_path": "memory-hooks-name-the-activity.md",
+          "section_header": "",
+          "scope": "feedback",
+          "score": 0.03055037371814251,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "224927858187931",
+          "source_path": "dsh-session-cwd-header-gate.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "sparse",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "4671862396039113",
+          "source_path": "milvus-lite-verified-bootstrap-command-and-stack-traps.md",
+          "section_header": "",
+          "scope": "domain",
+          "score": 0.016393441706895828,
+          "routes": "dense",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "1092249149278917",
+          "source_path": "dsh-session-transcript-probe.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "1279181758409550",
+          "source_path": "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.016129031777381897,
+          "routes": "dense",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "4037477109495657",
+          "source_path": "obsidian-mem-dream-run-agentoptions-fix-launchroute-failed-turn-session-log-scan.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.01587301678955555,
+          "routes": "dense",
+          "classification": "."
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 1,
+        "acceptable": 4,
+        "forbidden": 0,
+        "neutral": 1,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.16666666666666666,
+        "forbiddenRate": 0,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "dream-plan-runs-actually",
+      "origin": "transcript:--home-derek-src-dsh-plugin-obsidian-mem--/session-a3bc8865-48b6-4cbf-b0df-d2e1a7e68331",
+      "query": "The Dream tool in the client reports a successful generation of the dream PLAN, but it fails to run an actual dream.",
+      "labels": {
+        "relevant": [
+          "obsidian-mem-dream-run-agentoptions-fix-launchroute-failed-turn-session-log-scan.md"
+        ],
+        "acceptable": [
+          "obsidian-mem-dream-plan-text-budget-lines-need-a-candidate.md",
+          "dsh-session-cwd-header-gate.md",
+          "obsidian-mem-global-budget-number-is-injected-tokens-cumulative-not-note-size.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "lywa/*",
+          "drupal/*",
+          "mise-shim-no-version.md",
+          "dsh-local-infer-bundle-text-pins.md",
+          "dsh-local-infer-profile-symlink.md"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "4037477109495657",
+            "score": 0.8497462272644043
+          },
+          {
+            "chunk_id": "8372513843119560",
+            "score": 0.8456299304962158
+          },
+          {
+            "chunk_id": "4073239535450344",
+            "score": 0.8428971767425537
+          },
+          {
+            "chunk_id": "5246557592373861",
+            "score": 0.8420240879058838
+          },
+          {
+            "chunk_id": "3284120005165600",
+            "score": 0.8298795223236084
+          },
+          {
+            "chunk_id": "5749885455587312",
+            "score": 0.8265893459320068
+          },
+          {
+            "chunk_id": "7230585187154864",
+            "score": 0.8239474296569824
+          },
+          {
+            "chunk_id": "1279181758409550",
+            "score": 0.8173754215240479
+          },
+          {
+            "chunk_id": "4427940284346253",
+            "score": 0.8092871308326721
+          },
+          {
+            "chunk_id": "5140674106684452",
+            "score": 0.8081774711608887
+          },
+          {
+            "chunk_id": "409597144295453",
+            "score": 0.8069068789482117
+          },
+          {
+            "chunk_id": "3286803216710294",
+            "score": 0.8062154054641724
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "7288027897535946",
+            "score": -19.174924850463867
+          },
+          {
+            "chunk_id": "224927858187931",
+            "score": -14.746119499206543
+          },
+          {
+            "chunk_id": "3567953711941953",
+            "score": -13.305825233459473
+          },
+          {
+            "chunk_id": "6070717027310955",
+            "score": -11.503069877624512
+          },
+          {
+            "chunk_id": "5200239290384130",
+            "score": -10.984620094299316
+          },
+          {
+            "chunk_id": "7218741721774340",
+            "score": -10.801168441772461
+          },
+          {
+            "chunk_id": "3887845218745174",
+            "score": -10.622641563415527
+          },
+          {
+            "chunk_id": "6760381893079026",
+            "score": -10.261270523071289
+          },
+          {
+            "chunk_id": "1092249149278917",
+            "score": -9.912217140197754
+          },
+          {
+            "chunk_id": "1279181758409550",
+            "score": -9.56538200378418
+          },
+          {
+            "chunk_id": "8814525547792650",
+            "score": -9.390321731567383
+          },
+          {
+            "chunk_id": "2326783591048158",
+            "score": -9.190216064453125
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "1279181758409550",
+          "source_path": "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.028991596773266792,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "4037477109495657",
+          "source_path": "obsidian-mem-dream-run-agentoptions-fix-launchroute-failed-turn-session-log-scan.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.016393441706895828,
+          "routes": "dense",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "7288027897535946",
+          "source_path": "drupal/bigpipe-streams-checkout-before-drupalsettings.md",
+          "section_header": "drupalSettings in Drupal 11 JS: location, bindings, hydration",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "sparse",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "224927858187931",
+          "source_path": "dsh-session-cwd-header-gate.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "8372513843119560",
+          "source_path": "guestwise/guestwise-plan-tasks.md",
+          "section_header": "",
+          "scope": "project",
+          "score": 0.016129031777381897,
+          "routes": "dense",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "3567953711941953",
+          "source_path": "guestwise/prek-staged-sweep-on-retry.md",
+          "section_header": "prek pre-commit staged-file sweep (guestwi.se)",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "sparse",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 1,
+        "acceptable": 1,
+        "forbidden": 3,
+        "neutral": 1,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.16666666666666666,
+        "forbiddenRate": 0.5,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "budget-reminder-end-of-turn",
+      "origin": "transcript:--home-derek-src-dsh-plugin-obsidian-mem--/session-9287a0d5-24b5-4791-9158-317bd820cbaa",
+      "query": "Update the global memory budget reminder to only run at the end of a turn alongside the memory_write reminder. It should only run on the root agent, not any subagents.",
+      "labels": {
+        "relevant": [
+          "obsidian-mem-global-budget-number-is-injected-tokens-cumulative-not-note-size.md"
+        ],
+        "acceptable": [
+          "obsidian-mem-dream-plan-text-budget-lines-need-a-candidate.md",
+          "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "obsidian-mem-dream-run-agentoptions-fix-launchroute-failed-turn-session-log-scan.md"
+        ],
+        "forbidden": [
+          "drupal/drupal-update-hook-schema-8000-baseline.md",
+          "guestwise/drupal-installs-uid-1-has-no-global-roles-group-locked-entities-403-for-it.md",
+          "lywa/lywa-php-lint-tooling.md",
+          "drupal/*",
+          "guestwise/*",
+          "lywa/*"
+        ]
+      },
+      "note": "BM25 crosses \"global\" (roles) and \"update\" (hooks) into Drupal notes; those two exact files were observed polluting.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "1279181758409550",
+            "score": 0.8780428171157837
+          },
+          {
+            "chunk_id": "5140674106684452",
+            "score": 0.8755223155021667
+          },
+          {
+            "chunk_id": "5749885455587312",
+            "score": 0.8625248670578003
+          },
+          {
+            "chunk_id": "6480475819393771",
+            "score": 0.8583798408508301
+          },
+          {
+            "chunk_id": "4037477109495657",
+            "score": 0.8574336171150208
+          },
+          {
+            "chunk_id": "3284120005165600",
+            "score": 0.8558081984519958
+          },
+          {
+            "chunk_id": "4427940284346253",
+            "score": 0.8511167168617249
+          },
+          {
+            "chunk_id": "4073239535450344",
+            "score": 0.8457906246185303
+          },
+          {
+            "chunk_id": "8001539384364543",
+            "score": 0.8409624099731445
+          },
+          {
+            "chunk_id": "5246557592373861",
+            "score": 0.8375028371810913
+          },
+          {
+            "chunk_id": "4537236187746873",
+            "score": 0.8338411450386047
+          },
+          {
+            "chunk_id": "3157996188628821",
+            "score": 0.8334529399871826
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "1279181758409550",
+            "score": -18.169050216674805
+          },
+          {
+            "chunk_id": "2644185143870945",
+            "score": -17.73267936706543
+          },
+          {
+            "chunk_id": "4270965372745820",
+            "score": -15.705507278442383
+          },
+          {
+            "chunk_id": "1092249149278917",
+            "score": -14.664909362792969
+          },
+          {
+            "chunk_id": "5140674106684452",
+            "score": -12.799412727355957
+          },
+          {
+            "chunk_id": "6879787817087959",
+            "score": -12.273760795593262
+          },
+          {
+            "chunk_id": "3887845218745174",
+            "score": -12.143428802490234
+          },
+          {
+            "chunk_id": "6070717027310955",
+            "score": -12.089313507080078
+          },
+          {
+            "chunk_id": "6910951704970429",
+            "score": -11.639605522155762
+          },
+          {
+            "chunk_id": "7639601981404456",
+            "score": -11.387824058532715
+          },
+          {
+            "chunk_id": "8001539384364543",
+            "score": -11.203700065612793
+          },
+          {
+            "chunk_id": "1318647144299736",
+            "score": -11.089375495910645
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "1279181758409550",
+          "source_path": "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.032786883413791656,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "5140674106684452",
+          "source_path": "obsidian-mem-global-budget-number-is-injected-tokens-cumulative-not-note-size.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.03151364624500275,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "8001539384364543",
+          "source_path": "drupal/drupal-update-hook-schema-8000-baseline.md",
+          "section_header": "Update hooks must be numbered above the recorded schema version",
+          "scope": "reference",
+          "score": 0.028577260673046112,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "2644185143870945",
+          "source_path": "dsh-session-cwd-header-gate.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "."
+        },
+        {
+          "chunk_id": "4270965372745820",
+          "source_path": "guestwise/drupal-installs-uid-1-has-no-global-roles-group-locked-entities-403-for-it.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "sparse",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "5749885455587312",
+          "source_path": "obsidian-mem-global-budget-number-is-injected-tokens-cumulative-not-note-size.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.01587301678955555,
+          "routes": "dense",
+          "classification": "R"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 1,
+        "forbidden": 2,
+        "neutral": 1,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0.3333333333333333,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "milvus-goaway-keepalive",
+      "origin": "in-domain:milvus-client-channel",
+      "query": "milvus-lite keepalive GOAWAY excess pings channel UNAVAILABLE",
+      "labels": {
+        "relevant": [
+          "milvus-lite-verified-bootstrap-command-and-stack-traps.md"
+        ],
+        "acceptable": [
+          "dsh-plugin-obsidian-mem-lib-is-tracked-post-clean-build-contract.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "lywa/*",
+          "drupal/*"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "6314401237305352",
+            "score": 0.879898190498352
+          },
+          {
+            "chunk_id": "4671862396039113",
+            "score": 0.8536379337310791
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": 0.8436784744262695
+          },
+          {
+            "chunk_id": "8239696052716575",
+            "score": 0.8423142433166504
+          },
+          {
+            "chunk_id": "3366513796807237",
+            "score": 0.8416709899902344
+          },
+          {
+            "chunk_id": "5960033003621490",
+            "score": 0.8403624892234802
+          },
+          {
+            "chunk_id": "8045573333170898",
+            "score": 0.8378252983093262
+          },
+          {
+            "chunk_id": "2009797004116978",
+            "score": 0.8351390361785889
+          },
+          {
+            "chunk_id": "7218741721774340",
+            "score": 0.8347662687301636
+          },
+          {
+            "chunk_id": "4867780132615798",
+            "score": 0.8342965841293335
+          },
+          {
+            "chunk_id": "5040097393291351",
+            "score": 0.8337116241455078
+          },
+          {
+            "chunk_id": "3941110963291366",
+            "score": 0.833494246006012
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "6314401237305352",
+            "score": -7.089463233947754
+          },
+          {
+            "chunk_id": "3366513796807237",
+            "score": -2.1550650596618652
+          },
+          {
+            "chunk_id": "4671862396039113",
+            "score": -1.1456449031829834
+          },
+          {
+            "chunk_id": "5246557592373861",
+            "score": -0.7056708931922913
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "6314401237305352",
+          "source_path": "milvus-lite-verified-bootstrap-command-and-stack-traps.md",
+          "section_header": "",
+          "scope": "domain",
+          "score": 0.032786883413791656,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "4671862396039113",
+          "source_path": "milvus-lite-verified-bootstrap-command-and-stack-traps.md",
+          "section_header": "",
+          "scope": "domain",
+          "score": 0.0320020467042923,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "3366513796807237",
+          "source_path": "dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.03151364624500275,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "7741858191160451",
+          "source_path": "guestwise/theme-playwright-harness.md",
+          "section_header": "Theme Playwright harness (guestwi.se)",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "dense",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "5246557592373861",
+          "source_path": "obsidian-mem-dream-run-agentoptions-fix-launchroute-failed-turn-session-log-scan.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.015625,
+          "routes": "sparse",
+          "classification": "."
+        },
+        {
+          "chunk_id": "8239696052716575",
+          "source_path": "drupal/kernel-test-image-toolkit-system-module.md",
+          "section_header": "Kernel bed needs `system` to save image media",
+          "scope": "reference",
+          "score": 0.015625,
+          "routes": "dense",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 0,
+        "forbidden": 2,
+        "neutral": 2,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0.3333333333333333,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "lib-tracked-build-contract",
+      "origin": "in-domain:obsidian-mem-build-layout",
+      "query": "packages/*/lib is committed so a git install ships the runtime entry points; pnpm build must leave the tree clean",
+      "labels": {
+        "relevant": [
+          "dsh-plugin-obsidian-mem-lib-is-tracked-post-clean-build-contract.md"
+        ],
+        "acceptable": [
+          "dsh-local-infer-build-newline-churn.md",
+          "pnpm12-allowbuilds.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "archive/*"
+        ]
+      },
+      "note": "dsh-local-infer carries the same lib-tracked pattern, so its churn note is defensible, not a designed answer.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "2999110699778673",
+            "score": 0.8995871543884277
+          },
+          {
+            "chunk_id": "3594175293610705",
+            "score": 0.8956314325332642
+          },
+          {
+            "chunk_id": "3414200572753261",
+            "score": 0.8842669725418091
+          },
+          {
+            "chunk_id": "3286803216710294",
+            "score": 0.8802824020385742
+          },
+          {
+            "chunk_id": "8601653540527570",
+            "score": 0.8781185746192932
+          },
+          {
+            "chunk_id": "6070717027310955",
+            "score": 0.8743212223052979
+          },
+          {
+            "chunk_id": "4095068977696084",
+            "score": 0.8737198710441589
+          },
+          {
+            "chunk_id": "3779624393170420",
+            "score": 0.8726122379302979
+          },
+          {
+            "chunk_id": "8213247207064603",
+            "score": 0.8718621134757996
+          },
+          {
+            "chunk_id": "3366513796807237",
+            "score": 0.8700112700462341
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": 0.8696097135543823
+          },
+          {
+            "chunk_id": "2326783591048158",
+            "score": 0.8672858476638794
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "2999110699778673",
+            "score": -43.22129440307617
+          },
+          {
+            "chunk_id": "3594175293610705",
+            "score": -24.12422752380371
+          },
+          {
+            "chunk_id": "5874733743525028",
+            "score": -15.772878646850586
+          },
+          {
+            "chunk_id": "7218741721774340",
+            "score": -14.22824478149414
+          },
+          {
+            "chunk_id": "2266276163593717",
+            "score": -13.471574783325195
+          },
+          {
+            "chunk_id": "1187244771990585",
+            "score": -13.146629333496094
+          },
+          {
+            "chunk_id": "6812182211662749",
+            "score": -12.568557739257812
+          },
+          {
+            "chunk_id": "8601653540527570",
+            "score": -12.060903549194336
+          },
+          {
+            "chunk_id": "6760381893079026",
+            "score": -11.942106246948242
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": -11.421564102172852
+          },
+          {
+            "chunk_id": "3702991616309010",
+            "score": -10.511524200439453
+          },
+          {
+            "chunk_id": "4493262446649138",
+            "score": -9.2012939453125
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "2999110699778673",
+          "source_path": "dsh-plugin-obsidian-mem-lib-is-tracked-post-clean-build-contract.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032786883413791656,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "3594175293610705",
+          "source_path": "dsh-plugin-obsidian-mem-lib-is-tracked-post-clean-build-contract.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032258063554763794,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "8601653540527570",
+          "source_path": "guestwise/theme-storybook-css-pipeline.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03009049780666828,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "7741858191160451",
+          "source_path": "guestwise/theme-playwright-harness.md",
+          "section_header": "Theme Playwright harness (guestwi.se)",
+          "scope": "reference",
+          "score": 0.028370222076773643,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "3414200572753261",
+          "source_path": "pnpm12-allowbuilds.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "dense",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "5874733743525028",
+          "source_path": "act-0-2-89-no-container-archive-skip-flag.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "sparse",
+          "classification": "."
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 1,
+        "forbidden": 2,
+        "neutral": 1,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0.3333333333333333,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "typecheck-test-trees",
+      "origin": "in-domain:obsidian-mem-test-typechecking",
+      "query": "type checking the vitest test trees with a throwaway tsconfig",
+      "labels": {
+        "relevant": [
+          "dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig.md"
+        ],
+        "acceptable": [
+          "vitest-lazy-cjs-require-carrier.md",
+          "typescript-verify-before-done.md",
+          "typescript-declarative-best-practices.md",
+          "ts-installed-types-are-api-truth.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "lywa/*",
+          "drupal/*"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "3366513796807237",
+            "score": 0.8813848495483398
+          },
+          {
+            "chunk_id": "6760381893079026",
+            "score": 0.8770121335983276
+          },
+          {
+            "chunk_id": "2850450145938236",
+            "score": 0.8688704967498779
+          },
+          {
+            "chunk_id": "8820218966508464",
+            "score": 0.8640969395637512
+          },
+          {
+            "chunk_id": "2397460881742871",
+            "score": 0.8571336269378662
+          },
+          {
+            "chunk_id": "4427940284346253",
+            "score": 0.8563462495803833
+          },
+          {
+            "chunk_id": "7980622065562497",
+            "score": 0.8550817966461182
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": 0.852645993232727
+          },
+          {
+            "chunk_id": "1406720268935668",
+            "score": 0.852381706237793
+          },
+          {
+            "chunk_id": "5296211264798369",
+            "score": 0.8504700660705566
+          },
+          {
+            "chunk_id": "7359534663292372",
+            "score": 0.8497490882873535
+          },
+          {
+            "chunk_id": "5200239290384130",
+            "score": 0.8496083617210388
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "3366513796807237",
+            "score": -17.061851501464844
+          },
+          {
+            "chunk_id": "6760381893079026",
+            "score": -8.340550422668457
+          },
+          {
+            "chunk_id": "2009797004116978",
+            "score": -7.259820938110352
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": -6.677807331085205
+          },
+          {
+            "chunk_id": "1376844854706485",
+            "score": -6.4623613357543945
+          },
+          {
+            "chunk_id": "4493262446649138",
+            "score": -5.758159160614014
+          },
+          {
+            "chunk_id": "1406039798314116",
+            "score": -5.618888854980469
+          },
+          {
+            "chunk_id": "3282369359743385",
+            "score": -5.331068515777588
+          },
+          {
+            "chunk_id": "4517107763226473",
+            "score": -5.290332794189453
+          },
+          {
+            "chunk_id": "2850450145938236",
+            "score": -4.984370708465576
+          },
+          {
+            "chunk_id": "150082456874026",
+            "score": -4.944093704223633
+          },
+          {
+            "chunk_id": "7980622065562497",
+            "score": -4.863428115844727
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "3366513796807237",
+          "source_path": "dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.032786883413791656,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "6760381893079026",
+          "source_path": "vitest-lazy-cjs-require-carrier.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032258063554763794,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "7741858191160451",
+          "source_path": "guestwise/theme-playwright-harness.md",
+          "section_header": "Theme Playwright harness (guestwi.se)",
+          "scope": "reference",
+          "score": 0.030330881476402283,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "2850450145938236",
+          "source_path": "typescript-verify-before-done.md",
+          "section_header": "",
+          "scope": "feedback",
+          "score": 0.03015873022377491,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "7980622065562497",
+          "source_path": "guestwise/group-config-entity-access-install.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.02881426177918911,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "2009797004116978",
+          "source_path": "guestwise/theme-playwright-harness.md",
+          "section_header": "Theme Playwright harness (guestwi.se)",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "sparse",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 1,
+        "acceptable": 2,
+        "forbidden": 3,
+        "neutral": 0,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.16666666666666666,
+        "forbiddenRate": 0.5,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "session-transcript-probe",
+      "origin": "in-domain:session-transcripts",
+      "query": "session transcript probe session.v4.jsonl.zstd first user message",
+      "labels": {
+        "relevant": [
+          "dsh-session-transcript-probe.md"
+        ],
+        "acceptable": [
+          "dsh-session-cwd-header-gate.md",
+          "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "memory-hooks-name-the-activity.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "lywa/*",
+          "drupal/*",
+          "archive/*"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "6480475819393771",
+            "score": 0.8833211660385132
+          },
+          {
+            "chunk_id": "1092249149278917",
+            "score": 0.8748518228530884
+          },
+          {
+            "chunk_id": "224927858187931",
+            "score": 0.8621885776519775
+          },
+          {
+            "chunk_id": "4037477109495657",
+            "score": 0.8617184162139893
+          },
+          {
+            "chunk_id": "2644185143870945",
+            "score": 0.860297679901123
+          },
+          {
+            "chunk_id": "3286803216710294",
+            "score": 0.8548861742019653
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": 0.8542748689651489
+          },
+          {
+            "chunk_id": "1279181758409550",
+            "score": 0.8539543151855469
+          },
+          {
+            "chunk_id": "6162753613696371",
+            "score": 0.8500590324401855
+          },
+          {
+            "chunk_id": "8814525547792650",
+            "score": 0.8495547771453857
+          },
+          {
+            "chunk_id": "3284120005165600",
+            "score": 0.8492953181266785
+          },
+          {
+            "chunk_id": "1654105639865661",
+            "score": 0.8482016324996948
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "1092249149278917",
+            "score": -41.1829833984375
+          },
+          {
+            "chunk_id": "224927858187931",
+            "score": -21.665525436401367
+          },
+          {
+            "chunk_id": "6480475819393771",
+            "score": -15.500435829162598
+          },
+          {
+            "chunk_id": "1318647144299736",
+            "score": -12.160191535949707
+          },
+          {
+            "chunk_id": "2644185143870945",
+            "score": -11.481573104858398
+          },
+          {
+            "chunk_id": "7572459707840927",
+            "score": -10.371061325073242
+          },
+          {
+            "chunk_id": "4270965372745820",
+            "score": -10.093063354492188
+          },
+          {
+            "chunk_id": "7980622065562497",
+            "score": -8.788124084472656
+          },
+          {
+            "chunk_id": "6233573129475921",
+            "score": -7.675148963928223
+          },
+          {
+            "chunk_id": "2383172060304369",
+            "score": -7.16241979598999
+          },
+          {
+            "chunk_id": "4103927389304125",
+            "score": -6.7588372230529785
+          },
+          {
+            "chunk_id": "6879787817087959",
+            "score": -6.258541107177734
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "1092249149278917",
+          "source_path": "dsh-session-transcript-probe.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032522473484277725,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "6480475819393771",
+          "source_path": "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.03226645663380623,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "224927858187931",
+          "source_path": "dsh-session-cwd-header-gate.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.0320020467042923,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "2644185143870945",
+          "source_path": "dsh-session-cwd-header-gate.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03076923079788685,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "1318647144299736",
+          "source_path": "memory-hooks-name-the-activity.md",
+          "section_header": "",
+          "scope": "feedback",
+          "score": 0.015625,
+          "routes": "sparse",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "4037477109495657",
+          "source_path": "obsidian-mem-dream-run-agentoptions-fix-launchroute-failed-turn-session-log-scan.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.015625,
+          "routes": "dense",
+          "classification": "."
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 1,
+        "acceptable": 4,
+        "forbidden": 0,
+        "neutral": 1,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.16666666666666666,
+        "forbiddenRate": 0,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "subagent-zero-recall",
+      "origin": "in-domain:recall-budget",
+      "query": "subagent zero memory recall is the per-session budget not gating",
+      "labels": {
+        "relevant": [
+          "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md"
+        ],
+        "acceptable": [
+          "obsidian-mem-global-budget-number-is-injected-tokens-cumulative-not-note-size.md",
+          "dsh-session-transcript-probe.md",
+          "dsh-session-cwd-header-gate.md",
+          "memory-hooks-name-the-activity.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "lywa/*",
+          "drupal/*"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "1279181758409550",
+            "score": 0.9080865383148193
+          },
+          {
+            "chunk_id": "6480475819393771",
+            "score": 0.8870519995689392
+          },
+          {
+            "chunk_id": "5749885455587312",
+            "score": 0.880195140838623
+          },
+          {
+            "chunk_id": "5140674106684452",
+            "score": 0.8516035079956055
+          },
+          {
+            "chunk_id": "4427940284346253",
+            "score": 0.8507079482078552
+          },
+          {
+            "chunk_id": "4037477109495657",
+            "score": 0.8488350510597229
+          },
+          {
+            "chunk_id": "224927858187931",
+            "score": 0.8476203083992004
+          },
+          {
+            "chunk_id": "4073239535450344",
+            "score": 0.8474335670471191
+          },
+          {
+            "chunk_id": "409597144295453",
+            "score": 0.8303046226501465
+          },
+          {
+            "chunk_id": "4614640019527839",
+            "score": 0.829261302947998
+          },
+          {
+            "chunk_id": "1092249149278917",
+            "score": 0.8277806639671326
+          },
+          {
+            "chunk_id": "7230585187154864",
+            "score": 0.8276709318161011
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "1092249149278917",
+            "score": -19.313243865966797
+          },
+          {
+            "chunk_id": "224927858187931",
+            "score": -16.67942237854004
+          },
+          {
+            "chunk_id": "1279181758409550",
+            "score": -12.534225463867188
+          },
+          {
+            "chunk_id": "1318647144299736",
+            "score": -11.911456108093262
+          },
+          {
+            "chunk_id": "7980622065562497",
+            "score": -7.794108867645264
+          },
+          {
+            "chunk_id": "6990865798001185",
+            "score": -7.193154811859131
+          },
+          {
+            "chunk_id": "6879787817087959",
+            "score": -6.579516887664795
+          },
+          {
+            "chunk_id": "6480475819393771",
+            "score": -6.567677021026611
+          },
+          {
+            "chunk_id": "3887845218745174",
+            "score": -6.30957555770874
+          },
+          {
+            "chunk_id": "6910951704970429",
+            "score": -6.294290542602539
+          },
+          {
+            "chunk_id": "409597144295453",
+            "score": -5.88857364654541
+          },
+          {
+            "chunk_id": "5749885455587312",
+            "score": -5.767360210418701
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "1279181758409550",
+          "source_path": "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.03226645663380623,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "224927858187931",
+          "source_path": "dsh-session-cwd-header-gate.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.031054405495524406,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "6480475819393771",
+          "source_path": "obsidian-mem-subagent-zero-recall-is-budget-not-gating.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.03083491511642933,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "1092249149278917",
+          "source_path": "dsh-session-transcript-probe.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03047795034945011,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "5749885455587312",
+          "source_path": "obsidian-mem-global-budget-number-is-injected-tokens-cumulative-not-note-size.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.02976190485060215,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "409597144295453",
+          "source_path": "guestwise/guestwise-demo-feature-gaps.md",
+          "section_header": "Known product gaps (demo recipe gap review, 2026-11-09)",
+          "scope": "reference",
+          "score": 0.028577260673046112,
+          "routes": "both",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 3,
+        "forbidden": 1,
+        "neutral": 0,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0.16666666666666666,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "layout-sidecar-model-cache",
+      "origin": "in-domain:vault-layout",
+      "query": "where do the indexer sidecar files and the model cache live for a vault",
+      "labels": {
+        "relevant": [
+          "vault-layout-r2-the-phase-2-seam-map-after-commit-b630628.md",
+          "milvus-lite-verified-bootstrap-command-and-stack-traps.md"
+        ],
+        "acceptable": [
+          "hf-cli-no-cross-run-resume.md"
+        ],
+        "forbidden": [
+          "drupal-discovery-cache-clear.md",
+          "drupal/*",
+          "lywa/*",
+          "guestwise/*",
+          "samk3s-samdrive-mount-topology.md"
+        ]
+      },
+      "note": "The dense route pulled the Drupal \"discovery cache\" note onto a model-cache question at rank 1 in the labeling probe.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "7230585187154864",
+            "score": 0.8439265489578247
+          },
+          {
+            "chunk_id": "7428922283557535",
+            "score": 0.8250893950462341
+          },
+          {
+            "chunk_id": "1828944806145406",
+            "score": 0.8207722902297974
+          },
+          {
+            "chunk_id": "215184084143548",
+            "score": 0.8199353218078613
+          },
+          {
+            "chunk_id": "3202150103086097",
+            "score": 0.8132625818252563
+          },
+          {
+            "chunk_id": "8443119334053191",
+            "score": 0.8117334842681885
+          },
+          {
+            "chunk_id": "4537236187746873",
+            "score": 0.8114646673202515
+          },
+          {
+            "chunk_id": "6070717027310955",
+            "score": 0.810413122177124
+          },
+          {
+            "chunk_id": "5435997286260934",
+            "score": 0.8099994659423828
+          },
+          {
+            "chunk_id": "4867780132615798",
+            "score": 0.8098306059837341
+          },
+          {
+            "chunk_id": "7572459707840927",
+            "score": 0.8096351623535156
+          },
+          {
+            "chunk_id": "6314401237305352",
+            "score": 0.8088051676750183
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "8443119334053191",
+            "score": -9.205078125
+          },
+          {
+            "chunk_id": "6391870146318425",
+            "score": -8.718437194824219
+          },
+          {
+            "chunk_id": "4449026531629166",
+            "score": -8.363216400146484
+          },
+          {
+            "chunk_id": "7428922283557535",
+            "score": -8.306147575378418
+          },
+          {
+            "chunk_id": "2644185143870945",
+            "score": -7.839420318603516
+          },
+          {
+            "chunk_id": "7230585187154864",
+            "score": -7.757479667663574
+          },
+          {
+            "chunk_id": "1187244771990585",
+            "score": -7.377741813659668
+          },
+          {
+            "chunk_id": "4270965372745820",
+            "score": -6.973652362823486
+          },
+          {
+            "chunk_id": "7656024457519290",
+            "score": -6.265366077423096
+          },
+          {
+            "chunk_id": "1994314237182761",
+            "score": -5.90457820892334
+          },
+          {
+            "chunk_id": "3975734036538942",
+            "score": -5.801478385925293
+          },
+          {
+            "chunk_id": "3293445842062626",
+            "score": -5.770638465881348
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "7428922283557535",
+          "source_path": "drupal-discovery-cache-clear.md",
+          "section_header": "Clear Drupal discovery caches after adding files or YAML",
+          "scope": "feedback",
+          "score": 0.0317540317773819,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "7230585187154864",
+          "source_path": "vault-layout-r2-the-phase-2-seam-map-after-commit-b630628.md",
+          "section_header": "",
+          "scope": "dsh-plugin-obsidian-mem",
+          "score": 0.03154495730996132,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "8443119334053191",
+          "source_path": "drupal/drupal-index.md",
+          "section_header": "Drupal 11 platform notes",
+          "scope": "global",
+          "score": 0.03154495730996132,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "6391870146318425",
+          "source_path": "hf-cli-no-cross-run-resume.md",
+          "section_header": "hf CLI does not resume `.incomplete` blobs across invocations",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "1828944806145406",
+          "source_path": "drupal/drupal11-plugin-discovery.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "dense",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "4449026531629166",
+          "source_path": "lywa/d106-image-style-derivative-api.md",
+          "section_header": "Drupal 10.6 image style derivative API (lywa)",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "sparse",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 1,
+        "acceptable": 1,
+        "forbidden": 4,
+        "neutral": 0,
+        "relevantLabels": 2,
+        "relevantLabelHits": 1,
+        "relevantMissed": 1,
+        "precisionAtK": 0.16666666666666666,
+        "forbiddenRate": 0.6666666666666666,
+        "recallOfLabeled": 0.5
+      }
+    },
+    {
+      "id": "machinae-combat-systems",
+      "origin": "transcript:--home-derek-src-machinae-game--/295b6f41-821c-4ffe-9356-72acdba1b9ad",
+      "query": "In `/home/derek/src/machinae-game`, add Machine-versus-Machine combat to the simulation layer: a ground-mode Machine fires a laser with a reload cycle, a fighter-mode Machine fires from a finite missile supply, and target selection is a deterministic system that engages the nearest live enemy within range.",
+      "labels": {
+        "relevant": [
+          "typescript-simulation-style.md"
+        ],
+        "acceptable": [
+          "typescript-verify-before-done.md",
+          "typescript-declarative-best-practices.md",
+          "ts-installed-types-are-api-truth.md"
+        ],
+        "forbidden": [
+          "drupal/*",
+          "guestwise/*",
+          "lywa/*",
+          {
+            "source_path": "data-model-leak-clean-seam.md"
+          }
+        ]
+      },
+      "note": "machinae-game has no own note in the collection; the ECS/simulation TS style note is the only expected-relevant source. data-model-leak-clean-seam.md is Drupal service-split lore that the dense route serves onto ECS queries.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "6730991708319785",
+            "score": 0.8319147825241089
+          },
+          {
+            "chunk_id": "7175089937056419",
+            "score": 0.8255924582481384
+          },
+          {
+            "chunk_id": "2397460881742871",
+            "score": 0.8246850371360779
+          },
+          {
+            "chunk_id": "8136401502813494",
+            "score": 0.8223093748092651
+          },
+          {
+            "chunk_id": "4037477109495657",
+            "score": 0.8207578659057617
+          },
+          {
+            "chunk_id": "4294887176612183",
+            "score": 0.8198699951171875
+          },
+          {
+            "chunk_id": "1279181758409550",
+            "score": 0.8191052079200745
+          },
+          {
+            "chunk_id": "7218741721774340",
+            "score": 0.8183495998382568
+          },
+          {
+            "chunk_id": "5246557592373861",
+            "score": 0.8166706562042236
+          },
+          {
+            "chunk_id": "150082456874026",
+            "score": 0.8143671751022339
+          },
+          {
+            "chunk_id": "5459620790857034",
+            "score": 0.8136377334594727
+          },
+          {
+            "chunk_id": "1614749954663703",
+            "score": 0.8115285038948059
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "2303896063405917",
+            "score": -30.10525894165039
+          },
+          {
+            "chunk_id": "7906192582903610",
+            "score": -19.001218795776367
+          },
+          {
+            "chunk_id": "2326783591048158",
+            "score": -18.370338439941406
+          },
+          {
+            "chunk_id": "5459620790857034",
+            "score": -16.231552124023438
+          },
+          {
+            "chunk_id": "3944673263597536",
+            "score": -15.183369636535645
+          },
+          {
+            "chunk_id": "3636599968380619",
+            "score": -15.02676010131836
+          },
+          {
+            "chunk_id": "8239696052716575",
+            "score": -14.599251747131348
+          },
+          {
+            "chunk_id": "2361685725038188",
+            "score": -14.226198196411133
+          },
+          {
+            "chunk_id": "4294887176612183",
+            "score": -14.096171379089355
+          },
+          {
+            "chunk_id": "3282369359743385",
+            "score": -13.361513137817383
+          },
+          {
+            "chunk_id": "4841037497264538",
+            "score": -13.144407272338867
+          },
+          {
+            "chunk_id": "1690263670493849",
+            "score": -13.035173416137695
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "5459620790857034",
+          "source_path": "typescript-simulation-style.md",
+          "section_header": "",
+          "scope": "feedback",
+          "score": 0.029709506779909134,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "4294887176612183",
+          "source_path": "typescript-simulation-style.md",
+          "section_header": "",
+          "scope": "feedback",
+          "score": 0.02964426949620247,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "2303896063405917",
+          "source_path": "lywa/lywa-solr-pywsd-runner.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "sparse",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "6730991708319785",
+          "source_path": "ts-installed-types-are-api-truth.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "dense",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "7175089937056419",
+          "source_path": "data-model-leak-clean-seam.md",
+          "section_header": "Data-model leaks and named patterns when splitting a complex service",
+          "scope": "feedback",
+          "score": 0.016129031777381897,
+          "routes": "dense",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "7906192582903610",
+          "source_path": "drupal/svg-overlay-swallowed-clicks.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 1,
+        "forbidden": 3,
+        "neutral": 0,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0.5,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "machinae-save-restore",
+      "origin": "transcript:--home-derek-src-machinae-game--/8f8fa1e3-6674-4315-8359-1b7587105e53",
+      "query": "In `/home/derek/src/machinae-game`, add save and restore for the simulation: serialize the live world into a plain JSON-safe snapshot and rebuild an equivalent world from one.",
+      "labels": {
+        "relevant": [
+          "typescript-simulation-style.md"
+        ],
+        "acceptable": [
+          "typescript-verify-before-done.md",
+          "typescript-declarative-best-practices.md",
+          "ts-installed-types-are-api-truth.md"
+        ],
+        "forbidden": [
+          "drupal/*",
+          "guestwise/*",
+          "lywa/*",
+          "archive/*",
+          "npm-publish-404-not-maintainer.md"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "6730991708319785",
+            "score": 0.8495559692382812
+          },
+          {
+            "chunk_id": "8136401502813494",
+            "score": 0.8451460003852844
+          },
+          {
+            "chunk_id": "3493205878356301",
+            "score": 0.8447684049606323
+          },
+          {
+            "chunk_id": "4867780132615798",
+            "score": 0.8423143625259399
+          },
+          {
+            "chunk_id": "8601653540527570",
+            "score": 0.841373085975647
+          },
+          {
+            "chunk_id": "8213247207064603",
+            "score": 0.838209867477417
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": 0.8377007246017456
+          },
+          {
+            "chunk_id": "8045573333170898",
+            "score": 0.8359755873680115
+          },
+          {
+            "chunk_id": "5749885455587312",
+            "score": 0.8348326683044434
+          },
+          {
+            "chunk_id": "7656024457519290",
+            "score": 0.8346469402313232
+          },
+          {
+            "chunk_id": "7218741721774340",
+            "score": 0.8345741033554077
+          },
+          {
+            "chunk_id": "7175089937056419",
+            "score": 0.8344799876213074
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "3779624393170420",
+            "score": -15.283470153808594
+          },
+          {
+            "chunk_id": "1092249149278917",
+            "score": -14.877994537353516
+          },
+          {
+            "chunk_id": "7454707842099396",
+            "score": -14.677301406860352
+          },
+          {
+            "chunk_id": "150082456874026",
+            "score": -13.460026741027832
+          },
+          {
+            "chunk_id": "2361685725038188",
+            "score": -13.23629093170166
+          },
+          {
+            "chunk_id": "1239313994402032",
+            "score": -12.691497802734375
+          },
+          {
+            "chunk_id": "3594175293610705",
+            "score": -12.414953231811523
+          },
+          {
+            "chunk_id": "109618782018155",
+            "score": -12.30478572845459
+          },
+          {
+            "chunk_id": "2842964993725256",
+            "score": -11.668543815612793
+          },
+          {
+            "chunk_id": "4294887176612183",
+            "score": -11.44031810760498
+          },
+          {
+            "chunk_id": "2326783591048158",
+            "score": -11.262789726257324
+          },
+          {
+            "chunk_id": "1187244771990585",
+            "score": -11.0958251953125
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "3779624393170420",
+          "source_path": "npm-publish-404-not-maintainer.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "sparse",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "6730991708319785",
+          "source_path": "ts-installed-types-are-api-truth.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "dense",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "1092249149278917",
+          "source_path": "dsh-session-transcript-probe.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "."
+        },
+        {
+          "chunk_id": "8136401502813494",
+          "source_path": "archive/guestwise-seatmap-scale-plan.md",
+          "section_header": "",
+          "scope": "project",
+          "score": 0.016129031777381897,
+          "routes": "dense",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "3493205878356301",
+          "source_path": "drupal/kernel-test-minted-field-schema.md",
+          "section_header": "Kernel test: pre-create a dynamically minted field (guestwi.se)",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "dense",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "7454707842099396",
+          "source_path": "lywa/lywa-commerce-phpunit-infra.md",
+          "section_header": "Lywa commerce PHPUnit test infrastructure",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "sparse",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 0,
+        "acceptable": 1,
+        "forbidden": 4,
+        "neutral": 1,
+        "relevantLabels": 1,
+        "relevantLabelHits": 0,
+        "relevantMissed": 1,
+        "precisionAtK": 0,
+        "forbiddenRate": 0.6666666666666666,
+        "recallOfLabeled": 0
+      }
+    },
+    {
+      "id": "machinae-threejs-renderer",
+      "origin": "transcript:--home-derek-src-machinae-game--/ec373666-a187-4f42-8cda-627d222aa746",
+      "query": "In `/home/derek/src/machinae-game`, replace the renderer stub with a real three.js-backed renderer that draws each Machine (ground and air forms must be visually distinguishable), each Deposit, and each Building from component state. The renderer must be strictly read-only with respect to simulation state.",
+      "labels": {
+        "relevant": [
+          "typescript-simulation-style.md"
+        ],
+        "acceptable": [
+          "vitest-lazy-cjs-require-carrier.md",
+          "typescript-verify-before-done.md",
+          "typescript-declarative-best-practices.md",
+          "ts-installed-types-are-api-truth.md"
+        ],
+        "forbidden": [
+          "drupal/*",
+          "guestwise/*",
+          "lywa/*"
+        ]
+      },
+      "note": "The labeling probe surfaced drupal/bigpipe (a browser-JS note) three times on this query; drupal/* is forbidden as a family.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "6730991708319785",
+            "score": 0.8475803732872009
+          },
+          {
+            "chunk_id": "7906192582903610",
+            "score": 0.8416094779968262
+          },
+          {
+            "chunk_id": "2397460881742871",
+            "score": 0.8374874591827393
+          },
+          {
+            "chunk_id": "7175089937056419",
+            "score": 0.836475133895874
+          },
+          {
+            "chunk_id": "4294887176612183",
+            "score": 0.8346620798110962
+          },
+          {
+            "chunk_id": "3414200572753261",
+            "score": 0.8333479762077332
+          },
+          {
+            "chunk_id": "5435997286260934",
+            "score": 0.8326776623725891
+          },
+          {
+            "chunk_id": "5246557592373861",
+            "score": 0.8323030471801758
+          },
+          {
+            "chunk_id": "1926443610517379",
+            "score": 0.8316726088523865
+          },
+          {
+            "chunk_id": "952344019302766",
+            "score": 0.831129789352417
+          },
+          {
+            "chunk_id": "9157755856575",
+            "score": 0.8307956457138062
+          },
+          {
+            "chunk_id": "5928989680171874",
+            "score": 0.8304831385612488
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "4294887176612183",
+            "score": -37.2646484375
+          },
+          {
+            "chunk_id": "995359338686176",
+            "score": -22.430387496948242
+          },
+          {
+            "chunk_id": "5759062030276156",
+            "score": -22.379884719848633
+          },
+          {
+            "chunk_id": "7218741721774340",
+            "score": -20.80755043029785
+          },
+          {
+            "chunk_id": "8405298066886297",
+            "score": -20.07724952697754
+          },
+          {
+            "chunk_id": "2748782347873922",
+            "score": -20.064355850219727
+          },
+          {
+            "chunk_id": "2397460881742871",
+            "score": -18.627702713012695
+          },
+          {
+            "chunk_id": "5178495568027769",
+            "score": -17.947294235229492
+          },
+          {
+            "chunk_id": "2999110699778673",
+            "score": -17.908802032470703
+          },
+          {
+            "chunk_id": "1187244771990585",
+            "score": -17.69261932373047
+          },
+          {
+            "chunk_id": "4450935061273358",
+            "score": -17.512235641479492
+          },
+          {
+            "chunk_id": "3767523581078523",
+            "score": -16.766830444335938
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "4294887176612183",
+          "source_path": "typescript-simulation-style.md",
+          "section_header": "",
+          "scope": "feedback",
+          "score": 0.03177805617451668,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "2397460881742871",
+          "source_path": "typescript-declarative-best-practices.md",
+          "section_header": "",
+          "scope": "feedback",
+          "score": 0.03079838864505291,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "6730991708319785",
+          "source_path": "ts-installed-types-are-api-truth.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "dense",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "995359338686176",
+          "source_path": "drupal/bigpipe-streams-checkout-before-drupalsettings.md",
+          "section_header": "drupalSettings in Drupal 11 JS: location, bindings, hydration > _wrapper_format ordering in a POST",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "7906192582903610",
+          "source_path": "drupal/svg-overlay-swallowed-clicks.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "dense",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "5759062030276156",
+          "source_path": "drupal/drupal11-markup-xss-admin-tags.md",
+          "section_header": "Plain-string #markup loses form controls to the XSS filter",
+          "scope": "reference",
+          "score": 0.01587301678955555,
+          "routes": "sparse",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 1,
+        "acceptable": 2,
+        "forbidden": 3,
+        "neutral": 0,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.16666666666666666,
+        "forbiddenRate": 0.5,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "lywa-synonym-service-di",
+      "origin": "transcript:--home-derek-src-lywa--/session-d74fa7bc-c43c-4193-9606-9c2c11b4539e",
+      "query": "Update public_html/modules/custom/lywa_solr/src/Synonym/SynonymSchemaInstaller.php to use dependency injection for the `entityTypeManager`. Ensure that it takes the service in the constructor and saves it as a protected variable.",
+      "labels": {
+        "relevant": [
+          "lywa/procedural-hook-service-statics.md",
+          "drupal/drupal11-entity-form-di.md",
+          "drupal/drupal11-hook-class-di.md"
+        ],
+        "acceptable": [
+          "lywa/lywa-index.md",
+          "drupal/drupal11-plugin-discovery.md"
+        ],
+        "forbidden": [
+          "guestwise/*"
+        ]
+      },
+      "note": "drupal/ is the cross-repo Drupal-platform family; DI-knowledge notes there are deliberate relevant labels, the rest of drupal/* stays neutral.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "5952892660402936",
+            "score": 0.8822864890098572
+          },
+          {
+            "chunk_id": "6130056393724780",
+            "score": 0.8669527769088745
+          },
+          {
+            "chunk_id": "2361685725038188",
+            "score": 0.8655564785003662
+          },
+          {
+            "chunk_id": "1994314237182761",
+            "score": 0.863940954208374
+          },
+          {
+            "chunk_id": "2303896063405917",
+            "score": 0.8627398610115051
+          },
+          {
+            "chunk_id": "8909738814017317",
+            "score": 0.8623097538948059
+          },
+          {
+            "chunk_id": "4537236187746873",
+            "score": 0.8622968196868896
+          },
+          {
+            "chunk_id": "8405298066886297",
+            "score": 0.8618069887161255
+          },
+          {
+            "chunk_id": "1239313994402032",
+            "score": 0.8603298664093018
+          },
+          {
+            "chunk_id": "8945071900989032",
+            "score": 0.8599945306777954
+          },
+          {
+            "chunk_id": "1808691091561352",
+            "score": 0.8596683740615845
+          },
+          {
+            "chunk_id": "6698545717975203",
+            "score": 0.8595234155654907
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "5952892660402936",
+            "score": -22.25567626953125
+          },
+          {
+            "chunk_id": "3887845218745174",
+            "score": -19.80341339111328
+          },
+          {
+            "chunk_id": "2303896063405917",
+            "score": -17.779573440551758
+          },
+          {
+            "chunk_id": "7454707842099396",
+            "score": -16.401775360107422
+          },
+          {
+            "chunk_id": "6130056393724780",
+            "score": -15.971630096435547
+          },
+          {
+            "chunk_id": "4951761371564259",
+            "score": -15.456472396850586
+          },
+          {
+            "chunk_id": "6812182211662749",
+            "score": -15.415605545043945
+          },
+          {
+            "chunk_id": "1187244771990585",
+            "score": -14.007392883300781
+          },
+          {
+            "chunk_id": "8814525547792650",
+            "score": -13.378448486328125
+          },
+          {
+            "chunk_id": "2361685725038188",
+            "score": -13.217860221862793
+          },
+          {
+            "chunk_id": "3157996188628821",
+            "score": -12.951290130615234
+          },
+          {
+            "chunk_id": "7517195212473361",
+            "score": -12.24427604675293
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "5952892660402936",
+          "source_path": "drupal/drupal11-entity-form-di.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032786883413791656,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "6130056393724780",
+          "source_path": "drupal/drupal11-entity-form-di.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03151364624500275,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "2303896063405917",
+          "source_path": "lywa/lywa-solr-pywsd-runner.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03125763311982155,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "2361685725038188",
+          "source_path": "lywa/lywa-frontend-test-and-lint-invocation.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03015873022377491,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "3887845218745174",
+          "source_path": "lywa/lywa-php-lint-tooling.md",
+          "section_header": "lywa PHP lint tooling quirks",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "."
+        },
+        {
+          "chunk_id": "1994314237182761",
+          "source_path": "drupal/kernel-test-full-site-recipe-setup.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.015625,
+          "routes": "dense",
+          "classification": "."
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 0,
+        "forbidden": 0,
+        "neutral": 4,
+        "relevantLabels": 3,
+        "relevantLabelHits": 1,
+        "relevantMissed": 2,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0,
+        "recallOfLabeled": 0.3333333333333333
+      }
+    },
+    {
+      "id": "lywa-glossary-synonyms",
+      "origin": "transcript:--home-derek-src-lywa--/session-1045efc1-267b-42dc-a83b-31d3c8e69985",
+      "query": "The `glossary_term` content type has a field `field_term_translation` that includes additional synonyms for the `title` field.",
+      "labels": {
+        "relevant": [],
+        "acceptable": [
+          "lywa/lywa-solr-pywsd-runner.md",
+          "lywa/lywa-index.md"
+        ],
+        "forbidden": [
+          "guestwise/*"
+        ]
+      },
+      "note": "No glossary/solr-synonym note exists in the collection (verified read-only), so recall-of-labeled is not defined for this query; it exists to measure forbidden cross-project pollution (guestwise/event-entity-label-field-name.md was observed at rank 1).",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "3250609785148628",
+            "score": 0.831202507019043
+          },
+          {
+            "chunk_id": "8683297084306668",
+            "score": 0.8200900554656982
+          },
+          {
+            "chunk_id": "6698545717975203",
+            "score": 0.8199672102928162
+          },
+          {
+            "chunk_id": "4988119791574995",
+            "score": 0.81568443775177
+          },
+          {
+            "chunk_id": "3493205878356301",
+            "score": 0.8139022588729858
+          },
+          {
+            "chunk_id": "6162753613696371",
+            "score": 0.8138942718505859
+          },
+          {
+            "chunk_id": "6730991708319785",
+            "score": 0.8135283589363098
+          },
+          {
+            "chunk_id": "2265437932196851",
+            "score": 0.8125572204589844
+          },
+          {
+            "chunk_id": "2303896063405917",
+            "score": 0.8122254610061646
+          },
+          {
+            "chunk_id": "8814525547792650",
+            "score": 0.8119375705718994
+          },
+          {
+            "chunk_id": "1808691091561352",
+            "score": 0.8098627328872681
+          },
+          {
+            "chunk_id": "109618782018155",
+            "score": 0.8097406029701233
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "3250609785148628",
+            "score": -19.851123809814453
+          },
+          {
+            "chunk_id": "3346239698633333",
+            "score": -9.757218360900879
+          },
+          {
+            "chunk_id": "6698545717975203",
+            "score": -9.348647117614746
+          },
+          {
+            "chunk_id": "1994314237182761",
+            "score": -9.259620666503906
+          },
+          {
+            "chunk_id": "1431900950410780",
+            "score": -9.168904304504395
+          },
+          {
+            "chunk_id": "109618782018155",
+            "score": -8.992687225341797
+          },
+          {
+            "chunk_id": "8683297084306668",
+            "score": -8.795733451843262
+          },
+          {
+            "chunk_id": "3944673263597536",
+            "score": -8.370278358459473
+          },
+          {
+            "chunk_id": "2265437932196851",
+            "score": -8.052078247070312
+          },
+          {
+            "chunk_id": "3366513796807237",
+            "score": -8.051779747009277
+          },
+          {
+            "chunk_id": "4450935061273358",
+            "score": -8.050518035888672
+          },
+          {
+            "chunk_id": "8239696052716575",
+            "score": -7.744656562805176
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "3250609785148628",
+          "source_path": "guestwise/event-entity-label-field-name.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032786883413791656,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "6698545717975203",
+          "source_path": "drupal/drupal11-drush-partial-config-import.md",
+          "section_header": "Partial config import into a running site (Drupal 11)",
+          "scope": "reference",
+          "score": 0.0317460335791111,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "8683297084306668",
+          "source_path": "drupal/drupal11-drush-partial-config-import.md",
+          "section_header": "Partial config import into a running site (Drupal 11)",
+          "scope": "reference",
+          "score": 0.031054405495524406,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "2265437932196851",
+          "source_path": "guestwise/group-relationship-query-limitation.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.02919863536953926,
+          "routes": "both",
+          "classification": "F"
+        },
+        {
+          "chunk_id": "109618782018155",
+          "source_path": "drupal/drupal11-drush-options-module-field-storage-import.md",
+          "section_header": "options module field storage import gotcha",
+          "scope": "reference",
+          "score": 0.02904040366411209,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "3346239698633333",
+          "source_path": "drupal/kernel-test-minted-field-schema.md",
+          "section_header": "Kernel test: pre-create a dynamically minted field (guestwi.se)",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "sparse",
+          "classification": "."
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 0,
+        "acceptable": 0,
+        "forbidden": 2,
+        "neutral": 4,
+        "relevantLabels": 0,
+        "relevantLabelHits": 0,
+        "relevantMissed": 0,
+        "precisionAtK": 0,
+        "forbiddenRate": 0.3333333333333333,
+        "recallOfLabeled": null
+      }
+    },
+    {
+      "id": "lywa-lightbox-pause",
+      "origin": "transcript:--home-derek-src-lywa--/session-89f9f84b-c1f0-4790-a28f-1459c31d518c",
+      "query": "Update public_html/themes/barrio_lywa/js/node.gallery.full.js to add a pause button to the lightbox3 image caption box.",
+      "labels": {
+        "relevant": [
+          "lywa/lightbox3-gallery-integration-facts.md"
+        ],
+        "acceptable": [
+          "lywa/lywa-frontend-test-and-lint-invocation.md",
+          "lywa/lywa-index.md",
+          "drupal/svg-overlay-swallowed-clicks.md"
+        ],
+        "forbidden": [
+          "guestwise/*",
+          "api-docs-html-to-markdown.md"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "6639186446291121",
+            "score": 0.8937079906463623
+          },
+          {
+            "chunk_id": "3975734036538942",
+            "score": 0.866278886795044
+          },
+          {
+            "chunk_id": "9157755856575",
+            "score": 0.8632786273956299
+          },
+          {
+            "chunk_id": "2361685725038188",
+            "score": 0.8503343462944031
+          },
+          {
+            "chunk_id": "8945071900989032",
+            "score": 0.8429281711578369
+          },
+          {
+            "chunk_id": "6162753613696371",
+            "score": 0.8427436351776123
+          },
+          {
+            "chunk_id": "1926443610517379",
+            "score": 0.8425545692443848
+          },
+          {
+            "chunk_id": "4867780132615798",
+            "score": 0.8368929624557495
+          },
+          {
+            "chunk_id": "3941110963291366",
+            "score": 0.8368850946426392
+          },
+          {
+            "chunk_id": "8045573333170898",
+            "score": 0.8360180854797363
+          },
+          {
+            "chunk_id": "4841037497264538",
+            "score": 0.834663987159729
+          },
+          {
+            "chunk_id": "2748782347873922",
+            "score": 0.8343099355697632
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "6639186446291121",
+            "score": -47.83470916748047
+          },
+          {
+            "chunk_id": "3975734036538942",
+            "score": -29.954193115234375
+          },
+          {
+            "chunk_id": "9157755856575",
+            "score": -26.969619750976562
+          },
+          {
+            "chunk_id": "2361685725038188",
+            "score": -26.434707641601562
+          },
+          {
+            "chunk_id": "5587100504393973",
+            "score": -12.009635925292969
+          },
+          {
+            "chunk_id": "3941110963291366",
+            "score": -11.225004196166992
+          },
+          {
+            "chunk_id": "1084182413535821",
+            "score": -10.61137866973877
+          },
+          {
+            "chunk_id": "1239313994402032",
+            "score": -10.190422058105469
+          },
+          {
+            "chunk_id": "6174341203851966",
+            "score": -10.091471672058105
+          },
+          {
+            "chunk_id": "6233573129475921",
+            "score": -9.37596321105957
+          },
+          {
+            "chunk_id": "2009797004116978",
+            "score": -8.955208778381348
+          },
+          {
+            "chunk_id": "2997022764374845",
+            "score": -8.8700590133667
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "6639186446291121",
+          "source_path": "lywa/lightbox3-gallery-integration-facts.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032786883413791656,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "3975734036538942",
+          "source_path": "lywa/lywa-frontend-test-and-lint-invocation.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032258063554763794,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "9157755856575",
+          "source_path": "lywa/lightbox3-gallery-integration-facts.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.0317460335791111,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "2361685725038188",
+          "source_path": "lywa/lywa-frontend-test-and-lint-invocation.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03125,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "3941110963291366",
+          "source_path": "lywa/lywa-authnet-checkout-nightwatch.md",
+          "section_header": "lywa Authorize.net checkout Nightwatch test > Test infrastructure",
+          "scope": "reference",
+          "score": 0.02964426949620247,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "5587100504393973",
+          "source_path": "guestwise/drush-config-export-diff-hazard.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.015384615398943424,
+          "routes": "sparse",
+          "classification": "F"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 2,
+        "forbidden": 1,
+        "neutral": 1,
+        "relevantLabels": 1,
+        "relevantLabelHits": 1,
+        "relevantMissed": 0,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0.16666666666666666,
+        "recallOfLabeled": 1
+      }
+    },
+    {
+      "id": "guestwise-ci-playwright",
+      "origin": "transcript:--home-derek-src-guestwi.se--/session-2d511499-813e-4770-a611-9c99054e6a35",
+      "query": "The CI / CD process failed on the \"Run the Playwright tests\" step in .github/workflows/ci-cd.yml with error \"The ticket type edit form should be reachable for the site admin\" Expected: 200 Received: 403.",
+      "labels": {
+        "relevant": [
+          "guestwise/theme-playwright-harness.md",
+          "guestwise/ci-css-aggregation-404.md",
+          "guestwise/ddev-playwright-pnpm.md"
+        ],
+        "acceptable": [
+          "guestwise/guestwise-plan-tasks.md",
+          "guestwise/drupal-installs-uid-1-has-no-global-roles-group-locked-entities-403-for-it.md"
+        ],
+        "forbidden": [
+          "lywa/*",
+          "npm-publish-404-not-maintainer.md",
+          "npm-cli-lockout-devengines-onfail-download-ebaddevengines.md",
+          "obsidian-mem-dream-run-agentoptions-fix-launchroute-failed-turn-session-log-scan.md"
+        ]
+      },
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "2340498541737642",
+            "score": 0.9030433893203735
+          },
+          {
+            "chunk_id": "4270965372745820",
+            "score": 0.8848406076431274
+          },
+          {
+            "chunk_id": "8879282696010406",
+            "score": 0.8815310001373291
+          },
+          {
+            "chunk_id": "4517107763226473",
+            "score": 0.8813191056251526
+          },
+          {
+            "chunk_id": "7980622065562497",
+            "score": 0.8807054758071899
+          },
+          {
+            "chunk_id": "6233573129475921",
+            "score": 0.8806542158126831
+          },
+          {
+            "chunk_id": "4867780132615798",
+            "score": 0.8787980675697327
+          },
+          {
+            "chunk_id": "5040097393291351",
+            "score": 0.8759580850601196
+          },
+          {
+            "chunk_id": "3941110963291366",
+            "score": 0.8754111528396606
+          },
+          {
+            "chunk_id": "7741858191160451",
+            "score": 0.87249356508255
+          },
+          {
+            "chunk_id": "7182797309990648",
+            "score": 0.8697137832641602
+          },
+          {
+            "chunk_id": "4037477109495657",
+            "score": 0.8695284724235535
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "8879282696010406",
+            "score": -33.40684127807617
+          },
+          {
+            "chunk_id": "2340498541737642",
+            "score": -25.956951141357422
+          },
+          {
+            "chunk_id": "6233573129475921",
+            "score": -23.78630828857422
+          },
+          {
+            "chunk_id": "4270965372745820",
+            "score": -22.606830596923828
+          },
+          {
+            "chunk_id": "2266276163593717",
+            "score": -22.463613510131836
+          },
+          {
+            "chunk_id": "3779624393170420",
+            "score": -22.257293701171875
+          },
+          {
+            "chunk_id": "7639601981404456",
+            "score": -18.660614013671875
+          },
+          {
+            "chunk_id": "2009797004116978",
+            "score": -17.733489990234375
+          },
+          {
+            "chunk_id": "4103927389304125",
+            "score": -17.454471588134766
+          },
+          {
+            "chunk_id": "130501798662587",
+            "score": -17.272315979003906
+          },
+          {
+            "chunk_id": "6070717027310955",
+            "score": -16.392032623291016
+          },
+          {
+            "chunk_id": "1406039798314116",
+            "score": -15.732908248901367
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "2340498541737642",
+          "source_path": "guestwise/drupal-installs-uid-1-has-no-global-roles-group-locked-entities-403-for-it.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.032522473484277725,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "8879282696010406",
+          "source_path": "guestwise/ci-css-aggregation-404.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.03226645663380623,
+          "routes": "both",
+          "classification": "R"
+        },
+        {
+          "chunk_id": "4270965372745820",
+          "source_path": "guestwise/drupal-installs-uid-1-has-no-global-roles-group-locked-entities-403-for-it.md",
+          "section_header": "",
+          "scope": "reference",
+          "score": 0.0317540317773819,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "6233573129475921",
+          "source_path": "guestwise/logged-in-ticket-view-403.md",
+          "section_header": "Signed-in users cannot view ticket products",
+          "scope": "reference",
+          "score": 0.03102453052997589,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "4517107763226473",
+          "source_path": "guestwise/guestwise-plan-tasks.md",
+          "section_header": "",
+          "scope": "project",
+          "score": 0.015625,
+          "routes": "dense",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "2266276163593717",
+          "source_path": "guestwise/ddev-playwright-pnpm.md",
+          "section_header": "DDEV + Playwright + pnpm (guestwi.se)",
+          "scope": "reference",
+          "score": 0.015384615398943424,
+          "routes": "sparse",
+          "classification": "R"
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 2,
+        "acceptable": 3,
+        "forbidden": 0,
+        "neutral": 1,
+        "relevantLabels": 3,
+        "relevantLabelHits": 2,
+        "relevantMissed": 1,
+        "precisionAtK": 0.3333333333333333,
+        "forbiddenRate": 0,
+        "recallOfLabeled": 0.6666666666666666
+      }
+    },
+    {
+      "id": "guestwise-ticket-type-form",
+      "origin": "transcript:--home-derek-src-guestwi.se--/session-99d3cc37-502c-4a70-9894-469332287b98",
+      "query": "Update the Price and You Receive ticket type form fields in web/modules/custom/guestwise_orgs/src/Form/TicketTypeForm.php.",
+      "labels": {
+        "relevant": [
+          "guestwise/group-relationship-query-limitation.md",
+          "guestwise/group-config-entity-access-install.md"
+        ],
+        "acceptable": [
+          "guestwise/guestwise-demo-feature-gaps.md",
+          "guestwise/ticket-cart-availability-kernel-trap.md",
+          "guestwise/order-item-type-purchasable-target.md",
+          "guestwise/logged-in-ticket-view-403.md",
+          "guestwise/commerce-cart-db-probe-traps.md",
+          "guestwise/php-round-ceiling-absent.md",
+          "drupal/drupal11-media-library-widget-uncached-form.md",
+          "drupal/drupal-number-element-step-default.md"
+        ],
+        "forbidden": [
+          "lywa/*"
+        ]
+      },
+      "note": "No note documents TicketTypeForm itself; the ticket-type/config-entity knowledge lives in the two relevant labels.",
+      "routeCandidates": {
+        "dense": [
+          {
+            "chunk_id": "145404178359153",
+            "score": 0.8548902273178101
+          },
+          {
+            "chunk_id": "1614749954663703",
+            "score": 0.8490976095199585
+          },
+          {
+            "chunk_id": "8045573333170898",
+            "score": 0.8479727506637573
+          },
+          {
+            "chunk_id": "409597144295453",
+            "score": 0.8479350209236145
+          },
+          {
+            "chunk_id": "3124856757516627",
+            "score": 0.847466230392456
+          },
+          {
+            "chunk_id": "6910951704970429",
+            "score": 0.8473833799362183
+          },
+          {
+            "chunk_id": "6162753613696371",
+            "score": 0.8469904065132141
+          },
+          {
+            "chunk_id": "3286838720561545",
+            "score": 0.8466483354568481
+          },
+          {
+            "chunk_id": "8839012282416300",
+            "score": 0.8458040952682495
+          },
+          {
+            "chunk_id": "2383172060304369",
+            "score": 0.8448405265808105
+          },
+          {
+            "chunk_id": "389091578192815",
+            "score": 0.8444585800170898
+          },
+          {
+            "chunk_id": "3127166073071986",
+            "score": 0.8441922068595886
+          }
+        ],
+        "sparse": [
+          {
+            "chunk_id": "8045573333170898",
+            "score": -16.631622314453125
+          },
+          {
+            "chunk_id": "8839012282416300",
+            "score": -16.249156951904297
+          },
+          {
+            "chunk_id": "7980622065562497",
+            "score": -13.009748458862305
+          },
+          {
+            "chunk_id": "2383172060304369",
+            "score": -13.000904083251953
+          },
+          {
+            "chunk_id": "2748782347873922",
+            "score": -12.40290641784668
+          },
+          {
+            "chunk_id": "2265437932196851",
+            "score": -12.072806358337402
+          },
+          {
+            "chunk_id": "7175089937056419",
+            "score": -11.964921951293945
+          },
+          {
+            "chunk_id": "5759062030276156",
+            "score": -11.957982063293457
+          },
+          {
+            "chunk_id": "409597144295453",
+            "score": -11.930273056030273
+          },
+          {
+            "chunk_id": "5928989680171874",
+            "score": -11.58484935760498
+          },
+          {
+            "chunk_id": "3702991616309010",
+            "score": -11.489151000976562
+          },
+          {
+            "chunk_id": "4270965372745820",
+            "score": -11.432680130004883
+          }
+        ]
+      },
+      "returned": [
+        {
+          "chunk_id": "8045573333170898",
+          "source_path": "guestwise/seatmap-media-widget-config-drift.md",
+          "section_header": "Seatmap media widget: config drift breaks the E2E upload",
+          "scope": "reference",
+          "score": 0.03226645663380623,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "8839012282416300",
+          "source_path": "guestwise/php-round-ceiling-absent.md",
+          "section_header": "Site PHP 8.5.12 has no PHP_ROUND_CEILING",
+          "scope": "reference",
+          "score": 0.030621785670518875,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "409597144295453",
+          "source_path": "guestwise/guestwise-demo-feature-gaps.md",
+          "section_header": "Known product gaps (demo recipe gap review, 2026-11-09)",
+          "scope": "reference",
+          "score": 0.030117753893136978,
+          "routes": "both",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "2383172060304369",
+          "source_path": "guestwise/phpmd-per-file-class-complexity.md",
+          "section_header": "phpmd per-file gate vs directory scan (guestwi.se)",
+          "scope": "reference",
+          "score": 0.02991071343421936,
+          "routes": "both",
+          "classification": "."
+        },
+        {
+          "chunk_id": "145404178359153",
+          "source_path": "guestwise/order-item-type-purchasable-target.md",
+          "section_header": "purchased_entity resolves against the order item type",
+          "scope": "reference",
+          "score": 0.016393441706895828,
+          "routes": "dense",
+          "classification": "A"
+        },
+        {
+          "chunk_id": "1614749954663703",
+          "source_path": "guestwise/featureflags-prod-only-config.md",
+          "section_header": "Feature flags exist only in config/prod",
+          "scope": "reference",
+          "score": 0.016129031777381897,
+          "routes": "dense",
+          "classification": "."
+        }
+      ],
+      "metrics": {
+        "returned": 6,
+        "relevant": 0,
+        "acceptable": 3,
+        "forbidden": 0,
+        "neutral": 3,
+        "relevantLabels": 2,
+        "relevantLabelHits": 0,
+        "relevantMissed": 2,
+        "precisionAtK": 0,
+        "forbiddenRate": 0,
+        "recallOfLabeled": 0
+      }
+    }
+  ]
+}

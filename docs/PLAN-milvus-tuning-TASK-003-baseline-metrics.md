@@ -15,3 +15,4 @@ Scope:
 
 Definition of Done: baseline JSON committed; the summary table pasted into
 `PLAN-milvus-tuning.md` under a `## Baseline metrics` heading. No src change.
+- [x] Complete (2026-11-13). Baseline JSON at docs/research/eval-baseline-legacy.json; table in PLAN-milvus-tuning.md "Baseline metrics".

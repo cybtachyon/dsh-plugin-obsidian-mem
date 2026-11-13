@@ -17,3 +17,4 @@ Scope:
 Definition of Done: comparison table committed; a clear verdict line:
 keep 0.78/2.5, or adjust to X/Y with the measured reason. No src change in
 this task (any value change belongs to TASK-007 after the live test).
+- [x] Complete (2026-11-13). Radii 0.78/2.5 have no offline impact (plateau; keep as zero-cost guards); post-RRF floor >= 1/(k+1) is the substantial win; full table in PLAN-milvus-tuning.md "Offline comparison".

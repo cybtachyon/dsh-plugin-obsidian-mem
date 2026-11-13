@@ -34,12 +34,12 @@ All resolved; see Answers below.
 
 - [x] [TASK-001-radius-semantics-probe](docs/PLAN-milvus-tuning-TASK-001-radius-semantics-probe.md)
 - [x] [TASK-002-eval-harness](docs/PLAN-milvus-tuning-TASK-002-eval-harness.md)
-- [ ] [TASK-003-baseline-metrics](docs/PLAN-milvus-tuning-TASK-003-baseline-metrics.md)
+- [x] [TASK-003-baseline-metrics](docs/PLAN-milvus-tuning-TASK-003-baseline-metrics.md)
 
 ### Phase B: Required tuning
 
 - [x] [TASK-004-implement-radii](docs/PLAN-milvus-tuning-TASK-004-implement-radii.md)
-- [ ] [TASK-005-offline-metric-compare](docs/PLAN-milvus-tuning-TASK-005-offline-metric-compare.md)
+- [x] [TASK-005-offline-metric-compare](docs/PLAN-milvus-tuning-TASK-005-offline-metric-compare.md)
 - [ ] [TASK-006-live-restart-recall-test](docs/PLAN-milvus-tuning-TASK-006-live-restart-recall-test.md)
 - [ ] [TASK-007-iterate-tuning](docs/PLAN-milvus-tuning-TASK-007-iterate-tuning.md)
 - [ ] [Refactor-review-phase-b](docs/PLAN-milvus-tuning-TASK-008-refactor-review-phase-b.md)
@@ -80,6 +80,59 @@ All resolved; see Answers below.
   metrics show make a substantial positive impact.
 - A5: No preference; any reasonable small change or investigation on
   machinae-game works.
+
+## Baseline metrics (TASK-003, legacy-hybrid, 2026-11-13)
+
+Artifact: `docs/research/eval-baseline-legacy.json` (17 labeled queries,
+topK=6, oversample=2, RRF k=60, no radii).
+Aggregates: `precision@k=0.216 forbidden-rate=0.294
+recall-of-labeled=15/22=0.682` (returned=102, relevant=22,
+acceptable=29, forbidden=30, neutral=21).
+Worst noise offenders: cross-project notes riding BOTH routes on
+machinae-game/three.js queries (drupal/bigpipe x3), guestwise/lywa
+notes at rank 1 on each other's queries. machinae-game has no own
+note in the collection (its only relevant label is the TS-simulation
+note).
+
+## Offline comparison: radii 0.78 / 2.5 (TASK-005)
+
+Real run split-rrf @ dense 0.78 / sparse 2.5
+(`docs/research/eval-split-d078-s25-k60.json`):
+`P@k=0.216 forbRate=0.304 recall=0.682` - no measurable impact versus
+the baseline. Simulation sweep (same route candidates; split-rrf mode
+is simulable from the baseline artifact) across dense radius 0-0.86 x
+sparse floor 0-6 confirms the plateau; dense 0.82+ cuts relevant
+(recall 0.636). Verdict: KEEP the required radii at 0.78/2.5 - zero
+recall cost, trims junk pages - but they are NOT the cure.
+
+Why they cannot cure it (separability study, from the baseline
+artifact): per-route scores do not separate labeled classes. Dense
+median scores relevant 0.863 / forbidden 0.836 / neutral 0.838 with
+near-identical minima (~0.807); sparse relevance medians 16.2 / 11.0 /
+11.4 with overlapping ranges. Cross-project notes genuinely score
+high on both routes; only the dual-route agreement differs (relevant
+53% both-routes vs forbidden 8%).
+
+What DOES move offline (radii off unless noted; floor = post-RRF
+minScore):
+
+| point | P@k | forbRate | recall | returned |
+| --- | --- | --- | --- | --- |
+| baseline | 0.216 | 0.294 | 0.682 | 102 |
+| floor >= 1/(k+1), k=60 | 0.303 | 0.197 | 0.636 | 66 |
+| radii 0.78/2.5 + floor >= 1/(k+1) | 0.297 | 0.203 | 0.636 | 64 |
+| floor >= 1/(k+2) | 0.250 | 0.237 | 0.636 | 80 |
+| floor > 2/(k+1) (both-routes-only) | 0.714 | 0.143 | 0.227 | 7 |
+
+Floor >= 1/(k+1) keeps every both-route hit and single-route rank-1
+hits (inclusive boundary). rrfK 10/20/30/60 are indistinguishable on
+this corpus (tiny candidate lists): keep k=60. Verdict per answer A4:
+adopt the post-RRF floor (substantial: +40% precision, -33%
+forbidden, -35% page volume; recall cost 1 labeled source - must be
+watched in the live loop); skip the rrfK change; WeightedRanker is
+not worth pursuing given the score-separability collapse (no weights
+fix unseparable route scores); cross-encoder reranker (TASK-012)
+remains the hypothesis for the residual ~0.20 forbidden rate.
 
 ## Live test-loop log
 

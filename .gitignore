@@ -13,8 +13,7 @@ dsh/.build/
 coverage/
 
 # Editor / OS noise
-.idea/workspace.xml
-.idea/tasks.xml
+.idea/
 .DS_Store
 
 # Logs

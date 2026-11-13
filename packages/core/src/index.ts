@@ -5,24 +5,11 @@
  * manifest reading, chunk-id hashing, and the deterministic wake-keyword
  * extraction shared by the service, tools, and lifecycle hooks.
  *
- * In the scaffold this plugin is a placeholder that carries no domain code.
- * Phase 2 (TASK-010..016) replaces the body with the real model and drops this
- * plugin stub if the package stays mount-free.
+ * The package is a plain library, never a mounted plugin row: cordis.patch.yml
+ * mounts only the service, ui, tools, and events halves, and consumers reach
+ * this package through the bundle's `./core` export. It therefore carries no
+ * cordis lifecycle and no @deepseek-ai imports.
  * @module dsh-plugin-obsidian-mem/core
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-
-export const name = 'obsidian-mem-core'
-export const inject: string[] = []
-
-/**
- * Mount the core domain contributions. The scaffold registers nothing; the
- * domain model lands in Phase 2 as plain exports, not lifecycle code.
- */
-export function apply(ctx: Context): void {
-  void ctx
-}
-
-const plugin = { name, inject, apply }
-export default plugin
+export * from './constants.js'

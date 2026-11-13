@@ -1,5 +1,7 @@
 # TASK-010 Domain constants and intent markers
 
+Status: done
+
 Depends: TASK-004. Lives in `packages/core/src/constants.ts` (+ index re-export).
 
 ## Scope (codify as exported constants)

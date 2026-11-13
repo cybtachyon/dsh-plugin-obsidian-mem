@@ -58,7 +58,7 @@ task file lists explicit cross-phase prerequisites.
 
 ### Phase 2: Core domain (packages/core)
 
-- [ ] [TASK-010-constants-intents](docs/PLAN-obsidian-mem-TASK-010-constants-intents.md)
+- [x] [TASK-010-constants-intents](docs/PLAN-obsidian-mem-TASK-010-constants-intents.md)
 - [ ] [TASK-011-vault-config](docs/PLAN-obsidian-mem-TASK-011-vault-config.md)
 - [ ] [TASK-012-memory-note-format](docs/PLAN-obsidian-mem-TASK-012-memory-note-format.md)
 - [ ] [TASK-013-markdown-chunker](docs/PLAN-obsidian-mem-TASK-013-markdown-chunker.md)

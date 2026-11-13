@@ -1,0 +1,296 @@
+/**
+ * Codifies the names, layout, budgets, and backend identifiers every layer
+ * of the plugin shares: intent markers, scope values, the vault layout,
+ * default on-disk locations, the recalled-memory wrappers, tool names,
+ * budget defaults, and the Milvus/embedder identifiers.
+ *
+ * Pure: no fs, no env, no @deepseek-ai imports. $HOME enters only as an
+ * explicit homedir argument at call time; the service injects os.homedir()
+ * so this module stays deterministic under test.
+ * @module dsh-plugin-obsidian-mem/core/constants
+ */
+
+import { join } from 'node:path'
+
+/**
+ * INTENT_MARKERS lists the nine recall-intent markers in canonical order.
+ * .INTENTS.md seeds one section per marker; audit and the wake-keyword pass
+ * enumerate this list as the single source of truth.
+ */
+export const INTENT_MARKERS = [
+  'who',
+  'what',
+  'when',
+  'where',
+  'how',
+  'why',
+  'investigate',
+  'debug',
+  'troubleshoot',
+] as const
+
+/** One of the nine .INTENTS.md section markers. */
+export type IntentMarker = typeof INTENT_MARKERS[number]
+
+/** Tests whether value names one of the nine intent markers. */
+export function isIntentMarker(value: string): value is IntentMarker {
+  return (INTENT_MARKERS as readonly string[]).includes(value)
+}
+
+/** Scope constant: a memory true across every vault and project. */
+export const SCOPE_GLOBAL = 'global'
+/** Scope constant: a memory bound to one working domain. */
+export const SCOPE_DOMAIN = 'domain'
+/** Scope constant: a memory pointing at external reference material. */
+export const SCOPE_REFERENCE = 'reference'
+
+/** The three named scope constants; project scope is a slug instead. */
+export const SCOPE_TYPES = [SCOPE_GLOBAL, SCOPE_DOMAIN, SCOPE_REFERENCE] as const
+
+/** A named scope or, by isScopeSlug, a project slug. */
+export type ScopeType = typeof SCOPE_TYPES[number]
+
+// Kebab-case: lowercase alphanumerics joined by single hyphens. Rejects
+// leading/trailing/double hyphens, spaces, and case, matching the engramory
+// slug discipline notes and filenames must both follow.
+const SCOPE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
+/** Tests whether value is a project-scope slug (not a named scope). */
+export function isScopeSlug(value: string): boolean {
+  return SCOPE_SLUG_PATTERN.test(value)
+}
+
+/** Tests whether value is a named scope constant or a valid project slug. */
+export function isScopeType(value: string): boolean {
+  return (SCOPE_TYPES as readonly string[]).includes(value) || isScopeSlug(value)
+}
+
+/** Vault subdirectory holding the indexed Markdown notes. */
+export const VAULT_MARKDOWN_DIR = 'markdown'
+/** Vault subdirectory holding sidecar metadata, never indexed. */
+export const VAULT_METADATA_DIR = 'metadata'
+
+/** Vault-root file listing the intent markers; never indexed. */
+export const INTENTS_FILE = '.INTENTS.md'
+/** Vault-root dream diary appended by memory_dream; never indexed. */
+export const DREAMS_FILE = 'DREAMS.md'
+/** Suffix of archive-history notes moved out of oversized notes. */
+export const ARCHIVE_HISTORY_SUFFIX = '_history.md'
+
+/**
+ * RESERVED_NON_INDEXED lists the vault-root files the indexer and the audit
+ * note enumeration must skip. Archive-history notes join them by suffix;
+ * isReservedNonIndexed covers both halves.
+ */
+export const RESERVED_NON_INDEXED = [INTENTS_FILE, DREAMS_FILE] as const
+
+/** Tests whether a vault-root file name is reserved from indexing. */
+export function isReservedNonIndexed(fileName: string): boolean {
+  return (RESERVED_NON_INDEXED as readonly string[]).includes(fileName)
+    || fileName.endsWith(ARCHIVE_HISTORY_SUFFIX)
+}
+
+// The dotted $HOME dirs these paths live under. Named here so dbDir,
+// modelCacheDir, and the vault path stay anchored to one layout.
+const DSH_DIR = '.dsh'
+const PLUGIN_DIR = 'obsidian-mem'
+const PLUGIN_DB_DIR = 'obsidian-mem-db'
+const MODELS_DIR = 'models'
+const STATE_DIR = 'state'
+const DB_FILE = 'memory.db'
+
+/** Builds the default shared-vault path `homedir/.dsh/obsidian-mem`. */
+export function defaultVaultPath(homedir: string): string {
+  return join(homedir, DSH_DIR, PLUGIN_DIR)
+}
+
+/** Builds the Milvus-Lite data dir `homedir/.dsh/obsidian-mem-db`. */
+export function dbDir(homedir: string): string {
+  return join(homedir, DSH_DIR, PLUGIN_DB_DIR)
+}
+
+/** Builds the Milvus-Lite database location under dbDir. */
+export function dbFile(homedir: string): string {
+  return join(dbDir(homedir), DB_FILE)
+}
+
+/** Builds the transformers.js model cache dir inside the default vault. */
+export function modelCacheDir(homedir: string): string {
+  return join(defaultVaultPath(homedir), MODELS_DIR)
+}
+
+/** Builds the plugin state dir (indexer + audit state) under dbDir. */
+export function stateDir(homedir: string): string {
+  return join(dbDir(homedir), STATE_DIR)
+}
+
+/** Tag name that fences injected recalled memory in agent context. */
+export const RECALLED_TAG = 'recalled_memory'
+
+/**
+ * RECALLED_OPEN builds the opening `<recalled_memory source="...">` tag
+ * for an absolute source path, escaping the attribute so a path containing
+ * quotes or angle brackets cannot break out of it. Named in caps to pair
+ * with the RECALLED_CLOSE constant it wraps.
+ */
+export function RECALLED_OPEN(source: string): string {
+  return `<${RECALLED_TAG} source="${escapeAttribute(source)}">`
+}
+
+/** Closing counterpart of RECALLED_OPEN. */
+export const RECALLED_CLOSE = `</${RECALLED_TAG}>`
+
+/** Wraps body in the recalled-memory tags for source. */
+export function wrapRecalled(source: string, body: string): string {
+  return `${RECALLED_OPEN(source)}\n${body}\n${RECALLED_CLOSE}`
+}
+
+/** A parsed recalled-memory segment: its source path and inner body. */
+export interface RecalledSegment {
+  source: string
+  body: string
+}
+
+// Anchored at both ends: the wrapper is a whole message/section, never an
+// interior fragment, so recall budget accounting can strip it exactly.
+const RECALLED_SEGMENT = new RegExp(
+  `^<${RECALLED_TAG} source="([^"]*)">\\n([\\s\\S]*)\\n</${RECALLED_TAG}>$`,
+)
+
+/** Unwraps a whole recalled-memory segment back to source and body. */
+export function unwrapRecalled(text: string): RecalledSegment | null {
+  const match = RECALLED_SEGMENT.exec(text)
+  if (!match) {
+    return null
+  }
+  return { source: unescapeAttribute(match[1] ?? ''), body: match[2] ?? '' }
+}
+
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function unescapeAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+}
+
+/** Name of the memory_read tool. */
+export const TOOL_MEMORY_READ = 'memory_read'
+/** Name of the memory_search tool. */
+export const TOOL_MEMORY_SEARCH = 'memory_search'
+/** Name of the memory_write tool. */
+export const TOOL_MEMORY_WRITE = 'memory_write'
+/** Name of the memory_dream tool. */
+export const TOOL_MEMORY_DREAM = 'memory_dream'
+/** Name of the memory_audit tool. */
+export const TOOL_MEMORY_AUDIT = 'memory_audit'
+
+/** The five model-facing tool names this plugin registers. */
+export const MEMORY_TOOL_NAMES = [
+  TOOL_MEMORY_READ,
+  TOOL_MEMORY_SEARCH,
+  TOOL_MEMORY_WRITE,
+  TOOL_MEMORY_DREAM,
+  TOOL_MEMORY_AUDIT,
+] as const
+
+/** Source kind this plugin tags its injected messages with. */
+export const PLUGIN_SOURCE_KIND = 'plugin:obsidian-mem'
+
+/** Name the plugin's system-prompt section registers under. */
+export const SYSTEM_PROMPT_SECTION_NAME = 'obsidian-mem'
+/** Order placing the memory section after the standing 9500-tier sections. */
+export const SYSTEM_PROMPT_SECTION_ORDER = 9600
+
+/** Token budget one turn-start recall injection may spend. */
+export const RECALL_TURN_START_TOKENS = 1200
+/** Token budget each section of a Read-tool recall may spend. */
+export const RECALL_READ_SECTION_TOKENS = 350
+/** Number of sections the Read-tool intercept recalls at most. */
+export const RECALL_READ_MAX_SECTIONS = 2
+/** Token budget the global per-session memory injection may spend. */
+export const GLOBAL_MEMORY_TOKENS = 1500
+/** Default result count memory_search returns when the caller omits topK. */
+export const SEARCH_DEFAULT_TOP_K = 6
+/** Hard cap on any search result count, however the caller asks. */
+export const SEARCH_MAX_RESULTS = 20
+/** Token ceiling one chunk may reach before the chunker splits it. */
+export const CHUNK_MAX_TOKENS = 500
+
+// Heuristic used everywhere a budget is enforced before a tokenizer runs;
+// ~4 Latin characters per token is the standard rough estimate.
+const APPROX_CHARS_PER_TOKEN = 4
+
+/** Estimates the token count of text at ~4 characters per token. */
+export function approxTokens(text: string): number {
+  return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN)
+}
+
+/** Name of the single Milvus collection holding every vault's chunks. */
+export const MILVUS_COLLECTION = 'obsidian_mem'
+
+/**
+ * MILVUS_FIELDS maps each schema column to its Milvus field name. Schema
+ * creation, inserts, filters, and search output lists all read from here so
+ * a rename touches one place. sparseVector carries the BM25 function output
+ * when the schema enables it.
+ */
+export const MILVUS_FIELDS = {
+  chunkId: 'chunk_id',
+  sourcePath: 'source_path',
+  sectionHeader: 'section_header',
+  chunkText: 'chunk_text',
+  vault: 'vault',
+  scope: 'scope',
+  triggerExtensions: 'trigger_extensions',
+  triggerFrameworks: 'trigger_frameworks',
+  wakeKeywords: 'wake_keywords',
+  denseVector: 'dense_vector',
+  sparseVector: 'sparse',
+  updatedAt: 'updated_at',
+} as const
+
+/** One of the Milvus schema field names. */
+export type MilvusField = typeof MILVUS_FIELDS[keyof typeof MILVUS_FIELDS]
+
+/**
+ * Vector width stored by default: multilingual-e5-small's true width. The
+ * research decision log retired the original "768" (that is e5-base); no
+ * lossy truncation happens unless the user opts into one below.
+ */
+export const VECTOR_DIM_DEFAULT = 384
+
+/** Lossy truncation widths a user may opt into; each forces a re-index. */
+export const VECTOR_DIM_LOSSY = [128, 192, 256, 320] as const
+
+/** Tests whether value is the full width or an opted-in lossy width. */
+export function isVectorDim(value: number): boolean {
+  return value === VECTOR_DIM_DEFAULT
+    || (VECTOR_DIM_LOSSY as readonly number[]).includes(value)
+}
+
+/** Embedding model id; e5-base (768-d) is the swap for true 768. */
+export const DEFAULT_MODEL_ID = 'Xenova/multilingual-e5-small'
+/** Prefix transformers.js requires on indexed passages. */
+export const PASSAGE_PREFIX = 'passage: '
+/** Prefix transformers.js requires on search queries. */
+export const QUERY_PREFIX = 'query: '
+
+/**
+ * TRANSFORMERS_PIPELINE_OPTIONS carries the @huggingface/transformers v4
+ * pipeline options verbatim. v4 renamed `normalization` to `normalize` and
+ * silently ignores the old key, so this exact spelling is load-bearing.
+ */
+export const TRANSFORMERS_PIPELINE_OPTIONS = {
+  pooling: 'mean',
+  normalize: true,
+  dtype: 'q8',
+} as const

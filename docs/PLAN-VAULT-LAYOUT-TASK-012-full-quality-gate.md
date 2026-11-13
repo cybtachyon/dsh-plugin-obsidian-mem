@@ -10,6 +10,12 @@ Steps:
    specs (opaque strings that pass today: tools write/read/search/dream/audit
    specs, events readIntercept, core constants.spec, service.spec ~L840) so
    fixtures model the real layout.
+0b. Type-honest vault-row fixtures (TASK-015 finding): add the required
+   `globalFile` to VaultEntry-typed fixtures missing it
+   (events/turnEnd.spec ~13 rows, thinkIntercept.spec:39,
+   readIntercept.spec:49 — which also carries invalid mode `'readonly'`,
+   fix to `'read-only'` —, ui/tests/testkit.ts:110/144,
+   client/tests/api.spec.ts:89, tools/tests/testkit.ts:51 spread).
 1. `pnpm build` (tsc -b --force, build-client, build-format, verify-emit);
    commit any emitted drift in this commit.
 2. A second consecutive `pnpm build` leaves `git status --porcelain` empty.

@@ -183,7 +183,7 @@ export declare class MilvusLauncher {
      * RetireLegacyDataDir moves aside a milvus-lite 2.x single-file database
      * before 3.x starts in the same path. 3.x cannot read 2.x files and the
      * upstream provides no migration, so the loud move-plus-rebuild is the
-     * only honest path (RESEARCH-FINDINGS scar tissue; findings §2.3).
+     * only honest path (docs/research/milvus-transformers-findings.md §2.3).
      */
     private retireLegacyDataDir;
     /** ChildExitAfterKill waits graceMs for the killed child to exit. */

@@ -59,10 +59,10 @@ Facts heading) are left as the user's call, outside release scope.
 
 ### Phase 2: Namespace-less npm packaging metadata
 
-- [ ] [TASK-04-root-package-metadata](docs/PLAN-release-prep-TASK-04-root-package-metadata.md)
-- [ ] [TASK-05-workspace-versions-and-lockfile](docs/PLAN-release-prep-TASK-05-workspace-versions-and-lockfile.md)
-- [ ] [TASK-06-npm-pack-contents-verification](docs/PLAN-release-prep-TASK-06-npm-pack-contents-verification.md)
-- [ ] [TASK-07-commit-packaging](docs/PLAN-release-prep-TASK-07-commit-packaging.md)
+- [x] [TASK-04-root-package-metadata](docs/PLAN-release-prep-TASK-04-root-package-metadata.md)
+- [x] [TASK-05-workspace-versions-and-lockfile](docs/PLAN-release-prep-TASK-05-workspace-versions-and-lockfile.md)
+- [x] [TASK-06-npm-pack-contents-verification](docs/PLAN-release-prep-TASK-06-npm-pack-contents-verification.md)
+- [x] [TASK-07-commit-packaging](docs/PLAN-release-prep-TASK-07-commit-packaging.md)
 
 ### Phase 3: Build artifacts in version control
 

@@ -25,6 +25,42 @@ here):
 Ledger table (append per iteration): iteration / relevant hit / decoy hit /
 forbidden / misses / notes.
 
+## Iteration 3 ledger (probe d5f78946, 2026-11-13, CLEAN design: coding-only first message, protocol via follow-up)
+
+Transcript is authoritative: 7 injected blocks (probe self-reported 6).
+Testbed genuinely fresh (reset to f118494; baseline 75 -> 76 tests;
+changes left uncommitted per protocol).
+
+| item | result |
+| --- | --- |
+| Turn-start channel | FIRED clean. Pinned GLOBAL yes, guidance line yes, 3 search rows |
+| Turn-start rows | R1 machinae-ecs seed USEFUL (pre-armed the snapshot.ts trap), typescript-verify-before-done USEFUL, ts-installed-types near-miss. Forbidden: 0 |
+| Think rows (3) | typescript-simulation-style USEFUL (labeled-relevant, applied); npm-cli-lockout unrelated; drupal/kernel-test-minted-field-schema unrelated |
+| R2 bitECS query-order seed | not recalled any channel; brief is order-agnostic and never exercises R2's vocabulary (swap-remove/sort/QueryResult). Reachability pending TASK-014 production-parity probe with the brief text as query |
+| Decoys D1/D2 | not recalled, 3rd clean iteration running: decoy pressure is effectively zero in real task traffic |
+| Self-serve | 0 |
+| Budget lines | none |
+
+Findings:
+1. Query hygiene decides everything: with task-domain text only,
+   turn-start precision was 3/3 relevant-or-acceptable, zero forbidden,
+   and the seed note paid for itself before the probe hit the trap.
+   Confirms the shipped strip direction and the earlier manifest-text
+   exclusion finding (same mechanism: foreign vocabulary dominates the
+   fused rank-agreement band).
+2. Think-channel wake terms ECHO previously injected note titles
+   ("ts-installed-types" became a wake term after that note was
+   injected), a self-feeding loop that pulls the same cluster again and
+   leaks meta-vocabulary. Pre-existing design behavior, not strip-
+   related; final-report candidate.
+3. TASK-009 reopen test: a relevant row ranked BELOW a decoy row,
+   unfixable by floors -> NOT met (decoys never appeared). No reopen.
+
+Convergence decision: iterations 1-2 = contaminated baseline, iteration
+3 = clean evidence; brief constants unchanged since iter 1. No
+iteration 4 needed: the remaining open question (R2 reachability) is
+answerable offline on the production-parity harness.
+
 ## Iteration 2 ledger (probe 3b1c027d, 2026-11-13, restart-then-launch-first)
 
 | item | result |

@@ -34,5 +34,19 @@ findings doc):
   the default analyzer's index-time output is THIS task's empirical check.
   If a CJK probe query provably cannot match, adopt the documented
   fallback (CJK left UNSTRIPPED) and record it.
+- Comparability (TASK-004 finding): the committed pre-strip baselines
+  (docs/research/eval-split-d078-s25-k60*.json) carry RAW sparse queries;
+  compare THIS task's strip-off vs strip-on pair, not the older committed
+  baselines. Legacy-hybrid artifacts post-TASK-004 also have stripped
+  route-membership probes; do not mix eras in one table.
+- Label re-verification FIRST (README "Collections drift"): the vault is
+  live, so dump a fresh `chunk_id >= 0` read-only projection and re-check
+  the relevant/forbidden labels still exist before trusting deltas;
+  record any re-label in the findings doc.
+- Early smoke signal (no production knobs, NOT a verdict): strip P@k
+  0.196 vs keep 0.216 at equal recall 15/24. If the with-knobs A/B
+  confirms a precision regression, the A2 domain-list follow-up and the
+  TASK-006 floor re-sweep are the remedy path; the strip itself is
+  decided work.
 
 Depends on: TASK-004.

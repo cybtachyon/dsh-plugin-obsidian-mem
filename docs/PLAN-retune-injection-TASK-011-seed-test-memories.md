@@ -1,5 +1,10 @@
 # TASK-011 seed-test-memories
 
+SEQUENCING GUARD (added 2026-11-13): do NOT seed before TASK-005 and
+TASK-006 finish. The offline eval harnesses replay a LABELED query set
+against the same live collection these notes would index into; seeded
+rows are unlabeled and would contaminate P@k/forbidden-rate baselines.
+
 Use `memory_write` (never direct file writes) to seed the default vault
 `/home/derek/.dsh/obsidian-mem/` with the iteration's probe set. Record
 EVERY seeded note path in the Seeding log table below; TASK-016 archives

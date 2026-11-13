@@ -145,9 +145,22 @@ export function RECALLED_OPEN(source: string): string {
 /** Closing counterpart of RECALLED_OPEN. */
 export const RECALLED_CLOSE = `</${RECALLED_TAG}>`
 
-/** Wraps body in the recalled-memory tags for source. */
+/** What defangRecalled substitutes for a literal closing tag. */
+export const CLOSE_TAG_DEFANG = '[close-tag defanged]'
+
+/**
+ * DefangRecalled rewrites every literal `</recalled_memory>` sequence in
+ * body to CLOSE_TAG_DEFANG. Vault notes are human-editable, so injected
+ * text must not be able to close the envelope early and pose as harness
+ * prose; every wrapRecalled caller gets this pass by construction.
+ */
+export function defangRecalled(body: string): string {
+  return body.split(RECALLED_CLOSE).join(CLOSE_TAG_DEFANG)
+}
+
+/** Wraps body in the recalled-memory tags for source, defanging its content. */
 export function wrapRecalled(source: string, body: string): string {
-  return `${RECALLED_OPEN(source)}\n${body}\n${RECALLED_CLOSE}`
+  return `${RECALLED_OPEN(source)}\n${defangRecalled(body)}\n${RECALLED_CLOSE}`
 }
 
 /** A parsed recalled-memory segment: its source path and inner body. */

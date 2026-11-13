@@ -417,8 +417,11 @@ describe('think budget and dedupe', () => {
     expect(h.memory.searchRequests).toHaveLength(4)
     expect(h.agent.injected).toHaveLength(2)
     expect(h.registry.thinkBudgetLeft('session-1')).toBe(0)
-    // A later block in the same turn is gated before the seam is touched.
+    // A later block, once the post-injection sleep drains one, is gated
+    // before the seam is touched.
     stream(h.agent, textDelta('<think>when five</think>', 'a1'))
+    await h.settle()
+    stream(h.agent, textDelta('<think>when six</think>', 'a1'))
     await h.settle()
     expect(h.memory.searchRequests).toHaveLength(4)
     expect(h.agent.injected).toHaveLength(2)
@@ -430,11 +433,15 @@ describe('think budget and dedupe', () => {
     stream(h.agent, streamStart('a1', 1), textDelta('<think>why one</think>', 'a1'))
     await h.settle()
     expect(h.agent.injected).toHaveLength(1)
+    // The injection's sleep consumes 'why two'; 'why three' then searches
+    // and finds the turn's single shot already spent.
     stream(h.agent, textDelta('<think>why two</think>', 'a1'))
+    await h.settle()
+    stream(h.agent, textDelta('<think>why three</think>', 'a1'))
     await h.settle()
     expect(h.agent.injected).toHaveLength(1) // same turn: the cap is spent
     h.registry.noteTurn('session-1', 2)
-    stream(h.agent, textDelta('<think>why three</think>', 'a1'))
+    stream(h.agent, textDelta('<think>why four</think>', 'a1'))
     await h.settle()
     expect(h.agent.injected).toHaveLength(2) // new turn: a fresh shot
   })
@@ -444,9 +451,13 @@ describe('think budget and dedupe', () => {
     freshSources(h)
     stream(h.agent, streamStart('a1', 1), textDelta('<think>why one</think>', 'a1'))
     await h.settle()
+    // The sleep consumes the first turn-2 block; the next one searches.
     stream(h.agent, streamStart('a2', 2), textDelta('<think>why two</think>', 'a2'))
     await h.settle()
-    expect(h.agent.injected).toHaveLength(2)
+    expect(h.memory.searchRequests).toHaveLength(1)
+    stream(h.agent, textDelta('<think>why three</think>', 'a2'))
+    await h.settle()
+    expect(h.agent.injected).toHaveLength(2) // fresh shot from the hint
   })
 
   it('counts a subagent session under its own key (budgets are per process)', async () => {
@@ -502,6 +513,41 @@ describe('written-source exclusion (TASK-003)', () => {
     expect(texts.some((text) => text.includes('milvus-ops.md'))).toBe(true)
     // The exclusion runs before the ledger: the source was never injected.
     expect(h.registry.injectedSources('session-1').has(sourceKeyFor(selfAuthored))).toBe(false)
+  })
+})
+
+describe('think sleep after injection (TASK-005)', () => {
+  it('consumes exactly the next completed block, then resumes normal scanning', async () => {
+    const h = harness({ budgets: { thinkShotsPerTurn: 3 } })
+    freshSources(h)
+    stream(h.agent, streamStart('a1', 1), textDelta('<think>why one</think>', 'a1'))
+    await h.settle()
+    expect(h.memory.searchRequests).toHaveLength(1)
+    // The injection landed: this block is consumed without a scan or search.
+    stream(h.agent, textDelta('<think>why two</think>', 'a1'))
+    await h.settle()
+    expect(h.memory.searchRequests).toHaveLength(1)
+    expect(h.agent.injected).toHaveLength(1)
+    // Normal behavior resumed: the next block searches and injects again.
+    stream(h.agent, textDelta('<think>why three</think>', 'a1'))
+    await h.settle()
+    expect(h.memory.searchRequests).toHaveLength(2)
+    expect(h.agent.injected).toHaveLength(2)
+  })
+
+  it('a run without an injection never sleeps', async () => {
+    const h = harness({ budgets: { thinkShotsPerTurn: 3 } })
+    h.memory.search = async (request) => {
+      h.memory.searchRequests.push(request)
+      return []
+    }
+    stream(h.agent, streamStart('a1', 1), textDelta('<think>why one</think>', 'a1'))
+    await h.settle()
+    stream(h.agent, textDelta('<think>why two</think>', 'a1'))
+    await h.settle()
+    // No injection happened, so block two was processed as usual.
+    expect(h.memory.searchRequests).toHaveLength(2)
+    expect(h.agent.injected).toHaveLength(0)
   })
 })
 

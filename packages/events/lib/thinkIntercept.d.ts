@@ -31,7 +31,11 @@
  * matter which agent instance of that session wrote it), the per-turn
  * `budgets.thinkShotsPerTurn` gate via the registry counter, and
  * `wrapRecalled` envelopes through `agent.inject()` (never `steer`, never
- * wakes). The listener never throws and all work is fire-and-forget: a cold
+ * wakes). A successful injection then sleeps: the NEXT completed think
+ * block is consumed unprocessed (`THINK_SLEEP_BLOCKS_AFTER_INJECTION`),
+ * giving the agent room to absorb what arrived before another recall wave;
+ * normal scanning resumes after that block. The listener never throws and
+ * all work is fire-and-forget: a cold
  * or dead index degrades to a warning, never a stalled stream.
  * @module dsh-plugin-obsidian-mem/events/thinkIntercept
  */
@@ -41,6 +45,8 @@ import type { SessionRegistry } from './sessions.js';
 export declare const THINK_SEARCH_TOP_K = 2;
 /** Query cap: the block text enters the hybrid search capped at 500 chars. */
 export declare const THINK_QUERY_MAX_CHARS = 500;
+/** Completed think blocks consumed unprocessed after a successful injection. */
+export declare const THINK_SLEEP_BLOCKS_AFTER_INJECTION = 1;
 /** Read seam for the shared vault's `.INTENTS.md`; null means unreadable. */
 export interface IntentsFs {
     readFile(path: string): string | null;

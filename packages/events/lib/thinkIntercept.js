@@ -31,7 +31,11 @@
  * matter which agent instance of that session wrote it), the per-turn
  * `budgets.thinkShotsPerTurn` gate via the registry counter, and
  * `wrapRecalled` envelopes through `agent.inject()` (never `steer`, never
- * wakes). The listener never throws and all work is fire-and-forget: a cold
+ * wakes). A successful injection then sleeps: the NEXT completed think
+ * block is consumed unprocessed (`THINK_SLEEP_BLOCKS_AFTER_INJECTION`),
+ * giving the agent room to absorb what arrived before another recall wave;
+ * normal scanning resumes after that block. The listener never throws and
+ * all work is fire-and-forget: a cold
  * or dead index degrades to a warning, never a stalled stream.
  * @module dsh-plugin-obsidian-mem/events/thinkIntercept
  */
@@ -44,6 +48,8 @@ import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotic
 export const THINK_SEARCH_TOP_K = 2;
 /** Query cap: the block text enters the hybrid search capped at 500 chars. */
 export const THINK_QUERY_MAX_CHARS = 500;
+/** Completed think blocks consumed unprocessed after a successful injection. */
+export const THINK_SLEEP_BLOCKS_AFTER_INJECTION = 1;
 /** Cap on the marker-header intent words admitted into the vocabulary. */
 const INTENTS_TERMS_MAX = 120;
 const THINK_OPEN = '<think>';
@@ -75,7 +81,7 @@ export function installThinkIntercept(deps) {
         }
         return intentsTerms;
     };
-    const watcher = { deps, stateByAttempt, warnOnce, intentsTerms: intentsTermsOnce };
+    const watcher = { deps, stateByAttempt, warnOnce, sleepBlocks: 0, intentsTerms: intentsTermsOnce };
     const listener = (payload) => {
         // Emit dispatch runs listeners raw; nothing may escape this one.
         runGuarded(deps.logger, 'think-intercept', () => {
@@ -174,6 +180,12 @@ function observeChunk(watcher, sessionId, state, frame) {
 }
 function scheduleThinkRecall(watcher, sessionId, blockText) {
     const { deps } = watcher;
+    // The post-injection sleep consumes a completed block whole: no scan, no
+    // search, no budget (the breathing room the last injection was for).
+    if (watcher.sleepBlocks > 0) {
+        watcher.sleepBlocks -= 1;
+        return;
+    }
     // The cheap scan runs before any await: no term, no work.
     const matched = matchVocabulary(deps, sessionId, blockText, watcher.intentsTerms);
     if (matched.length === 0) {
@@ -182,9 +194,10 @@ function scheduleThinkRecall(watcher, sessionId, blockText) {
     if (!deps.registry.thinkBudgetLeft(sessionId)) {
         return;
     }
-    fireAndForget(deps.logger, 'think-intercept recall', runThinkRecall(deps, sessionId, blockText, matched, watcher.warnOnce));
+    fireAndForget(deps.logger, 'think-intercept recall', runThinkRecall(watcher, sessionId, blockText, matched));
 }
-async function runThinkRecall(deps, sessionId, blockText, matched, warnOnce) {
+async function runThinkRecall(watcher, sessionId, blockText, matched) {
+    const { deps, warnOnce } = watcher;
     const { memory, registry } = deps;
     // Lazy provisioning first: a pending one-time default-vault notice is
     // prepended to the injection (the pattern TASK-041/042 established). It
@@ -220,6 +233,9 @@ async function runThinkRecall(deps, sessionId, blockText, matched, warnOnce) {
         markSourceInjected(registry, sessionId, item);
     }
     registry.addRecallTokens(sessionId, injectedTokens);
+    // The injection landed: consume the NEXT completed block unprocessed so
+    // the agent can work with what it just received before another wave.
+    watcher.sleepBlocks = THINK_SLEEP_BLOCKS_AFTER_INJECTION;
 }
 // ---------------------------------------------------------------------------
 // Completed-block scan.

@@ -85,6 +85,22 @@
   bare package. The client-module scan keys `dsh.client` on a bare
   package-root entry, never a subpath, so without it the browser card is
   never loaded.
+- **Runtime deps are declared at BOTH the root and their owning package, on
+  purpose (TASK-03A carry-over).** `@huggingface/transformers` and
+  `@zilliz/milvus2-sdk-node` are in the root `dependencies` AND
+  `packages/service`; `gray-matter` in the root AND `packages/core`. The
+  root package.json is the installable bundle manifest: its `dependencies`
+  are what the plugin install materializes into
+  `~/.dsh/profiles/<profile>/node_modules`, which is the only tree the
+  running `packages/*/lib` files resolve bare specifiers against (lib is
+  git-ignored and carries no node_modules of its own). The per-package rows
+  are the local-workspace declaration and the tsc/vitest resolver. Deleting
+  either half breaks one surface: the root half makes the installed plugin
+  throw `Cannot find module '@zilliz/milvus2-sdk-node'` at activation; the
+  per-package half breaks local typecheck/test resolution. Keep the two
+  lists in lockstep when a runtime import is added or dropped, and keep the
+  semver ranges identical. Do not run `pnpm dedupe`-style tooling that prunes
+  the root copy.
 - Client-side and host-side changes activate differently. A page refresh picks
   up a new `dsh/client.js`, but host-side packages (service, ui, tools,
   events) load into the host process at startup: a bundle reinstall rewrites
@@ -191,8 +207,11 @@ Fetch these docs to answer questions about their covered topic.
   `dsh/client.js` is missing or emptied).
 - Run the full test suite with `pnpm test` (runs `vitest run`).
 - Run coverage with `pnpm test:coverage`; the suite must clear the thresholds
-  in `vitest.config.ts` (scaffold-era floors: lines 75 / functions 75 /
-  branches 70 / statements 75; TASK-060 raises them to the project bar).
+  in `vitest.config.ts` (TASK-060 raised them to the project bar: lines 85 /
+  functions 85 / branches 78 / statements 85). Measured totals run ~4pt above
+  these floors. The config comment lists the per-package functions-coverage
+  exceptions (client mount/glue shims, re-export barrels, the live-ctx-only
+  service teardown branches) that keep the global floors from rising further.
 - Lint the whole repo with `pnpm lint` (runs `eslint .`). This is the
   repo-wide lint gate; do not run `npx eslint` on a subset.
 - Run `prek run --files <paths>` before committing (verify pre-commit hooks).

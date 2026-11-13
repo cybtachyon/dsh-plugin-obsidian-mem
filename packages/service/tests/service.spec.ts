@@ -375,9 +375,9 @@ describe('config schema', () => {
       .toMatch(/384 \(full width\).*128\/192\/256\/320/)
   })
 
-  it('defaults vault modes and rejects bad ones with a path', () => {
+  it('defaults vault modes and globalFile and rejects bad ones with a path', () => {
     const ok = validateObsidianMemConfig({ vaults: [{ path: '/v' }] })
-    expect(ok.value?.vaults).toEqual([{ path: '/v', mode: 'shared' }])
+    expect(ok.value?.vaults).toEqual([{ path: '/v', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT }])
     const bad = validateObsidianMemConfig({ vaults: [{ path: '/v', mode: 'rw' }] })
     expect(bad.issues?.[0]?.path).toEqual(['vaults', 0, 'mode'])
   })

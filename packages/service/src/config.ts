@@ -21,6 +21,7 @@ import {
   dbDir,
   DEFAULT_MODEL_ID,
   DREAM_NEAR_DUPLICATE_THRESHOLD,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   GLOBAL_MEMORY_TOKENS,
   isVectorDim,
   MILVUS_SCALAR_MAX_LENGTHS,
@@ -50,7 +51,7 @@ export interface DreamingSchedule {
 
 /** Mounted (pre-default) config shape: every field optional. */
 export interface ObsidianMemConfig {
-  vaults?: { path: string; mode?: string }[]
+  vaults?: { path: string; mode?: string; globalFile?: string }[]
   vectorDim?: number
   model?: { id?: string; dtype?: string }
   milvus?: {
@@ -79,7 +80,8 @@ export interface ObsidianMemConfig {
 
 /** The fully defaulted config the service runs on (paths still raw). */
 export interface ObsidianMemResolvedConfig {
-  vaults: { path: string; mode: string }[]
+  /** globalFile is resolved: an omitted entry globalFile takes GLOBAL_MEMORY_FILE_DEFAULT. */
+  vaults: { path: string; mode: string; globalFile: string }[]
   vectorDim: number
   model: { id: string; dtype: string }
   milvus: { mode: 'spawn' | 'external'; address: string; dbPath: string; readinessTimeoutMs: number }
@@ -98,7 +100,7 @@ export interface ObsidianMemResolvedConfig {
 /** The config after path resolution: vault paths and dbPath are absolute. */
 export interface ResolvedObsidianMemConfig extends ObsidianMemResolvedConfig {
   /** Narrowed by schema validation (VAULT_MODES membership). */
-  vaults: { path: string; mode: VaultMode }[]
+  vaults: { path: string; mode: VaultMode; globalFile: string }[]
 }
 
 /**
@@ -183,13 +185,13 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
     if (!Array.isArray(value.vaults)) {
       issues.push({ message: 'vaults must be an array', path: ['vaults'] })
     } else {
-      const vaults: { path: string; mode: string }[] = []
+      const vaults: { path: string; mode: string; globalFile: string }[] = []
       value.vaults.forEach((entry, index) => {
         if (!isObject(entry)) {
           issues.push({ message: 'vault entry must be an object', path: ['vaults', index] })
           return
         }
-        collectUnknown(entry, ['vaults', index], ['path', 'mode'], unknownKeys)
+        collectUnknown(entry, ['vaults', index], ['path', 'mode', 'globalFile'], unknownKeys)
         if (typeof entry.path !== 'string' || entry.path.trim() === '') {
           issues.push({ message: 'vault path must be a non-empty string', path: ['vaults', index, 'path'] })
           return
@@ -202,7 +204,9 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
           })
           return
         }
-        vaults.push({ path: entry.path, mode })
+        const globalFile = validateGlobalFile(entry.globalFile, index, issues)
+        if (globalFile === null) return
+        vaults.push({ path: entry.path, mode, globalFile })
       })
       resolved.vaults = vaults
     }
@@ -325,6 +329,37 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   return succeed(resolved, unknownKeys)
 }
 
+/**
+ * ValidateGlobalFile checks one vault entry's optional globalFile: a
+ * vault-root-relative path (may nest with `/`, must not start with `/` or
+ * carry a `..` segment). Omitted takes GLOBAL_MEMORY_FILE_DEFAULT; an
+ * invalid form reports at ['vaults', index, 'globalFile'] and returns null
+ * so the caller drops the entry. Trimmed blanks are garbage here (the
+ * blank-default seam lives in core resolveVaults for the card-side file).
+ */
+function validateGlobalFile(
+  given: unknown,
+  index: number,
+  issues: Issue[],
+): string | null {
+  const path: (string | number)[] = ['vaults', index, 'globalFile']
+  if (given === undefined) return GLOBAL_MEMORY_FILE_DEFAULT
+  const value = typeof given === 'string' ? given.trim() : ''
+  if (value === '') {
+    issues.push({ message: 'vault globalFile must be a non-empty string', path })
+    return null
+  }
+  if (value.startsWith('/')) {
+    issues.push({ message: 'vault globalFile must be vault-root-relative, not absolute', path })
+    return null
+  }
+  if (value.split('/').includes('..')) {
+    issues.push({ message: 'vault globalFile must not contain a ".." segment', path })
+    return null
+  }
+  return value
+}
+
 function validateSchedules(given: unknown, issues: Issue[]): DreamingSchedule[] {
   if (given === undefined) return []
   if (!Array.isArray(given)) {
@@ -388,6 +423,8 @@ export function resolveServiceConfig(
     vaults: config.vaults.map((vault) => ({
       path: expandHome(vault.path, homedir),
       mode: vault.mode as VaultMode,
+      // globalFile is vault-root-relative: no ~ expansion, no absolutizing.
+      globalFile: vault.globalFile,
     })),
     milvus: {
       ...config.milvus,

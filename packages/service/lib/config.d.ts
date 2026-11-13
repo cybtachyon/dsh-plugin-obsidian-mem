@@ -31,6 +31,7 @@ export interface ObsidianMemConfig {
     vaults?: {
         path: string;
         mode?: string;
+        globalFile?: string;
     }[];
     vectorDim?: number;
     model?: {
@@ -67,9 +68,11 @@ export interface ObsidianMemConfig {
 }
 /** The fully defaulted config the service runs on (paths still raw). */
 export interface ObsidianMemResolvedConfig {
+    /** globalFile is resolved: an omitted entry globalFile takes GLOBAL_MEMORY_FILE_DEFAULT. */
     vaults: {
         path: string;
         mode: string;
+        globalFile: string;
     }[];
     vectorDim: number;
     model: {
@@ -108,6 +111,7 @@ export interface ResolvedObsidianMemConfig extends ObsidianMemResolvedConfig {
     vaults: {
         path: string;
         mode: VaultMode;
+        globalFile: string;
     }[];
 }
 /**

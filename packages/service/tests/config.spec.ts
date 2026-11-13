@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DREAM_NEAR_DUPLICATE_THRESHOLD,
   DEFAULT_MODEL_ID,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   MILVUS_SCALAR_MAX_LENGTHS,
   VECTOR_DIM_DEFAULT,
   dbDir,
@@ -104,6 +105,12 @@ describe('validateObsidianMemConfig: rejection table', () => {
     ['vault entry not an object', { vaults: ['x'] }, ['vaults.0']],
     ['vault path blank', { vaults: [{ path: '  ' }] }, ['vaults.0.path']],
     ['vault mode not in enum', { vaults: [{ path: '/v', mode: 'writable' }] }, ['vaults.0.mode']],
+    ['vault globalFile empty', { vaults: [{ path: '/v', globalFile: '' }] }, ['vaults.0.globalFile']],
+    ['vault globalFile blank', { vaults: [{ path: '/v', globalFile: '   ' }] }, ['vaults.0.globalFile']],
+    ['vault globalFile leading slash', { vaults: [{ path: '/v', globalFile: '/GLOBAL.md' }] }, ['vaults.0.globalFile']],
+    ['vault globalFile .. segment', { vaults: [{ path: '/v', globalFile: 'memory/../GLOBAL.md' }] }, ['vaults.0.globalFile']],
+    ['vault globalFile bare ..', { vaults: [{ path: '/v', globalFile: '..' }] }, ['vaults.0.globalFile']],
+    ['vault globalFile not a string', { vaults: [{ path: '/v', globalFile: 42 }] }, ['vaults.0.globalFile']],
     ['vectorDim off the whitelist', { vectorDim: 250 }, ['vectorDim']],
     ['model not an object', { model: 'e5' }, ['model']],
     ['model.id blank', { model: { id: '  ' } }, ['model.id']],
@@ -174,18 +181,48 @@ describe('validateObsidianMemConfig: dreaming schedules', () => {
   })
 })
 
+describe('validateObsidianMemConfig: vault globalFile', () => {
+  it('defaults an omitted globalFile to the layout default', () => {
+    const resolved = (validate({ vaults: [{ path: '/v' }] }) as { value: ResolvedObsidianMemConfig }).value
+
+    expect(resolved.vaults).toEqual([
+      { path: '/v', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+    ])
+  })
+
+  it('keeps an explicit root name and a nested relative path (trimmed)', () => {
+    const resolved = (validate({
+      vaults: [
+        { path: '/v', globalFile: 'GLOBAL.md' },
+        { path: '/w', globalFile: ' memory/GLOBAL.md ' },
+      ],
+    }) as { value: ResolvedObsidianMemConfig }).value
+
+    expect(resolved.vaults.map((v) => v.globalFile)).toEqual(['GLOBAL.md', 'memory/GLOBAL.md'])
+  })
+
+  it('treats globalFile as a known vault key: never in UNKNOWN_CONFIG_KEYS', () => {
+    const result = validate({ vaults: [{ path: '/v', globalFile: 'G.md', typoVault: 1 }] })
+
+    expect(issuesOf(result)).toEqual([])
+    const unknown = (result as { value: Record<symbol, unknown> }).value[UNKNOWN_CONFIG_KEYS] as string[]
+    expect(unknown).toEqual(['vaults.0.typoVault'])
+  })
+})
+
 describe('resolveServiceConfig and path helpers', () => {
   it('expands ~ and relativizes vault paths against the home, filling the dbPath default', () => {
     const validated = validate({
-      vaults: [{ path: '~/notes' }, { path: '/abs/vault' }],
+      vaults: [{ path: '~/notes' }, { path: '/abs/vault', globalFile: 'memory/GLOBAL.md' }],
     })
     const config = (validated as { value: ResolvedObsidianMemConfig }).value
 
     const resolved = resolveServiceConfig(config, '/home/tester')
 
+    // globalFile is vault-root-relative: resolution never touches it.
     expect(resolved.vaults).toEqual([
-      { path: '/home/tester/notes', mode: 'shared' },
-      { path: '/abs/vault', mode: 'shared' },
+      { path: '/home/tester/notes', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+      { path: '/abs/vault', mode: 'shared', globalFile: 'memory/GLOBAL.md' },
     ])
     expect(resolved.milvus.dbPath).toBe(dbDir('/home/tester'))
   })

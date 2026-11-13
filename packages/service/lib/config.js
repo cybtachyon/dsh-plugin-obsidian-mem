@@ -14,7 +14,7 @@
  * @module dsh-plugin-obsidian-mem/service/config
  */
 import { isAbsolute, join, resolve } from 'node:path';
-import { dbDir, DEFAULT_MODEL_ID, DREAM_NEAR_DUPLICATE_THRESHOLD, GLOBAL_MEMORY_TOKENS, isVectorDim, MILVUS_SCALAR_MAX_LENGTHS, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, RECALL_TURN_START_TOKENS, SEARCH_DEFAULT_TOP_K, TRANSFORMERS_PIPELINE_OPTIONS, VAULT_MODES, VECTOR_DIM_DEFAULT, VECTOR_DIM_LOSSY, } from '../../core/lib/index.js';
+import { dbDir, DEFAULT_MODEL_ID, DREAM_NEAR_DUPLICATE_THRESHOLD, GLOBAL_MEMORY_FILE_DEFAULT, GLOBAL_MEMORY_TOKENS, isVectorDim, MILVUS_SCALAR_MAX_LENGTHS, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, RECALL_TURN_START_TOKENS, SEARCH_DEFAULT_TOP_K, TRANSFORMERS_PIPELINE_OPTIONS, VAULT_MODES, VECTOR_DIM_DEFAULT, VECTOR_DIM_LOSSY, } from '../../core/lib/index.js';
 /** G13: cold uvx on an empty cache can exceed 400 s (1.3 GB wheels). */
 export const DEFAULT_READINESS_TIMEOUT_MS = 600_000;
 /**
@@ -82,7 +82,7 @@ function validateConfig(value) {
                     issues.push({ message: 'vault entry must be an object', path: ['vaults', index] });
                     return;
                 }
-                collectUnknown(entry, ['vaults', index], ['path', 'mode'], unknownKeys);
+                collectUnknown(entry, ['vaults', index], ['path', 'mode', 'globalFile'], unknownKeys);
                 if (typeof entry.path !== 'string' || entry.path.trim() === '') {
                     issues.push({ message: 'vault path must be a non-empty string', path: ['vaults', index, 'path'] });
                     return;
@@ -95,7 +95,10 @@ function validateConfig(value) {
                     });
                     return;
                 }
-                vaults.push({ path: entry.path, mode });
+                const globalFile = validateGlobalFile(entry.globalFile, index, issues);
+                if (globalFile === null)
+                    return;
+                vaults.push({ path: entry.path, mode, globalFile });
             });
             resolved.vaults = vaults;
         }
@@ -221,6 +224,33 @@ function validateConfig(value) {
     }
     return succeed(resolved, unknownKeys);
 }
+/**
+ * ValidateGlobalFile checks one vault entry's optional globalFile: a
+ * vault-root-relative path (may nest with `/`, must not start with `/` or
+ * carry a `..` segment). Omitted takes GLOBAL_MEMORY_FILE_DEFAULT; an
+ * invalid form reports at ['vaults', index, 'globalFile'] and returns null
+ * so the caller drops the entry. Trimmed blanks are garbage here (the
+ * blank-default seam lives in core resolveVaults for the card-side file).
+ */
+function validateGlobalFile(given, index, issues) {
+    const path = ['vaults', index, 'globalFile'];
+    if (given === undefined)
+        return GLOBAL_MEMORY_FILE_DEFAULT;
+    const value = typeof given === 'string' ? given.trim() : '';
+    if (value === '') {
+        issues.push({ message: 'vault globalFile must be a non-empty string', path });
+        return null;
+    }
+    if (value.startsWith('/')) {
+        issues.push({ message: 'vault globalFile must be vault-root-relative, not absolute', path });
+        return null;
+    }
+    if (value.split('/').includes('..')) {
+        issues.push({ message: 'vault globalFile must not contain a ".." segment', path });
+        return null;
+    }
+    return value;
+}
 function validateSchedules(given, issues) {
     if (given === undefined)
         return [];
@@ -281,6 +311,8 @@ export function resolveServiceConfig(config, homedir) {
         vaults: config.vaults.map((vault) => ({
             path: expandHome(vault.path, homedir),
             mode: vault.mode,
+            // globalFile is vault-root-relative: no ~ expansion, no absolutizing.
+            globalFile: vault.globalFile,
         })),
         milvus: {
             ...config.milvus,

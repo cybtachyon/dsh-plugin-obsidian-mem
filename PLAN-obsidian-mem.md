@@ -78,9 +78,9 @@ task file lists explicit cross-phase prerequisites.
 ### Phase 4: Host service + tools (packages/service, packages/tools)
 
 - [x] [TASK-030-host-service-config](docs/PLAN-obsidian-mem-TASK-030-host-service-config.md)
-- [ ] [TASK-031-tool-memory-read](docs/PLAN-obsidian-mem-TASK-031-tool-memory-read.md)
-- [ ] [TASK-032-tool-memory-search](docs/PLAN-obsidian-mem-TASK-032-tool-memory-search.md)
-- [ ] [TASK-033-tool-memory-write](docs/PLAN-obsidian-mem-TASK-033-tool-memory-write.md)
+- [x] [TASK-031-tool-memory-read](docs/PLAN-obsidian-mem-TASK-031-tool-memory-read.md)
+- [x] [TASK-032-tool-memory-search](docs/PLAN-obsidian-mem-TASK-032-tool-memory-search.md)
+- [x] [TASK-033-tool-memory-write](docs/PLAN-obsidian-mem-TASK-033-tool-memory-write.md)
 - [x] [TASK-034-tool-memory-audit](docs/PLAN-obsidian-mem-TASK-034-tool-memory-audit.md)
 - [x] [TASK-035-tool-memory-dream](docs/PLAN-obsidian-mem-TASK-035-tool-memory-dream.md)
 - [x] [TASK-036-system-prompt-section](docs/PLAN-obsidian-mem-TASK-036-system-prompt-section.md)

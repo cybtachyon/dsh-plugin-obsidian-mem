@@ -239,7 +239,14 @@ importers:
 
   packages/events: {}
 
-  packages/service: {}
+  packages/service:
+    dependencies:
+      '@huggingface/transformers':
+        specifier: ^4.3.2
+        version: 4.3.2(@types/node@26.6.6)
+      '@zilliz/milvus2-sdk-node':
+        specifier: ^3.0.6
+        version: 3.0.6
 
   packages/tools: {}
 

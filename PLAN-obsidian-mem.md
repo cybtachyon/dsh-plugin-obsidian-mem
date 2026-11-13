@@ -68,7 +68,7 @@ task file lists explicit cross-phase prerequisites.
 
 ### Phase 3: Embeddings + Milvus backend (packages/service)
 
-- [ ] [TASK-020-embedder](docs/PLAN-obsidian-mem-TASK-020-embedder.md)
+- [x] [TASK-020-embedder](docs/PLAN-obsidian-mem-TASK-020-embedder.md)
 - [ ] [TASK-021-milvus-bootstrap](docs/PLAN-obsidian-mem-TASK-021-milvus-bootstrap.md)
 - [ ] [TASK-022-collection-schema](docs/PLAN-obsidian-mem-TASK-022-collection-schema.md)
 - [ ] [TASK-023-indexer-manager](docs/PLAN-obsidian-mem-TASK-023-indexer-manager.md)

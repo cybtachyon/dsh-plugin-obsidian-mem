@@ -1,5 +1,7 @@
 # TASK-020 Embedder (@huggingface/transformers e5-small)
 
+Status: done
+
 Depends: TASK-010. Consult `docs/research/milvus-transformers-findings.md` (research
 deliverable) first; prefer its verified pipeline options. `packages/service/src/embedder.ts`.
 

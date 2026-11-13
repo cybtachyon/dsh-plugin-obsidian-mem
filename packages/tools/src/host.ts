@@ -19,6 +19,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { VaultConfig } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import type { AuditReport, AuditRequest } from '../../service/lib/audit.js'
+import type { DreamEngineResult, DreamRequest } from '../../service/lib/dream.js'
 import type { MemorySearchResult, SearchRequest } from '../../service/lib/search.js'
 import type {
   ObsidianMemReadResult,
@@ -101,6 +102,12 @@ export interface MemoryService {
   applyWrite(path: string, meta: NoteMeta, body: string): Promise<ObsidianMemWriteResult>
   /** Read-only doctor pass (memory_audit); never provisions, never writes. */
   audit(request?: AuditRequest): Promise<AuditReport>
+  /**
+   * Dream: `plan` answers the deterministic analysis; `run` answers
+   * {id, done} once the single-flight guard is armed. Busy and blocked
+   * arrive as DreamBusyError / DreamBlockedError.
+   */
+  dream(request?: DreamRequest): Promise<DreamEngineResult>
   readonly config: {
     budgets: {
       searchTopK: number

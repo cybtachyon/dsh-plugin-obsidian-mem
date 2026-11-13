@@ -1,5 +1,7 @@
 # TASK-035 Tool: memory_dream (compaction)
 
+Status: done
+
 Depends: TASK-034. Consult the engramory-ext Dreaming implementation
 (`/home/derek/src/dsh-plugin-engramory-ext/packages/**/dream*`) — canonical process, but
 NO system-prompt injection variant (per user: too verbose); the tool itself carries the

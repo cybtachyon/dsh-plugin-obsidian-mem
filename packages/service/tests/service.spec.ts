@@ -3,15 +3,16 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 
 import {
-  dbDir,
-  defaultVaultPath,
+  DREAM_NEAR_DUPLICATE_THRESHOLD,
   GLOBAL_MEMORY_TOKENS,
   INTENTS_FILE,
+  VECTOR_DIM_DEFAULT,
+  dbDir,
+  defaultVaultPath,
   markdownDir,
   metadataDir,
   parseNote,
   stateDir,
-  VECTOR_DIM_DEFAULT,
 } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
@@ -344,7 +345,7 @@ describe('config schema', () => {
       thinkShotsPerTurn: 3,
     },
     llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
-    dreaming: { schedules: [] },
+    dreaming: { schedules: [], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD },
   }
 
   it('resolves {} (and undefined) to the complete default config', () => {
@@ -814,9 +815,28 @@ describe('status, placeholders, and not-implemented seams', () => {
     expect(harness().service.globalMemoryIndex().budgetTokens).toBe(GLOBAL_MEMORY_TOKENS)
   })
 
-  it('dream() rejects as the not-implemented seam until TASK-035', async () => {
+  it('dream() defaults to the deterministic plan and seeds the prompt once', async () => {
     const h = harness()
-    await expect(h.service.dream({})).rejects.toThrow(/dream\(\) is not implemented before TASK-035/)
+    const result = await h.service.dream()
+    expect(result.operation).toBe('plan')
+    if (result.operation !== 'plan') {
+      throw new Error('expected the plan operation')
+    }
+    expect(result.plan.candidates).toEqual([])
+    expect(result.plan.prompt).toContain('dreaming agent')
+    const promptPath = join(DB_PATH, 'dream-prompt.md')
+    expect(h.fs.readFile(promptPath)).toContain('Obsidian Mem: dreaming protocol')
+    // Write-once seed: a second plan sees the existing file untouched.
+    await h.service.dream()
+    expect(h.fs.mutations.filter((entry) => entry.includes('dream-prompt.md'))).toHaveLength(1)
+  })
+
+  it('status carries the dream orchestrator view without touching anything but the stamp', () => {
+    const h = harness()
+    const status = h.service.status()
+    expect(status.dream).toEqual({ state: 'idle', blocked: expect.stringContaining('no agents service'), lastDreamAt: null, lastRun: null })
+    expect(status.dreaming).toEqual({ schedules: [], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD })
+    expect(h.fs.mutations).toEqual([])
   })
 })
 

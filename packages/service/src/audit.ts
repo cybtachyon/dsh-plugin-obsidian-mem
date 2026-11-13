@@ -474,8 +474,8 @@ interface DreamStateFile {
 }
 
 /** ReadLastDreamAt answers the dream stamp from the plugin state dir. */
-export function readLastDreamAt(fs: AuditFs, dbPath: string): number | null {
-  const raw = fs.readFile(join(dbPath, 'state', 'state.json'))
+export function readLastDreamAt(readSource: { readFile(path: string): string | null }, dbPath: string): number | null {
+  const raw = readSource.readFile(join(dbPath, 'state', 'state.json'))
   if (raw === null) {
     return null
   }
@@ -508,6 +508,28 @@ export function globalNotePaths(notes: readonly AuditedNote[]): string[] {
       return a.path < b.path ? -1 : a.path > b.path ? 1 : 0
     })
     .map((note) => note.path)
+}
+
+/**
+ * GlobalBudgetReport folds the tracker echo and the note inventory into the
+ * shared budget section. Audit and the dream plan read the same numbers
+ * from here (single source of truth for the compaction instruction).
+ */
+export function globalBudgetReport(
+  notes: readonly AuditedNote[],
+  globalIndex: GlobalMemoryIndex & { overBudget?: boolean },
+): GlobalBudgetReport {
+  const globalPaths = globalNotePaths(notes)
+  const usedTokens = globalIndex.usedTokens
+  const budgetTokens = globalIndex.budgetTokens
+  return {
+    budgetTokens,
+    usedTokens,
+    measured: usedTokens > 0 || globalIndex.overBudget === true,
+    overBudget: globalIndex.overBudget ?? usedTokens > budgetTokens,
+    globalNoteCount: globalPaths.length,
+    globalNotePaths: globalPaths,
+  }
 }
 
 // The staleness key for topStale ranking: never-read first (epoch 0), then
@@ -714,27 +736,15 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   'manage schedules in the Obsidian Mem settings card Dreaming section')
 
   // 8. Global memory budget (TASK-045 tracker echo; instruction on over).
-  const globalPaths = globalNotePaths(allNotes)
-  const usedTokens = deps.globalIndex.usedTokens
-  const budgetTokens = deps.globalIndex.budgetTokens
-  const measured = usedTokens > 0 || deps.globalIndex.overBudget === true
-  const overBudget = deps.globalIndex.overBudget ?? usedTokens > budgetTokens
-  const budget: GlobalBudgetReport = {
-    budgetTokens,
-    usedTokens,
-    measured,
-    overBudget,
-    globalNoteCount: globalPaths.length,
-    globalNotePaths: globalPaths,
-  }
-  if (!measured) {
-    issue('budget.tracker', 'INFO', `global memory injection budget tracker not yet active this process; configured budget is ${String(budgetTokens)} tokens`,
+  const budget = globalBudgetReport(allNotes, deps.globalIndex)
+  if (!budget.measured) {
+    issue('budget.tracker', 'INFO', `global memory injection budget tracker not yet active this process; configured budget is ${String(budget.budgetTokens)} tokens`,
       'none yet: the tracker lands with the per-session recall budget work')
   }
-  if (overBudget) {
+  if (budget.overBudget) {
     issue('budget.over', 'ISSUE',
-      `global memory injection is over budget: ${String(usedTokens)} of ${String(budgetTokens)} tokens used`,
-      `run memory_dream to process and compact all global memory markdown files, least-read first: ${pathList(globalPaths, limit)}`)
+      `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used`,
+      `run memory_dream to process and compact all global memory markdown files, least-read first: ${pathList(budget.globalNotePaths, limit)}`)
   }
 
   // 9. Rows: bounded view; rollups above covered the whole store.

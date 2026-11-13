@@ -19,6 +19,7 @@ import {
 } from '../../core/lib/index.js'
 import type { NoteMeta, VaultConfig } from '../../core/lib/index.js'
 import type { AuditReport, AuditRequest } from '../../service/lib/audit.js'
+import type { DreamEngineResult, DreamRequest } from '../../service/lib/dream.js'
 import type { MemorySearchResult, SearchRequest } from '../../service/lib/search.js'
 import type {
   ObsidianMemReadResult,
@@ -61,6 +62,10 @@ export interface FakeServiceOptions {
   budgets?: { searchTopK: number, readSectionTokens: number }
   /** Canned audit report; absent makes the fake audit throw (never stubbed). */
   auditReport?: AuditReport
+  /** Canned dream result; absent makes the fake dream throw (never stubbed). */
+  dreamResult?: DreamEngineResult
+  /** Thrown by dream() instead of answering (guard-error mapping tests). */
+  dreamError?: Error
 }
 
 /** The fake plus its call ledgers. */
@@ -72,6 +77,7 @@ export interface FakeMemoryService extends MemoryService {
   /** The read-registry; tests seed staleness scenarios here. */
   records: Map<string, ReadRegistryEntry>
   auditRequests: AuditRequest[]
+  dreamRequests: DreamRequest[]
 }
 
 /** Create the seam-slice fake. read/applyWrite mirror the real service. */
@@ -136,6 +142,17 @@ export function createFakeService(options: FakeServiceOptions): FakeMemoryServic
         throw new Error('fake service: audit report not stubbed')
       }
       return options.auditReport
+    },
+    dreamRequests: [],
+    async dream(request = {}) {
+      fake.dreamRequests.push(request)
+      if (options.dreamError !== undefined) {
+        throw options.dreamError
+      }
+      if (options.dreamResult === undefined) {
+        throw new Error('fake service: dream result not stubbed')
+      }
+      return options.dreamResult
     },
     async applyWrite(path, meta, body) {
       fake.writeRequests.push({ path, meta, body })

@@ -74,8 +74,10 @@ import {
   vaultKey,
 } from './config.js'
 import type { ObsidianMemConfig, ResolvedObsidianMemConfig } from './config.js'
-import { nodeAuditFs, runStoreAudit } from './audit.js'
-import type { AuditFs, AuditReport, AuditRequest, CollectionProbeResult } from './audit.js'
+import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js'
+import type { AuditFs, AuditReport, AuditRequest, CollectionProbeResult, VaultInventory } from './audit.js'
+import { DreamOrchestrator } from './dream.js'
+import type { DreamAgentsGateway, DreamEngineResult, DreamRequest, DreamRunSummary, DreamVectorTarget } from './dream.js'
 import { createEmbedder } from './embedder.js'
 import type { Embedder } from './embedder.js'
 import { describeError } from './errors.js'
@@ -170,6 +172,21 @@ export interface ObsidianMemStatus {
   indexer: IndexProgress | null
   budgets: ResolvedObsidianMemConfig['budgets']
   dreaming: ResolvedObsidianMemConfig['dreaming']
+  /** DreamOrchestrator runtime view for the card Dreaming section. */
+  dream: ObsidianMemDreamStatus
+}
+
+/** Upper bound on stored chunk vectors pulled per candidate note. */
+const DREAM_VECTOR_QUERY_LIMIT = 16
+
+/** ObsidianMemDreamStatus is the card-facing orchestrator state. */
+export interface ObsidianMemDreamStatus {
+  /** The single-flight guard: one run at a time, host-wide. */
+  state: 'idle' | 'running'
+  /** Why runs cannot start at all (no agents gateway); null when ready. */
+  blocked: string | null
+  lastDreamAt: number | null
+  lastRun: DreamRunSummary | null
 }
 
 /** Add-request for {@link ObsidianMemService.addVault}. */
@@ -286,6 +303,7 @@ export class ObsidianMemService extends Service {
   private readonly indexerFactory: ((options: ConstructorParameters<typeof IndexerManager>[0]) => IndexerLike) | null
   private readonly prewarm: (command: string, args: readonly string[]) => void
   private readonly auditFs: AuditFs
+  private dreamEngineValue: DreamOrchestrator | null = null
   private readonly log: {
     info(message: string): void
     warn(message: string): void
@@ -657,7 +675,24 @@ export class ObsidianMemService extends Service {
       },
       indexer: this.indexer?.progress() ?? null,
       budgets: { ...this.config.budgets },
-      dreaming: { schedules: this.config.dreaming.schedules.map((s) => ({ ...s })) },
+      dreaming: {
+        ...this.config.dreaming,
+        schedules: this.config.dreaming.schedules.map((s) => ({ ...s })),
+      },
+      dream: this.dreamStatus(),
+    }
+  }
+
+  // DreamStatus snapshots the orchestrator lazily; constructing it never
+  // touches disk, and the only read per status() poll is the state stamp.
+  private dreamStatus(): ObsidianMemDreamStatus {
+    const engine = this.dreamEngine()
+    const last = engine.lastSummary
+    return {
+      state: engine.busy ? 'running' : 'idle',
+      blocked: engine.blockedReason(),
+      lastDreamAt: engine.lastDreamAt(),
+      lastRun: last === null ? null : { ...last, archiveCandidates: [...last.archiveCandidates] },
     }
   }
 
@@ -733,11 +768,80 @@ export class ObsidianMemService extends Service {
   }
 
   /**
-   * Dream is the seam memory_dream will drive.
-   * TASK-035 replaces this throw with the compaction orchestrator.
+   * Dream drives the compaction orchestrator (TASK-035). `plan` answers the
+   * deterministic analysis; `run` arms the single-flight guard, launches a
+   * dedicated dream agent through the reflection gateway `ctx.get('agents')`
+   * (never a typed agents import), and answers {id, done} immediately: the
+   * CALLER attaches a swallowing logging catch to done and never awaits it
+   * inline. Busy and blocked arrive as DreamBusyError / DreamBlockedError;
+   * the tool maps them to their kind values.
    */
-  dream(_request?: unknown): Promise<unknown> {
-    return Promise.reject(new Error('obsidian-mem dream() is not implemented before TASK-035'))
+  async dream(request: DreamRequest = {}): Promise<DreamEngineResult> {
+    const engine = this.dreamEngine()
+    if ((request.operation ?? 'plan') === 'plan') {
+      return { operation: 'plan', plan: await engine.plan() }
+    }
+    const handle = engine.startRun(request.model === undefined ? {} : { model: request.model })
+    return { operation: 'run', id: handle.id, done: handle.done }
+  }
+
+  private dreamEngine(): DreamOrchestrator {
+    if (this.dreamEngineValue === null) {
+      this.dreamEngineValue = new DreamOrchestrator({
+        fs: this.fs,
+        config: this.config,
+        // Same enumeration the audit walks: one inventory, two consumers.
+        inventories: (): VaultInventory[] => this.listVaults().map((entry) => inventoryVault(entry, this.auditFs)),
+        globalIndex: () => this.globalMemoryIndex(),
+        agentsGateway: () => this.ctx.get('agents') as DreamAgentsGateway | undefined,
+        noteVectors: (targets) => this.fetchNoteVectors(targets),
+        log: (message) => {
+          this.log.info(`dream: ${message}`)
+        },
+      })
+    }
+    return this.dreamEngineValue
+  }
+
+  // One bounded query per candidate note: stored chunk vectors, averaged
+  // into a single pseudo-embedding for near-duplicate clustering. Any row
+  // miss leaves the note out of clustering (the plan says so).
+  private async fetchNoteVectors(targets: readonly DreamVectorTarget[]): Promise<Map<string, number[]>> {
+    const out = new Map<string, number[]>()
+    const client = this.client
+    if (client === null) {
+      return out
+    }
+    for (const target of targets) {
+      try {
+        const res = assertOk(
+          await client.query({
+            collection_name: MILVUS_COLLECTION,
+            expr: `${MILVUS_FIELDS.sourcePath} == ${quoteExpr(target.rel)} && ${MILVUS_FIELDS.vault} == ${quoteExpr(vaultKey(target.vaultPath))}`,
+            output_fields: [MILVUS_FIELDS.denseVector],
+            limit: DREAM_VECTOR_QUERY_LIMIT,
+          }),
+          'dream noteVectors query',
+        )
+        const vectors = res.data
+          .map((row) => row[MILVUS_FIELDS.denseVector])
+          .filter((vector): vector is number[] => Array.isArray(vector))
+        if (vectors.length === 0) {
+          continue
+        }
+        const dim = (vectors[0] as number[]).length
+        const mean = new Array<number>(dim).fill(0)
+        for (const vector of vectors) {
+          for (let i = 0; i < dim; i += 1) {
+            mean[i] = (mean[i] as number) + ((vector[i] as number) ?? 0) / vectors.length
+          }
+        }
+        out.set(target.path, mean)
+      } catch (error: unknown) {
+        this.log.warn(`dream: noteVectors query failed for ${target.path}: ${describeError(error)}`)
+      }
+    }
+    return out
   }
 
   /**

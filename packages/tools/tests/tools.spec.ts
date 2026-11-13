@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { TOOL_MEMORY_AUDIT, TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
+import { TOOL_MEMORY_AUDIT, TOOL_MEMORY_DREAM, TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
 import plugin, {
   createReadTool,
   createSearchTool,
@@ -38,17 +38,17 @@ describe('obsidian-mem tools package row', () => {
     })
   })
 
-  it('registers read, search, write, and audit in order through the scope effect', () => {
+  it('registers all five memory tools in order through the scope effect', () => {
     const scope = createRecordingScope()
     registerMemoryTools(scope as unknown as MemoryToolScope, fakeSeam())
     expect(scope.registered.map((definition) => definition.name))
-      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT])
+      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT, TOOL_MEMORY_DREAM])
     // Every registration is effect-owned: running the disposers unregisters
     // exactly the registered names (row unload closes the tool set).
     for (const dispose of scope.effectDisposers) {
       dispose()
     }
-    expect(scope.disposed).toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT])
+    expect(scope.disposed).toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT, TOOL_MEMORY_DREAM])
   })
 })
 

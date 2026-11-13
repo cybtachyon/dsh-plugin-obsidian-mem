@@ -10,7 +10,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 
-import { TOOL_MEMORY_AUDIT, TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
+import { TOOL_MEMORY_AUDIT, TOOL_MEMORY_DREAM, TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
 import plugin from '../src/index.ts'
 import { createFakeService, createRecordingScope } from './testkit.ts'
 
@@ -32,12 +32,12 @@ describe('obsidian-mem tools on a real cordis Context', () => {
     const fiber = await ctx.plugin(plugin)
 
     expect(scope.registered.map((definition) => definition.name))
-      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT])
+      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT, TOOL_MEMORY_DREAM])
 
     // Unloading the row disposes its registration effects (the real
     // Context's effect machinery runs the register disposers in LIFO).
     await fiber.dispose()
-    expect(scope.disposed).toEqual([TOOL_MEMORY_AUDIT, TOOL_MEMORY_WRITE, TOOL_MEMORY_SEARCH, TOOL_MEMORY_READ])
+    expect(scope.disposed).toEqual([TOOL_MEMORY_DREAM, TOOL_MEMORY_AUDIT, TOOL_MEMORY_WRITE, TOOL_MEMORY_SEARCH, TOOL_MEMORY_READ])
 
     await carrier.dispose()
   })
@@ -65,13 +65,13 @@ describe('obsidian-mem tools on a real cordis Context', () => {
       },
     })
     // Fiber wakeups are async; poll briefly instead of guessing drains.
-    for (let attempt = 0; attempt < 50 && lateScope.registered.length < 4; attempt += 1) {
+    for (let attempt = 0; attempt < 50 && lateScope.registered.length < 5; attempt += 1) {
       await new Promise((resolve) => {
         setTimeout(resolve, 5)
       })
     }
     expect(lateScope.registered.map((definition) => definition.name))
-      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT])
+      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT, TOOL_MEMORY_DREAM])
 
     await toolsCarrier.dispose()
     await fiber.dispose()

@@ -20,6 +20,7 @@ import type { Plugin } from '@deepseek-ai/cordis'
 import {
   dbDir,
   DEFAULT_MODEL_ID,
+  DREAM_NEAR_DUPLICATE_THRESHOLD,
   GLOBAL_MEMORY_TOKENS,
   isVectorDim,
   MILVUS_SCALAR_MAX_LENGTHS,
@@ -66,7 +67,13 @@ export interface ObsidianMemConfig {
     thinkShotsPerTurn?: number
   }
   llm?: { enabled?: boolean; baseUrl?: string; model?: string; apiKeyEnv?: string }
-  dreaming?: { schedules?: DreamingSchedule[] }
+  dreaming?: {
+    schedules?: DreamingSchedule[]
+    /** Dream agent model override; '' uses the session default model. */
+    model?: string
+    /** Pairwise cosine at or above which notes join a merge cluster. */
+    nearDuplicateThreshold?: number
+  }
 }
 
 /** The fully defaulted config the service runs on (paths still raw). */
@@ -84,7 +91,7 @@ export interface ObsidianMemResolvedConfig {
     thinkShotsPerTurn: number
   }
   llm: { enabled: boolean; baseUrl: string; model: string; apiKeyEnv: string }
-  dreaming: { schedules: DreamingSchedule[] }
+  dreaming: { schedules: DreamingSchedule[]; model: string; nearDuplicateThreshold: number }
 }
 
 /** The config after path resolution: vault paths and dbPath are absolute. */
@@ -144,7 +151,7 @@ function defaults(): ObsidianMemResolvedConfig {
     },
     budgets: { ...DEFAULT_BUDGETS },
     llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
-    dreaming: { schedules: [] },
+    dreaming: { schedules: [], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD },
   }
 }
 
@@ -298,8 +305,16 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
     if (!isObject(value.dreaming)) {
       issues.push({ message: 'dreaming must be an object', path: ['dreaming'] })
     } else {
-      collectUnknown(value.dreaming, ['dreaming'], ['schedules'], unknownKeys)
-      resolved.dreaming = { schedules: validateSchedules(value.dreaming.schedules, issues) }
+      collectUnknown(value.dreaming, ['dreaming'], ['schedules', 'model', 'nearDuplicateThreshold'], unknownKeys)
+      const threshold = value.dreaming.nearDuplicateThreshold
+      if (threshold !== undefined && (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold <= 0 || threshold > 1)) {
+        issues.push({ message: 'dreaming.nearDuplicateThreshold must be a number in (0, 1]', path: ['dreaming', 'nearDuplicateThreshold'] })
+      }
+      resolved.dreaming = {
+        schedules: validateSchedules(value.dreaming.schedules, issues),
+        model: stringOr(value.dreaming.model, '', 'dreaming.model', ['dreaming', 'model'], issues),
+        nearDuplicateThreshold: typeof threshold === 'number' ? threshold : resolved.dreaming.nearDuplicateThreshold,
+      }
     }
   }
 

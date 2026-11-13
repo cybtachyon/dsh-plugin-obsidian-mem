@@ -73,8 +73,7 @@ export const VAULT_METADATA_DIR = 'metadata'
 /** Vault-root file listing the intent markers; never indexed. */
 export const INTENTS_FILE = '.INTENTS.md'
 /** Vault-root dream diary appended by memory_dream; never indexed. */
-export const DREAMS_FILE = 'DREAMS.md'
-/** Suffix of archive-history notes moved out of oversized notes. */
+export const DREAMS_FILE = 'DREAMS.md'/** Suffix of archive-history notes moved out of oversized notes. */
 export const ARCHIVE_HISTORY_SUFFIX = '_history.md'
 
 /**
@@ -260,6 +259,36 @@ export const AUDIT_NOTE_READ_CAP_BYTES = 4 * 1024 * 1024
  * lesson: a PR-by-PR grown note is the common bloat shape).
  */
 export const NOTE_TIMELINE_BYTES = 12_288
+
+/** Editable dream protocol file, seeded once into <dbDir> by memory_dream. */
+export const DREAM_PROMPT_FILE = 'dream-prompt.md'
+/** Plugin dream stamp (`{lastDreamAt}`) under <dbDir>/state/. */
+export const DREAM_STATE_FILE = 'state.json'
+/**
+ * RELEVANCY_FILE is the <dbDir>/state/ sidecar holding path→score relevancy.
+ * Scores live outside the vaults on purpose (engramory-ext Q3): dreaming
+ * commits and note edits stay about the memory, not the bookkeeping.
+ */
+export const RELEVANCY_FILE = 'relevancy.json'
+/** Session id prefix of one dream agent run: dream-<uuid>. */
+export const DREAM_SESSION_PREFIX = 'dream-'
+
+/**
+ * DREAM_NEAR_DUPLICATE_THRESHOLD is the default pairwise cosine at or above
+ * which two notes join a near-duplicate cluster; the config knob is
+ * dreaming.nearDuplicateThreshold.
+ */
+export const DREAM_NEAR_DUPLICATE_THRESHOLD = 0.92
+
+/**
+ * RELEVANCY_BUMP_TARGET and DEGRADATION_STEP are the deterministic
+ * post-dream scoring constants measured purely from frontmatter read
+ * evidence (read_count, last_read_at): a note accessed since the last dream
+ * is scored at the bump target, a tracked but un-accessed note decays one
+ * step per dream (floor 0).
+ */
+export const RELEVANCY_BUMP_TARGET = 1.0
+export const DEGRADATION_STEP = 0.1
 
 // Heuristic used everywhere a budget is enforced before a tokenizer runs;
 // ~4 Latin characters per token is the standard rough estimate.

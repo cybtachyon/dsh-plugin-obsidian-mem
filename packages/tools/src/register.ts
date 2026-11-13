@@ -4,12 +4,13 @@
  * the row (or the tools service changing) disposes every registration
  * through the disposer `register` hands back. The tool set lands here in
  * registration order: memory_read, memory_search, memory_write,
- * memory_audit (memory_dream joins in TASK-035).
+ * memory_audit, memory_dream.
  * @module dsh-plugin-obsidian-mem/tools/register
  */
 
 import type { MemoryService, MemoryToolScope } from './host.js'
 import { createAuditTool } from './audit.js'
+import { createDreamTool } from './dream.js'
 import { createReadTool } from './read.js'
 import { createSearchTool } from './search.js'
 import { createWriteTool } from './write.js'
@@ -21,6 +22,7 @@ export function registerMemoryTools(scope: MemoryToolScope, service: MemoryServi
     createSearchTool(service),
     createWriteTool(service),
     createAuditTool(service),
+    createDreamTool(service),
   ]) {
     scope.effect(
       () => scope.tools.register(definition),

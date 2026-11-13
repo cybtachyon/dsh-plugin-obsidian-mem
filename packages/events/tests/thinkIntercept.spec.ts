@@ -3,7 +3,8 @@
  * stream fixtures (single-delta, tags split across frames, multiple blocks,
  * native reasoning-channel variants, unclosed blocks), the union keyword
  * vocabulary (INTENT_MARKERS + registry-held injected-source terms + the
- * shared vault's recorded .INTENTS.md entries), the per-turn
+ * marker-header intent words recorded in every vault's .INTENTS.md), the
+ * per-turn
  * budgets.thinkShotsPerTurn counter with the new-turn reset, once-per-session
  * source dedupe, the same-session written-source exclusion (TASK-003: the
  * full memory_write loop), poisoned-payload containment, and disposal
@@ -18,7 +19,7 @@ import { GLOBAL_MEMORY_FILE_DEFAULT, TOOL_MEMORY_WRITE } from '../../core/lib/in
 import { IndexOfflineError } from '../../service/lib/search.js'
 import type { AssistantStreamFrameMirror, HookLogger } from '../src/host.ts'
 import { mountLifecycle } from '../src/index.ts'
-import { installThinkIntercept, extractCompletedThinkBlocks, THINK_QUERY_MAX_CHARS } from '../src/thinkIntercept.ts'
+import { installThinkIntercept, extractCompletedThinkBlocks, readRecordedIntentTerms, THINK_QUERY_MAX_CHARS } from '../src/thinkIntercept.ts'
 import { SessionRegistry, sourceKeyFor, wakeTermsForSource } from '../src/sessions.ts'
 import {
   fakeAgent,
@@ -46,6 +47,20 @@ const SHARED_VAULT: VaultEntry = {
   mode: 'shared',
   globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
   source: 'card',
+}
+
+const READONLY_VAULT: VaultEntry = {
+  path: '/vault/ro',
+  mode: 'read-only',
+  globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+  source: 'settings',
+}
+
+const UNREADABLE_VAULT: VaultEntry = {
+  path: '/vault/unreadable',
+  mode: 'read-only',
+  globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+  source: 'settings',
 }
 
 let idSeq = 0
@@ -284,12 +299,47 @@ describe('think vocabulary union', () => {
     expect(h.memory.searchRequests[0]?.wakeKeywords).toEqual(['ops'])
   })
 
-  it('matches recorded .INTENTS.md entry terms from the first shared vault', async () => {
+  it('unions the marker-header intent words recorded across every vault', () => {
+    const files: Record<string, string> = {
+      '/vault/shared/.INTENTS.md': [
+        '# Memory intents',
+        '',
+        '## debug',
+        '',
+        '- Milvus compaction cadence stalls',
+        '',
+        '## who',
+        '',
+        'People, tools, and services a memory involves.',
+        '',
+        '## backlog',
+        '',
+        '- triage list',
+      ].join('\n'),
+      '/vault/ro/.INTENTS.md': [
+        '## troubleshoot',
+        '',
+        '- `locale/*.json` paths never contribute tokens',
+      ].join('\n'),
+    }
+    const memory = fakeMemory({
+      dbPath: 'vocab-only-fixture',
+      vaults: [SHARED_VAULT, READONLY_VAULT, UNREADABLE_VAULT],
+    })
+    const terms = readRecordedIntentTerms(memory, {
+      readFile: (path) => files[path] ?? null,
+    })
+    // `## backlog` is not a marker; bullets, hint prose, and backticked
+    // paths contribute nothing; the unreadable vault skips entirely.
+    expect(terms.sort()).toEqual(['debug', 'troubleshoot', 'who'])
+  })
+
+  it('matches a think block on .INTENTS.md marker headers, never on the prose', async () => {
     const tmp = tempDbPath()
     const memory = fakeMemory({
       dbPath: tmp.dir,
       searchResults: [topic],
-      vaults: [SHARED_VAULT],
+      vaults: [SHARED_VAULT, READONLY_VAULT],
     })
     const registry = new SessionRegistry({
       file: `${tmp.dir}/state/sessions.json`,
@@ -316,16 +366,22 @@ describe('think vocabulary union', () => {
               'People, tools, and services a memory involves.',
               '',
             ].join('\n')
-          : null,
+          : path === '/vault/ro/.INTENTS.md'
+            ? ['## troubleshoot', '', '- `locale/*.json` of a plugin package'].join('\n')
+            : null,
       },
       newMessageId: messageIds(),
     })
-    // "stalled" is recorded content; "People, tools" is the seed hint line
-    // (never a term source).
-    stream(agent, streamStart('a1', 1), textDelta('<think>cadence stalled milvus</think>', 'a1'))
+    // The header words are the vocabulary; a block naming one fires.
+    stream(agent, streamStart('a1', 1), textDelta('<think>debug the stalled compaction</think>', 'a1'))
     await new Promise((resolve) => { setTimeout(resolve, 0) })
     expect(memory.searchRequests).toHaveLength(1)
-    expect(memory.searchRequests[0]?.wakeKeywords.sort()).toEqual(['cadence', 'milvus'])
+    expect(memory.searchRequests[0]?.wakeKeywords).toEqual(['debug'])
+    // The same files' prose words (cadence, milvus, locale, stalls) name no
+    // vocabulary term: no second fire.
+    stream(agent, streamStart('a2', 2), textDelta('<think>cadence locale stalls triage</think>', 'a2'))
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    expect(memory.searchRequests).toHaveLength(1)
   })
 })
 

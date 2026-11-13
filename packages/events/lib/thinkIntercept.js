@@ -20,9 +20,11 @@
  * wake terms the SessionRegistry kept for sources injected into this
  * session (the indexed wake_keywords never leave the collection and no live
  * keyword enumeration exists, so intercepts store deterministic note-header
- * terms: file stem + section header), and (c) the recorded (non-seed) entry
- * terms of the first shared vault's `.INTENTS.md`. Regex-scan only, no
- * embedding; a block with no hit is dropped. On a hit: `service.search`
+ * terms: file stem + section header), and (c) the intent words recorded in
+ * every vault's `.INTENTS.md`: the `## <marker>` section headers only, so
+ * the file prose that lists people, paths, and decisions never floods the
+ * vocabulary with generic tokens. Regex-scan only, no embedding; a block
+ * with no hit is dropped. On a hit: `service.search`
  * with the block text (capped) as query and the matched terms as
  * `wakeKeywords` (top 2), the once-per-session source filter (shared in
  * toolkit.ts, where a session never gets back what it itself wrote, no
@@ -35,15 +37,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, } from '../../core/lib/index.js';
+import { INTENT_MARKERS, INTENTS_FILE, isIntentMarker, } from '../../core/lib/index.js';
 import { boundSummary } from './host.js';
-import { isWakeTerm } from './sessions.js';
 import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, } from './toolkit.js';
 /** Completed-block search top K (task file: topK=2). */
 export const THINK_SEARCH_TOP_K = 2;
 /** Query cap: the block text enters the hybrid search capped at 500 chars. */
 export const THINK_QUERY_MAX_CHARS = 500;
-/** Recorded `.INTENTS.md` entry terms admitted into the vocabulary. */
+/** Cap on the marker-header intent words admitted into the vocabulary. */
 const INTENTS_TERMS_MAX = 120;
 const THINK_OPEN = '<think>';
 const THINK_CLOSE = '</think>';
@@ -70,7 +71,7 @@ export function installThinkIntercept(deps) {
     let intentsTerms = null;
     const intentsTermsOnce = () => {
         if (intentsTerms === null) {
-            intentsTerms = readRecordedIntentTerms(deps);
+            intentsTerms = readRecordedIntentTerms(deps.memory, deps.intentsFs);
         }
         return intentsTerms;
     };
@@ -293,40 +294,31 @@ function isWordChar(char) {
 }
 // ---------------------------------------------------------------------------
 // Term sources. The header-term derivation lives with the registry
-// (`wakeTermsForSource` in sessions.ts); this half reads the shared vault's
+// (`wakeTermsForSource` in sessions.ts); this half reads every vault's
 // recorded intents.
-// ReadRecordedIntentTerms parses the first shared vault's `.INTENTS.md` with
-// audit's rule (a marker section is recorded content on lines beyond the
-// seed hint line) and returns the entry terms. Unreadable or absent intent
-// files answer empty: the INTENT_MARKERS half still works.
-function readRecordedIntentTerms(deps) {
-    const shared = deps.memory.listVaults().find((vault) => vault.mode === 'shared');
-    if (shared === undefined) {
-        return [];
-    }
-    const text = (deps.intentsFs ?? nodeIntentsFs).readFile(join(shared.path, INTENTS_FILE));
-    if (typeof text !== 'string') {
-        return [];
-    }
+// ReadRecordedIntentTerms unions the intent words recorded in EVERY
+// registered vault's `.INTENTS.md` (shared and readonly: vocabulary growth
+// is read-only work). An intent word is a `## <marker>` section header
+// (plan Q1: headers only, so the checklist prose never contributes tokens);
+// a non-marker header and every other line are ignored. Unreadable files
+// skip: the vault contributes nothing and the INTENT_MARKERS half still
+// works.
+export function readRecordedIntentTerms(memory, intentsFs) {
+    const read = intentsFs ?? nodeIntentsFs;
     const terms = new Set();
-    let marker = null;
-    for (const line of text.split('\n')) {
-        const header = /^##\s+(\S.*?)\s*$/.exec(line);
-        if (header !== null) {
+    for (const vault of memory.listVaults()) {
+        const text = read.readFile(join(vault.path, INTENTS_FILE));
+        if (typeof text !== 'string') {
+            continue;
+        }
+        for (const line of text.split('\n')) {
+            const header = /^##\s+(\S.*?)\s*$/.exec(line);
+            if (header === null) {
+                continue;
+            }
             const name = (header[1] ?? '').toLowerCase();
-            marker = isIntentMarker(name) ? name : null;
-            continue;
-        }
-        if (marker === null || line.trim() === '') {
-            continue;
-        }
-        if (line.trim() === INTENT_HINTS[marker].trim()) {
-            continue;
-        }
-        for (const raw of line.toLowerCase().split(/[^a-z0-9.+*#-]+/)) {
-            const term = raw.trim();
-            if (isWakeTerm(term)) {
-                terms.add(term);
+            if (isIntentMarker(name)) {
+                terms.add(name);
             }
         }
         if (terms.size >= INTENTS_TERMS_MAX) {

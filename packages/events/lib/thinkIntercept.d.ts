@@ -20,9 +20,11 @@
  * wake terms the SessionRegistry kept for sources injected into this
  * session (the indexed wake_keywords never leave the collection and no live
  * keyword enumeration exists, so intercepts store deterministic note-header
- * terms: file stem + section header), and (c) the recorded (non-seed) entry
- * terms of the first shared vault's `.INTENTS.md`. Regex-scan only, no
- * embedding; a block with no hit is dropped. On a hit: `service.search`
+ * terms: file stem + section header), and (c) the intent words recorded in
+ * every vault's `.INTENTS.md`: the `## <marker>` section headers only, so
+ * the file prose that lists people, paths, and decisions never floods the
+ * vocabulary with generic tokens. Regex-scan only, no embedding; a block
+ * with no hit is dropped. On a hit: `service.search`
  * with the block text (capped) as query and the matched terms as
  * `wakeKeywords` (top 2), the once-per-session source filter (shared in
  * toolkit.ts, where a session never gets back what it itself wrote, no
@@ -34,7 +36,7 @@
  * @module dsh-plugin-obsidian-mem/events/thinkIntercept
  */
 import type { HookLogger, LiveAgent, MemoryEventsService } from './host.js';
-import { type SessionRegistry } from './sessions.js';
+import type { SessionRegistry } from './sessions.js';
 /** Completed-block search top K (task file: topK=2). */
 export declare const THINK_SEARCH_TOP_K = 2;
 /** Query cap: the block text enters the hybrid search capped at 500 chars. */
@@ -72,4 +74,5 @@ export declare function extractCompletedThinkBlocks(text: string, from: number):
     blocks: string[];
     next: number;
 };
+export declare function readRecordedIntentTerms(memory: MemoryEventsService, intentsFs: IntentsFs | undefined): string[];
 //# sourceMappingURL=thinkIntercept.d.ts.map

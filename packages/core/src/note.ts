@@ -274,6 +274,18 @@ export function ensureWhyAndHow(body: string): string[] {
   return warnings
 }
 
+/**
+ * formatLocalDate renders now's local calendar day as the YYYY-MM-DD stamp
+ * the note frontmatter fields (created, updated, last_read_at) carry; notes
+ * are human-editable memory, so the day is the meaningful resolution. The
+ * clock stays with the caller so core stays deterministic under test.
+ */
+export function formatLocalDate(now: Date): string {
+  const month = `${String(now.getMonth() + 1)}`.padStart(2, '0')
+  const day = `${String(now.getDate())}`.padStart(2, '0')
+  return `${String(now.getFullYear())}-${month}-${day}`
+}
+
 // YAML scalar coercion: strings trim, dates normalize to ISO text,
 // everything else falls back to the field default at the call site.
 function textOf(value: unknown): string {

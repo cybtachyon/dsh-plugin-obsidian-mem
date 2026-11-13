@@ -16,7 +16,6 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { VaultConfig } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import type { AuditReport, AuditRequest } from '../../service/lib/audit.js'
 import type { DreamEngineResult, DreamRequest } from '../../service/lib/dream.js'
@@ -116,9 +115,6 @@ export interface MemoryService {
   }
 }
 
-/** VaultConfig re-export keeps consumers of this slice on one import. */
-export type { VaultConfig }
-
 // Argument parsing helpers: raw definitions receive `unknown` args, so
 // each tool normalizes through these one-per-field guards. A missing or
 // wrong-typed required field throws (the host materializes the throw as an
@@ -154,6 +150,18 @@ export function optionalInt(args: Record<string, unknown>, name: string): number
   return Math.trunc(value)
 }
 
+/** OptionalEnum accepts one of `allowed` verbatim; absent answers undefined. */
+export function optionalEnum(args: Record<string, unknown>, name: string, allowed: readonly string[]): string | undefined {
+  const value = args[name]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (typeof value !== 'string' || !allowed.includes(value)) {
+    throw new Error(`obsidian-mem tool: "${name}" must be one of ${allowed.join(' | ')}`)
+  }
+  return value
+}
+
 export function optionalBoolean(args: Record<string, unknown>, name: string): boolean | undefined {
   const value = args[name]
   if (value === undefined || value === null) {
@@ -176,14 +184,4 @@ export function asRecord(args: unknown): Record<string, unknown> {
 /** TextBlock builds the one content block every render returns. */
 export function textBlock(text: string): ContentBlock {
   return { type: 'text', text }
-}
-
-// Local calendar date (YYYY-MM-DD) for note created/updated stamps; notes
-// are human-editable memory, the day is the meaningful resolution (same
-// rule the service applies to read stats).
-export function todayDate(): string {
-  const now = new Date()
-  const month = `${now.getMonth() + 1}`.padStart(2, '0')
-  const day = `${now.getDate()}`.padStart(2, '0')
-  return `${now.getFullYear()}-${month}-${day}`
 }

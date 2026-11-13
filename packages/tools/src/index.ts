@@ -1,8 +1,9 @@
 /**
  * The model-facing tools for the Obsidian Mem capability: `memory_read`,
  * `memory_search`, `memory_write`, `memory_audit`, and `memory_dream` are
- * registered here (the system-prompt section lands in TASK-036), each with
- * its own timeout budget.
+ * registered here (alongside the system-prompt timing section), each with
+ * its own timeout budget and assembled from the shared toolkit in
+ * ./toolkit.js.
  *
  * Mount shape (verified against the installed @deepseek-ai/cordis 4.1.0
  * and the live host `tools` service contract): the static `inject` pins

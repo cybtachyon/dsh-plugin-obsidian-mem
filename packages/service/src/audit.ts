@@ -22,7 +22,11 @@ import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync 
 import { join } from 'node:path'
 import {
   AUDIT_DEFAULT_LIMIT,
+  AUDIT_MAX_LIMIT,
   AUDIT_NOTE_READ_CAP_BYTES,
+  clampInt,
+  dbStateDir,
+  DREAM_STATE_FILE,
   defaultVaultPath,
   INTENT_HINTS,
   INTENT_MARKERS,
@@ -55,7 +59,10 @@ export interface AuditIssue {
 }
 
 /** The bounded row list a `memory_audit` call shows. */
-export type AuditView = 'full' | 'topStale' | 'oldestUnread'
+export const AUDIT_VIEWS = ['full', 'topStale', 'oldestUnread'] as const
+
+/** One of the {@link AUDIT_VIEWS} note-row orders. */
+export type AuditView = typeof AUDIT_VIEWS[number]
 
 /** Request knobs of one audit pass; rollups are unbounded, rows are not. */
 export interface AuditRequest {
@@ -257,6 +264,14 @@ const MAX_WALK_ENTRIES = 10_000
 /** Lists cap in issue details; the report stays bounded and readable. */
 const DETAIL_LIST_CAP = 20
 
+// Per-call character caps for store text echoed through quoted(): paths
+// lead every finding, error payloads need the longest room, and labels,
+// model ids, and versions stay short enough to keep one issue on one line.
+const ECHO_DEFAULT_CAP = 90
+const ECHO_LABEL_CAP = 60
+const ECHO_PATH_CAP = 120
+const ECHO_TEXT_CAP = 200
+
 /**
  * InventoryVault walks one vault read-only: the markdown/ note tree
  * (size-before-read, read cap, reserved placement, dot-dir skips), the
@@ -411,14 +426,14 @@ function measureUsage(vault: VaultEntry, fs: AuditFs): { bytes: number; truncate
 
 // Echoed store text is quoted and truncated: an agent reads this report, so
 // a hostile note must not flood it or pose as instructions.
-function quoted(value: string, cap = 90): string {
+function quoted(value: string, cap = ECHO_DEFAULT_CAP): string {
   const oneLine = value.replace(/\s+/g, ' ').trim()
   const clipped = oneLine.length > cap ? `${oneLine.slice(0, cap - 3)}...` : oneLine
   return JSON.stringify(clipped)
 }
 
 function pathList(paths: readonly string[], cap = DETAIL_LIST_CAP): string {
-  const shown = paths.slice(0, cap).map((path) => quoted(path, 120))
+  const shown = paths.slice(0, cap).map((path) => quoted(path, ECHO_PATH_CAP))
   const rest = paths.length - shown.length
   return shown.length === 0 ? 'none' : `${shown.join(', ')}${rest > 0 ? ` (+${rest} more)` : ''}`
 }
@@ -475,7 +490,7 @@ interface DreamStateFile {
 
 /** ReadLastDreamAt answers the dream stamp from the plugin state dir. */
 export function readLastDreamAt(readSource: { readFile(path: string): string | null }, dbPath: string): number | null {
-  const raw = readSource.readFile(join(dbPath, 'state', 'state.json'))
+  const raw = readSource.readFile(join(dbStateDir(dbPath), DREAM_STATE_FILE))
   if (raw === null) {
     return null
   }
@@ -532,12 +547,27 @@ export function globalBudgetReport(
   }
 }
 
+/**
+ * DayEnd answers the epoch of the end of the day (23:59:59.999Z) a
+ * YYYY-MM-DD note stamp names, so a read on that day counts as access
+ * through the whole day. Full ISO stamps parse as they are; an
+ * unparseable stamp answers 0. Audit's staleness ranking and the dream
+ * engine's unread-since-last-dream test share this rule (single source).
+ */
+export function dayEnd(stamp: string): number {
+  const iso = stamp.length === 10 ? `${stamp}T23:59:59.999Z` : stamp
+  const at = Date.parse(iso)
+  return Number.isFinite(at) ? at : 0
+}
+
 // The staleness key for topStale ranking: never-read first (epoch 0), then
 // least-recently-read, then least-read, then path.
 function stalenessKey(note: AuditedNote): { since: number; readCount: number; path: string } {
-  const last = note.meta?.last_read_at ?? ''
-  const since = last === '' ? 0 : Date.parse(last.endsWith('T') || last.length === 10 ? `${last}T23:59:59.999Z` : last)
-  return { since: Number.isFinite(since) ? since : 0, readCount: note.meta?.read_count ?? 0, path: note.path }
+  return {
+    since: dayEnd(note.meta?.last_read_at ?? ''),
+    readCount: note.meta?.read_count ?? 0,
+    path: note.path,
+  }
 }
 
 /**
@@ -547,7 +577,7 @@ function stalenessKey(note: AuditedNote): { since: number; readCount: number; pa
  */
 export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {}): Promise<AuditReport> {
   const view: AuditView = request.view === 'topStale' || request.view === 'oldestUnread' ? request.view : 'full'
-  const limit = Math.min(500, Math.max(1, Math.trunc(request.limit ?? AUDIT_DEFAULT_LIMIT)))
+  const limit = clampInt(Math.trunc(request.limit ?? AUDIT_DEFAULT_LIMIT), 1, AUDIT_MAX_LIMIT)
   const issues: AuditIssue[] = []
   const issue = (id: string, severity: AuditSeverity, detail: string, remediation: string): void => {
     issues.push({ id, severity, detail, remediation })
@@ -561,32 +591,32 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   for (const inventory of inventories) {
     const { vault, facts } = inventory
     if (!facts.exists) {
-      issue('vault.missing', 'ISSUE', `registered ${vault.mode} vault ${quoted(vault.path, 120)} does not exist`,
+      issue('vault.missing', 'ISSUE', `registered ${vault.mode} vault ${quoted(vault.path, ECHO_PATH_CAP)} does not exist`,
         'restore the directory or remove the entry (settings card for card vaults, the row config.vaults for settings vaults); the registry drops it on restart')
       continue
     }
     if (!facts.markdownPresent) {
-      issue('vault.markdown', 'ISSUE', `vault ${quoted(vault.path, 120)} has no markdown/ directory; nothing in it is indexed`,
-        `create ${quoted(markdownDir(vault.path), 120)} or re-register the vault at its real path`)
+      issue('vault.markdown', 'ISSUE', `vault ${quoted(vault.path, ECHO_PATH_CAP)} has no markdown/ directory; nothing in it is indexed`,
+        `create ${quoted(markdownDir(vault.path), ECHO_PATH_CAP)} or re-register the vault at its real path`)
     }
     if (!facts.metadataPresent) {
-      issue('vault.metadata', 'INFO', `vault ${quoted(vault.path, 120)} has no metadata/ directory yet`,
+      issue('vault.metadata', 'INFO', `vault ${quoted(vault.path, ECHO_PATH_CAP)} has no metadata/ directory yet`,
         'nothing to do: the plugin creates it when it first writes index state for this vault')
     }
     if (vault.mode === 'shared' && !facts.writable) {
-      issue('vault.writable', 'ISSUE', `shared vault ${quoted(vault.path, 120)} is not writable by this process`,
+      issue('vault.writable', 'ISSUE', `shared vault ${quoted(vault.path, ECHO_PATH_CAP)} is not writable by this process`,
         'make the directory writable, or switch the vault to read-only in the Obsidian Mem settings card')
     }
     if (vault.mode === 'read-only' && facts.writable) {
-      issue('vault.readonly-writable', 'INFO', `read-only vault ${quoted(vault.path, 120)} is writable on disk`,
+      issue('vault.readonly-writable', 'INFO', `read-only vault ${quoted(vault.path, ECHO_PATH_CAP)} is writable on disk`,
         'the plugin still never writes it; tighten permissions if the read-only intent is enforcement')
     }
     if (inventory.reservedMisplaced.length > 0) {
-      issue('reserved.placement', 'ISSUE', `reserved protocol files sit inside ${quoted(markdownDir(vault.path), 120)}: ${pathList(inventory.reservedMisplaced)}`,
+      issue('reserved.placement', 'ISSUE', `reserved protocol files sit inside ${quoted(markdownDir(vault.path), ECHO_PATH_CAP)}: ${pathList(inventory.reservedMisplaced)}`,
         `move them to the vault root; reserved files (.INTENTS.md, DREAMS.md, *_history.md) live outside markdown/ and are never indexed`)
     }
     if (inventory.walkTruncated) {
-      issue('vault.walk-truncated', 'INFO', `the stat walk of ${quoted(vault.path, 120)} hit its entry cap`,
+      issue('vault.walk-truncated', 'INFO', `the stat walk of ${quoted(vault.path, ECHO_PATH_CAP)} hit its entry cap`,
         'the rollups under-count this vault; split the vault or prune its note tree')
     }
   }
@@ -597,11 +627,11 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
     const pending = defaultVaultPath(deps.homedir)
     const exists = deps.fs.exists(pending)
     issue('vaults.default-pending', 'INFO',
-      `no shared vault is registered; the default vault ${quoted(pending, 120)} ${exists ? 'already exists and' : 'will be created'} will be adopted on the first memory access (audit does not provision it)`,
+      `no shared vault is registered; the default vault ${quoted(pending, ECHO_PATH_CAP)} ${exists ? 'already exists and' : 'will be created'} will be adopted on the first memory access (audit does not provision it)`,
       'add your own vaults in the Obsidian Mem settings card to override the default, or ignore this if the default is intended')
   }
   if (deps.status.notice !== null) {
-    issue('vaults.default-in-use', 'INFO', `the default memory vault is in use: ${quoted(deps.status.notice, 200)}`,
+    issue('vaults.default-in-use', 'INFO', `the default memory vault is in use: ${quoted(deps.status.notice, ECHO_TEXT_CAP)}`,
       'register a shared vault (settings card or config.vaults) to move memory off the default')
   }
 
@@ -610,7 +640,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   if (firstShared !== undefined && firstShared.facts.exists) {
     const intents = analyzeIntents(deps.fs, firstShared.vault.path)
     if (!intents.present) {
-      issue('intents.missing', 'ISSUE', `${quoted(intents.path, 120)} is missing from the first shared vault`,
+      issue('intents.missing', 'ISSUE', `${quoted(intents.path, ECHO_PATH_CAP)} is missing from the first shared vault`,
         `create it with one "## marker" section per intent (${INTENT_MARKERS.join(', ')}); provisioning also seeds this exact file on first memory access`)
     } else if (intents.emptyMarkers.length > 0) {
       const all = intents.emptyMarkers.length === INTENT_MARKERS.length
@@ -623,13 +653,13 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   // 4. Milvus / collection / indexer pipeline.
   const status = deps.status
   if (status.state === 'degraded') {
-    issue('index.degraded', 'ISSUE', `memory index is degraded: ${quoted(status.milvus.error ?? 'milvus start failed', 200)}`,
+    issue('index.degraded', 'ISSUE', `memory index is degraded: ${quoted(status.milvus.error ?? 'milvus start failed', ECHO_TEXT_CAP)}`,
       'restart the host to retry the Milvus start; searches answer IndexOfflineError until then')
   } else if (status.state !== 'ready') {
-    issue('index.cold', 'INFO', `memory access has not run in this process; the index under ${quoted(status.milvus.dbPath, 120)} starts on the first memory tool call`,
+    issue('index.cold', 'INFO', `memory access has not run in this process; the index under ${quoted(status.milvus.dbPath, ECHO_PATH_CAP)} starts on the first memory tool call`,
       'nothing to do unless searches are already failing elsewhere')
   } else {
-    issue('index.live', 'INFO', `milvus ${quoted(status.milvus.version ?? 'unknown version', 60)} at ${quoted(status.milvus.address ?? '?', 60)}, dbDir ${quoted(status.milvus.dbPath, 120)}`,
+    issue('index.live', 'INFO', `milvus ${quoted(status.milvus.version ?? 'unknown version', ECHO_LABEL_CAP)} at ${quoted(status.milvus.address ?? '?', ECHO_LABEL_CAP)}, dbDir ${quoted(status.milvus.dbPath, ECHO_PATH_CAP)}`,
       'none')
   }
 
@@ -637,7 +667,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   if (status.state === 'ready' && deps.collection !== null) {
     const probe = await deps.collection()
     if (!probe.reachable) {
-      issue('index.probe', 'ISSUE', `the collection probe failed: ${quoted(probe.error ?? 'unreachable', 200)}`,
+      issue('index.probe', 'ISSUE', `the collection probe failed: ${quoted(probe.error ?? 'unreachable', ECHO_TEXT_CAP)}`,
         'check the milvus child and restart the host, then re-run the audit')
     } else if (!probe.exists) {
       issue('collection.missing', 'ISSUE', `collection "obsidian_mem" does not exist although the index reports ready`,
@@ -676,21 +706,21 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   for (const inventory of inventories) {
     const { state } = inventory
     if (!state.present) {
-      issue('state.missing', 'INFO', `${quoted(state.path, 120)} is absent: vault ${quoted(inventory.vault.path, 120)} was never indexed`,
+      issue('state.missing', 'INFO', `${quoted(state.path, ECHO_PATH_CAP)} is absent: vault ${quoted(inventory.vault.path, ECHO_PATH_CAP)} was never indexed`,
         'none; the first index pass writes it')
       continue
     }
     if (state.parseError !== null) {
-      issue('state.unreadable', 'ISSUE', `indexer state ${quoted(state.path, 120)} is unreadable (${state.parseError})`,
+      issue('state.unreadable', 'ISSUE', `indexer state ${quoted(state.path, ECHO_PATH_CAP)} is unreadable (${state.parseError})`,
         'delete the file to force a full reindex of this vault')
       continue
     }
     if (state.modelId !== null && state.modelId !== deps.config.model.id) {
-      issue('state.stale-model', 'ISSUE', `${quoted(state.path, 120)} was built with model ${quoted(state.modelId, 60)}, config names ${quoted(deps.config.model.id, 60)}`,
+      issue('state.stale-model', 'ISSUE', `${quoted(state.path, ECHO_PATH_CAP)} was built with model ${quoted(state.modelId, ECHO_LABEL_CAP)}, config names ${quoted(deps.config.model.id, ECHO_LABEL_CAP)}`,
         'delete the state file (or restart after a dim change) to force a full reindex against the current model')
     }
     if (state.vectorDim !== null && state.vectorDim !== deps.config.vectorDim) {
-      issue('state.stale-dim', 'ISSUE', `${quoted(state.path, 120)} was built at dim ${String(state.vectorDim)}, config wants ${String(deps.config.vectorDim)}`,
+      issue('state.stale-dim', 'ISSUE', `${quoted(state.path, ECHO_PATH_CAP)} was built at dim ${String(state.vectorDim)}, config wants ${String(deps.config.vectorDim)}`,
         'delete the state file (or restart) to force a full reindex at the configured width')
     }
   }
@@ -719,20 +749,20 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   const cache = modelCacheDir(deps.homedir)
   const cacheEntries = deps.fs.listDirectory(cache)
   if (cacheEntries === null || cacheEntries.length === 0) {
-    issue('model.uncached', 'INFO', `the embedding model is not cached at ${quoted(cache, 120)} yet`,
+    issue('model.uncached', 'INFO', `the embedding model is not cached at ${quoted(cache, ECHO_PATH_CAP)} yet`,
       'the first embedding run downloads it (~135 MB); run scripts/prefetch-model.mjs to pre-seed it offline')
   }
 
   // 7. Dreaming: last stamp + schedules summary (Q4 audit<->dream link).
   const lastDreamAt = readLastDreamAt(deps.fs, deps.config.milvus.dbPath)
   issue('dream.last', 'INFO', lastDreamAt === null
-    ? `no dream has run yet (state file ${quoted(join(deps.config.milvus.dbPath, 'state', 'state.json'), 120)})`
+    ? `no dream has run yet (state file ${quoted(join(dbStateDir(deps.config.milvus.dbPath), DREAM_STATE_FILE), ECHO_PATH_CAP)})`
     : `last dream ran at ${iso(lastDreamAt)}`,
   'run memory_dream periodically; see its description for the plan/run flow')
   const schedules = status.dreaming.schedules
   issue('dreaming.schedules', 'INFO', schedules.length === 0
     ? 'no dreaming schedules are configured (memory_dream runs manually or on an agent-led request)'
-    : `dreaming schedules: ${schedules.map((schedule) => quoted(schedule.label === '' ? schedule.id : schedule.label, 60)).join(', ')}`,
+    : `dreaming schedules: ${schedules.map((schedule) => quoted(schedule.label === '' ? schedule.id : schedule.label, ECHO_LABEL_CAP)).join(', ')}`,
   'manage schedules in the Obsidian Mem settings card Dreaming section')
 
   // 8. Global memory budget (TASK-045 tracker echo; instruction on over).

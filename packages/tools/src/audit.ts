@@ -9,10 +9,21 @@
  * @module dsh-plugin-obsidian-mem/tools/audit
  */
 
-import { TOOL_MEMORY_AUDIT } from '../../core/lib/index.js'
+import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, TOOL_MEMORY_AUDIT } from '../../core/lib/index.js'
+import { AUDIT_VIEWS } from '../../service/lib/audit.js'
 import type { AuditReport, AuditRequest, AuditView } from '../../service/lib/audit.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
-import { asRecord, optionalInt, textBlock } from './host.js'
+import { asRecord, optionalEnum, optionalInt } from './host.js'
+import {
+  BudgetSectionSchema,
+  defineMemoryTool,
+  failedValue,
+  makePresentCall,
+  mapBudgetSection,
+  NullableIntegerSchema,
+  NullableStringSchema,
+} from './toolkit.js'
+import type { BudgetSectionValue } from './toolkit.js'
 
 /** Whole-store stat walk plus two live-index reads, capped below the dream. */
 export const AUDIT_TIMEOUT_MS = 30_000
@@ -28,12 +39,12 @@ export const AUDIT_PARAMETERS: JsonSchemaNode = {
   properties: {
     view: {
       type: 'string',
-      enum: ['full', 'topStale', 'oldestUnread'],
+      enum: AUDIT_VIEWS,
       description: 'Note-row list to show: \'full\' every live and archived note by path; \'topStale\' never-read and least-recently-read notes first; \'oldestUnread\' only never-read notes, oldest on disk first. Defaults to \'full\'. Issue and stat rollups always cover the whole store, whatever the view.',
     },
     limit: {
       type: 'integer',
-      description: 'Largest number of note rows to return (1-500). Defaults to 50.',
+      description: `Largest number of note rows to return (1-${String(AUDIT_MAX_LIMIT)}). Defaults to ${String(AUDIT_DEFAULT_LIMIT)}.`,
     },
   },
 }
@@ -67,28 +78,8 @@ const ROW_SCHEMA: JsonSchemaNode = {
   },
 }
 
-const BUDGET_SCHEMA: JsonSchemaNode = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['budget_tokens', 'used_tokens', 'measured', 'over_budget', 'global_note_count', 'global_note_paths'],
-  properties: {
-    budget_tokens: { type: 'integer' },
-    used_tokens: { type: 'integer' },
-    measured: { type: 'boolean' },
-    over_budget: { type: 'boolean' },
-    global_note_count: { type: 'integer' },
-    global_note_paths: { type: 'array', items: { type: 'string' } },
-  },
-}
-
 // Nullable report scalars (index offline) stay honest nulls, a closed
 // value-or-null union inside the JsonSchemaNode subset.
-const nullableNumber: JsonSchemaNode = {
-  oneOf: [{ type: 'integer' }, { type: 'null' }],
-}
-const nullableTime: JsonSchemaNode = {
-  oneOf: [{ type: 'string' }, { type: 'null' }],
-}
 const nullableProgress: JsonSchemaNode = {
   oneOf: [
     {
@@ -117,7 +108,7 @@ export const AUDIT_OUTPUT: JsonSchemaNode = {
         kind: { type: 'string', const: 'audit' },
         ok: { type: 'boolean' },
         generated_at: { type: 'string' },
-        view: { type: 'string', enum: ['full', 'topStale', 'oldestUnread'] },
+        view: { type: 'string', enum: AUDIT_VIEWS },
         limit: { type: 'integer' },
         issues: { type: 'array', items: ISSUE_SCHEMA },
         stats: {
@@ -147,15 +138,15 @@ export const AUDIT_OUTPUT: JsonSchemaNode = {
             huge_not_read_notes: { type: 'array', items: { type: 'string' } },
             malformed_notes: { type: 'array', items: { type: 'string' } },
             indexer: nullableProgress,
-            collection_count: nullableNumber,
-            expected_chunks: nullableNumber,
-            last_dream_at: nullableTime,
+            collection_count: NullableIntegerSchema,
+            expected_chunks: NullableIntegerSchema,
+            last_dream_at: NullableStringSchema,
             dreaming_schedules: { type: 'integer' },
           },
         },
         rows: { type: 'array', items: ROW_SCHEMA },
         rows_total: { type: 'integer' },
-        budget: BUDGET_SCHEMA,
+        budget: BudgetSectionSchema,
       },
     },
     {
@@ -207,23 +198,14 @@ export type AuditValue
       oversized: boolean
     }>
     rows_total: number
-    budget: {
-      budget_tokens: number
-      used_tokens: number
-      measured: boolean
-      over_budget: boolean
-      global_note_count: number
-      global_note_paths: string[]
-    }
+    budget: BudgetSectionValue
   }
   | { kind: 'failed', message: string }
-
-const AUDIT_VIEWS: readonly AuditView[] = ['full', 'topStale', 'oldestUnread']
 
 /** Execute one memory_audit call; a store fault comes back as `failed`. */
 export async function executeAudit(service: MemoryService, args: unknown): Promise<AuditValue> {
   const raw = asRecord(args)
-  const view = optionalView(raw)
+  const view = optionalEnum(raw, 'view', AUDIT_VIEWS) as AuditView | undefined
   const limit = optionalInt(raw, 'limit')
   const request: AuditRequest = {
     ...(view === undefined ? {} : { view }),
@@ -233,20 +215,8 @@ export async function executeAudit(service: MemoryService, args: unknown): Promi
     const report = await service.audit(request)
     return mapReport(report)
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error)
-    return ({ kind: 'failed' as const, message: `memory_audit could not complete: ${message}` })
+    return failedValue(TOOL_MEMORY_AUDIT, error)
   }
-}
-
-function optionalView(args: Record<string, unknown>): AuditView | undefined {
-  const value = args.view
-  if (value === undefined || value === null) {
-    return undefined
-  }
-  if (typeof value !== 'string' || !AUDIT_VIEWS.includes(value as AuditView)) {
-    throw new Error(`obsidian-mem tool: "view" must be one of ${AUDIT_VIEWS.join(' | ')}`)
-  }
-  return value as AuditView
 }
 
 // Report -> model value: camelCase service fields become snake_case, ms
@@ -295,14 +265,7 @@ function mapReport(report: AuditReport): AuditValue {
       oversized: row.oversized,
     })),
     rows_total: report.totalRows,
-    budget: {
-      budget_tokens: report.budget.budgetTokens,
-      used_tokens: report.budget.usedTokens,
-      measured: report.budget.measured,
-      over_budget: report.budget.overBudget,
-      global_note_count: report.budget.globalNoteCount,
-      global_note_paths: [...report.budget.globalNotePaths],
-    },
+    budget: mapBudgetSection(report.budget),
   }
 }
 
@@ -365,24 +328,14 @@ function formatBytes(bytes: number): string {
 
 /** Build the memory_audit definition for one service seam. */
 export function createAuditTool(service: MemoryService): ToolDefinition {
-  return {
+  return defineMemoryTool({
     name: TOOL_MEMORY_AUDIT,
     description: AUDIT_DESCRIPTION,
     parameters: AUDIT_PARAMETERS,
-    output: {
-      schema: AUDIT_OUTPUT,
-      render: (_args, value) => [textBlock(renderAudit(value as AuditValue))],
-    },
+    output: AUDIT_OUTPUT,
     timeoutMs: AUDIT_TIMEOUT_MS,
     execute: async (args) => await executeAudit(service, args),
-    presentCall: (args) => {
-      const view = (args as { view?: unknown }).view
-      return {
-        card: 'generic' as const,
-        kind: 'read' as const,
-        title: `${TOOL_MEMORY_AUDIT} ${typeof view === 'string' ? view : 'full'}`,
-        rawInput: args,
-      }
-    },
-  }
+    render: renderAudit,
+    presentCall: makePresentCall({ tool: TOOL_MEMORY_AUDIT, kind: 'read', field: 'view', fallback: 'full' }),
+  })
 }

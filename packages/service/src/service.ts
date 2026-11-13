@@ -44,6 +44,7 @@ import {
   classifyPath,
   contentHash,
   firstSharedVault,
+  formatLocalDate,
   isReservedNonIndexed,
   isVaultMode,
   markdownDir,
@@ -510,7 +511,7 @@ export class ObsidianMemService extends Service {
       const nextMeta: NoteMeta = {
         ...note.meta,
         read_count: note.meta.read_count + 1,
-        last_read_at: localDate(),
+        last_read_at: formatLocalDate(new Date()),
       }
       finalText = serializeNoteWithRaw({ meta: nextMeta, body: note.body }, note.raw)
       this.writeAtomic(target, finalText)
@@ -1194,13 +1195,4 @@ function defaultUvxPrewarm(command: string, args: readonly string[]): void {
 // Expr literal quoting, matching search.ts's filter escaping.
 function quoteExpr(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-}
-
-// Local calendar date (YYYY-MM-DD) for note last_read_at stamps; notes are
-// human-editable memory, the day is the meaningful resolution.
-function localDate(): string {
-  const now = new Date()
-  const month = `${now.getMonth() + 1}`.padStart(2, '0')
-  const day = `${now.getDate()}`.padStart(2, '0')
-  return `${now.getFullYear()}-${month}-${day}`
 }

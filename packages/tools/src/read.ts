@@ -21,7 +21,8 @@ import {
 } from '../../core/lib/index.js'
 import { expandHomePath } from '../../service/lib/config.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
-import { asRecord, optionalInt, requiredString, textBlock } from './host.js'
+import { asRecord, optionalInt, requiredString } from './host.js'
+import { defineMemoryTool, makePresentCall, noticeHeader, withNotice } from './toolkit.js'
 
 /** Fast file read: one vault file, one small write. */
 export const READ_TIMEOUT_MS = 10_000
@@ -123,23 +124,21 @@ export async function executeRead(service: MemoryService, args: unknown): Promis
   const vaults = service.listVaults()
   const classified = classifyPath(vaults, target)
   if (classified === null || !classified.insideMarkdownDir) {
-    return ({
+    return withNotice({
       kind: 'outside_vault' as const,
       path: target,
       message: classified === null
         ? `${target} is not inside any registered vault. Memory notes live under a vault's markdown/ directory.`
         : `${target} is inside vault ${classified.vault.path} but outside its markdown/ directory.`,
       vaults: vaults.map((vault) => markdownDir(vault.path)),
-      ...(notice === undefined ? {} : { notice }),
-    })
+    }, notice)
   }
   if (!existsSync(target)) {
-    return ({
+    return withNotice({
       kind: 'not_found' as const,
       path: target,
       message: `${target} does not exist. List the vault in a file manager or search for the note's topic instead.`,
-      ...(notice === undefined ? {} : { notice }),
-    })
+    }, notice)
   }
 
   const result = await service.read(target, {
@@ -150,7 +149,7 @@ export async function executeRead(service: MemoryService, args: unknown): Promis
   const body = result.body === '' ? frontmatter : `${frontmatter}\n${result.body}`
   const inner = result.truncated ? `${body}\n${truncationMarker(result.body, result)}` : body
 
-  return ({
+  return withNotice({
     kind: 'read' as const,
     path: result.path,
     mode: result.mode,
@@ -158,8 +157,7 @@ export async function executeRead(service: MemoryService, args: unknown): Promis
     total_lines: result.totalLines,
     truncated: result.truncated,
     content: wrapRecalled(result.path, inner),
-    ...(notice === undefined ? {} : { notice }),
-  })
+  }, notice)
 }
 
 // The in-envelope continuation marker: the window's lines, the whole-body
@@ -177,7 +175,7 @@ function truncationMarker(
 
 /** Model-facing rendering of one memory_read value. */
 export function renderRead(value: ReadValue): string {
-  const notice = value.notice === undefined ? '' : `${value.notice}\n\n`
+  const notice = noticeHeader(value.notice)
   switch (value.kind) {
     case 'read': {
       const stats = value.stats_updated ? 'read stats updated' : 'read-only vault: read stats unchanged'
@@ -195,24 +193,14 @@ export function renderRead(value: ReadValue): string {
 
 /** Build the memory_read definition for one service seam. */
 export function createReadTool(service: MemoryService): ToolDefinition {
-  return {
+  return defineMemoryTool({
     name: TOOL_MEMORY_READ,
     description: READ_DESCRIPTION,
     parameters: READ_PARAMETERS,
-    output: {
-      schema: READ_OUTPUT,
-      render: (_args, value) => [textBlock(renderRead(value as ReadValue))],
-    },
+    output: READ_OUTPUT,
     timeoutMs: READ_TIMEOUT_MS,
     execute: async (args) => await executeRead(service, args),
-    presentCall: (args) => {
-      const path = (args as { path?: unknown }).path
-      return {
-        card: 'generic' as const,
-        kind: 'read' as const,
-        title: `${TOOL_MEMORY_READ} ${typeof path === 'string' ? path : ''}`,
-        rawInput: args,
-      }
-    },
-  }
+    render: renderRead,
+    presentCall: makePresentCall({ tool: TOOL_MEMORY_READ, kind: 'read', field: 'path', fallback: '' }),
+  })
 }

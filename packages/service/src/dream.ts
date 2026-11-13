@@ -23,6 +23,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import {
   ARCHIVE_HISTORY_SUFFIX,
+  dbStateDir,
   DEGRADATION_STEP,
   DREAM_PROMPT_FILE,
   DREAM_SESSION_PREFIX,
@@ -36,7 +37,7 @@ import {
 import type { VaultMode } from '../../core/lib/index.js'
 import type { ResolvedObsidianMemConfig } from './config.js'
 import { describeError } from './errors.js'
-import { globalBudgetReport, readLastDreamAt } from './audit.js'
+import { dayEnd, globalBudgetReport, readLastDreamAt } from './audit.js'
 import type { AuditedNote, GlobalBudgetReport, VaultInventory } from './audit.js'
 import type { GlobalMemoryIndex, ServiceFs } from './service.js'
 
@@ -212,11 +213,25 @@ export interface DreamDeps {
   log: (message: string) => void
 }
 
-// Candidate ranking weights; heavier acts first in the work plan.
-const WEIGHT_GLOBAL_BUDGET = 4
-const WEIGHT_OVERSIZED = 3
-const WEIGHT_NEVER_READ = 2
-const WEIGHT_UNREAD_SINCE_DREAM = 2
+// Candidate reason codes: these strings are model-facing (the plan's
+// candidate reasons and work lines) and every ranking and plan-shaping
+// decision reads them from here (single home for the values).
+const REASON_GLOBAL_OVER_BUDGET = 'global-over-budget'
+const REASON_OVERSIZED_TIMELINE = 'oversized-timeline'
+const REASON_NEVER_READ = 'never-read'
+const REASON_UNREAD_SINCE_DREAM = 'unread-since-last-dream'
+
+/** The reasons that mark a candidate as stale-or-unread plan work. */
+const STALE_REASONS: readonly string[] = [REASON_NEVER_READ, REASON_UNREAD_SINCE_DREAM]
+
+// Candidate ranking weights keyed by reason; heavier acts first in the
+// work plan.
+const CANDIDATE_WEIGHTS: Record<string, number> = {
+  [REASON_GLOBAL_OVER_BUDGET]: 4,
+  [REASON_OVERSIZED_TIMELINE]: 3,
+  [REASON_NEVER_READ]: 2,
+  [REASON_UNREAD_SINCE_DREAM]: 2,
+}
 
 /** Work lists in the plan text stay bounded; the stats never lie about it. */
 const PLAN_CANDIDATE_CAP = 25
@@ -281,14 +296,6 @@ function cosine(a: readonly number[], b: readonly number[]): number {
     return 0
   }
   return dot / (Math.sqrt(normA) * Math.sqrt(normB))
-}
-
-// A YYYY-MM-DD stamp is true through its whole day; compare at dayEnd so
-// "read on the last-dream day" still counts as accessed.
-function dayEnd(stamp: string): number {
-  const iso = stamp.length === 10 ? `${stamp}T23:59:59.999Z` : stamp
-  const at = Date.parse(iso)
-  return Number.isFinite(at) ? at : 0
 }
 
 /**
@@ -390,7 +397,7 @@ export class DreamOrchestrator {
     }
 
     const oversized = allNotes.filter((note) => !note.flaggedNotRead && note.sizeBytes > NOTE_TIMELINE_BYTES)
-    const staleOrUnread = candidates.filter((candidate) => candidate.reasons.some((reason) => reason === 'never-read' || reason === 'unread-since-last-dream'))
+    const staleOrUnread = candidates.filter((candidate) => candidate.reasons.some((reason) => STALE_REASONS.includes(reason)))
 
     return {
       generatedAt,
@@ -479,13 +486,13 @@ export class DreamOrchestrator {
   }
 
   private setLastDream(at: number): void {
-    const path = join(this.deps.config.milvus.dbPath, 'state', DREAM_STATE_FILE)
+    const path = join(dbStateDir(this.deps.config.milvus.dbPath), DREAM_STATE_FILE)
     this.deps.fs.mkdirp(dirname(path))
     this.deps.fs.writeFile(path, `${JSON.stringify({ lastDreamAt: at }, null, 2)}\n`)
   }
 
   private readRelevancy(): Map<string, number> {
-    const path = join(this.deps.config.milvus.dbPath, 'state', RELEVANCY_FILE)
+    const path = join(dbStateDir(this.deps.config.milvus.dbPath), RELEVANCY_FILE)
     const raw = this.deps.fs.readFile(path)
     if (raw === null) {
       return new Map()
@@ -501,7 +508,7 @@ export class DreamOrchestrator {
   }
 
   private writeRelevancy(relevancy: Map<string, number>): void {
-    const path = join(this.deps.config.milvus.dbPath, 'state', RELEVANCY_FILE)
+    const path = join(dbStateDir(this.deps.config.milvus.dbPath), RELEVANCY_FILE)
     const record: Record<string, number> = {}
     for (const key of [...relevancy.keys()].sort()) {
       record[key] = relevancy.get(key) as number
@@ -608,15 +615,15 @@ function rankCandidate(
   const last = note.meta.last_read_at ?? ''
   const readCount = note.meta.read_count ?? 0
   if (last === '' && readCount === 0) {
-    reasons.push('never-read')
+    reasons.push(REASON_NEVER_READ)
   } else if (last !== '' && lastDreamAt !== null && dayEnd(last) <= lastDreamAt) {
-    reasons.push('unread-since-last-dream')
+    reasons.push(REASON_UNREAD_SINCE_DREAM)
   }
   if (!note.flaggedNotRead && note.sizeBytes > NOTE_TIMELINE_BYTES) {
-    reasons.push('oversized-timeline')
+    reasons.push(REASON_OVERSIZED_TIMELINE)
   }
   if (overBudget && note.meta.type === SCOPE_GLOBAL) {
-    reasons.push('global-over-budget')
+    reasons.push(REASON_GLOBAL_OVER_BUDGET)
   }
   if (reasons.length === 0) {
     return null
@@ -634,19 +641,7 @@ function rankCandidate(
 }
 
 function candidateScore(candidate: DreamCandidate): number {
-  let score = 0
-  for (const reason of candidate.reasons) {
-    if (reason === 'global-over-budget') {
-      score += WEIGHT_GLOBAL_BUDGET
-    } else if (reason === 'oversized-timeline') {
-      score += WEIGHT_OVERSIZED
-    } else if (reason === 'never-read') {
-      score += WEIGHT_NEVER_READ
-    } else if (reason === 'unread-since-last-dream') {
-      score += WEIGHT_UNREAD_SINCE_DREAM
-    }
-  }
-  return score
+  return candidate.reasons.reduce((sum, reason) => sum + (CANDIDATE_WEIGHTS[reason] ?? 0), 0)
 }
 
 function renderPlanText(input: {
@@ -672,17 +667,17 @@ function renderPlanText(input: {
     }
   }
   for (const candidate of input.chosen) {
-    if (candidate.reasons.includes('oversized-timeline') && !clustered.has(candidate.path)) {
+    if (candidate.reasons.includes(REASON_OVERSIZED_TIMELINE) && !clustered.has(candidate.path)) {
       lines.push(`${next()} Split timeline ${candidate.path}: keep the conclusion in it and move the history into a ${candidate.path.replace(/\.md$/, '')}${ARCHIVE_HISTORY_SUFFIX} note at the vault root (reserved, never indexed).`)
     }
   }
   for (const candidate of input.chosen) {
-    if (candidate.reasons.includes('global-over-budget')) {
+    if (candidate.reasons.includes(REASON_GLOBAL_OVER_BUDGET)) {
       lines.push(`${next()} Compact global note ${candidate.path}: it injects into every session; tighten it to a conclusion pointer.`)
     }
   }
   for (const candidate of input.chosen) {
-    const review = candidate.reasons.filter((reason) => reason === 'never-read' || reason === 'unread-since-last-dream')
+    const review = candidate.reasons.filter((reason) => STALE_REASONS.includes(reason))
     if (review.length === 0 || clustered.has(candidate.path)) {
       continue
     }

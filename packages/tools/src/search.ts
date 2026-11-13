@@ -14,12 +14,14 @@
 import {
   approxCharsForTokens,
   CHUNK_MAX_TOKENS,
+  clampInt,
   SEARCH_MAX_RESULTS,
   TOOL_MEMORY_SEARCH,
 } from '../../core/lib/index.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
-import { asRecord, optionalInt, optionalString, requiredString, textBlock } from './host.js'
+import { asRecord, optionalInt, optionalString, requiredString } from './host.js'
+import { defineMemoryTool, makePresentCall, noticeHeader, withNotice } from './toolkit.js'
 
 /** Cold start budget: model download plus Milvus-Lite first spawn. */
 export const SEARCH_TIMEOUT_MS = 300_000
@@ -137,10 +139,7 @@ export async function executeSearch(service: MemoryService, args: unknown): Prom
 
   const notice = await service.ensureMemoryAccess()
 
-  const topK = Math.min(
-    SEARCH_MAX_RESULTS,
-    Math.max(1, requestedLimit ?? service.config.budgets.searchTopK),
-  )
+  const topK = clampInt(requestedLimit ?? service.config.budgets.searchTopK, 1, SEARCH_MAX_RESULTS)
   try {
     const results = await service.search({
       query,
@@ -160,21 +159,19 @@ export async function executeSearch(service: MemoryService, args: unknown): Prom
       snippet: row.chunk_text.slice(0, capChars),
       snippet_truncated: row.chunk_text.length > capChars,
     }))
-    return {
+    return withNotice({
       kind: 'search' as const,
       query,
       count: sections.length,
       sections,
-      ...(notice === undefined ? {} : { notice }),
-    }
+    }, notice)
   } catch (error: unknown) {
     if (error instanceof IndexOfflineError) {
-      return {
+      return withNotice({
         kind: 'index_offline' as const,
         message: error.message,
         remediation: INDEX_OFFLINE_REMEDIATION,
-        ...(notice === undefined ? {} : { notice }),
-      }
+      }, notice)
     }
     throw error
   }
@@ -182,7 +179,7 @@ export async function executeSearch(service: MemoryService, args: unknown): Prom
 
 /** Model-facing rendering of one memory_search value. */
 export function renderSearch(value: SearchValue): string {
-  const notice = value.notice === undefined ? '' : `${value.notice}\n\n`
+  const notice = noticeHeader(value.notice)
   if (value.kind === 'index_offline') {
     return `${notice}Memory search is unavailable: ${value.message}\n${value.remediation}`
   }
@@ -204,24 +201,14 @@ function indent(text: string): string {
 
 /** Build the memory_search definition for one service seam. */
 export function createSearchTool(service: MemoryService): ToolDefinition {
-  return {
+  return defineMemoryTool({
     name: TOOL_MEMORY_SEARCH,
     description: SEARCH_DESCRIPTION,
     parameters: searchParameters(service.config.budgets.searchTopK),
-    output: {
-      schema: SEARCH_OUTPUT,
-      render: (_args, value) => [textBlock(renderSearch(value as SearchValue))],
-    },
+    output: SEARCH_OUTPUT,
     timeoutMs: SEARCH_TIMEOUT_MS,
     execute: async (args) => await executeSearch(service, args),
-    presentCall: (args) => {
-      const query = (args as { query?: unknown }).query
-      return {
-        card: 'generic' as const,
-        kind: 'search' as const,
-        title: `${TOOL_MEMORY_SEARCH} ${typeof query === 'string' ? query : ''}`,
-        rawInput: args,
-      }
-    },
-  }
+    render: renderSearch,
+    presentCall: makePresentCall({ tool: TOOL_MEMORY_SEARCH, kind: 'search', field: 'query', fallback: '' }),
+  })
 }

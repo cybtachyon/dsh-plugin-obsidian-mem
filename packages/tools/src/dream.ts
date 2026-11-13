@@ -13,7 +13,16 @@ import { TOOL_MEMORY_DREAM } from '../../core/lib/index.js'
 import { DreamBlockedError, DreamBusyError } from '../../service/lib/dream.js'
 import type { DreamEngineResult, DreamPlan, DreamRequest } from '../../service/lib/dream.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
-import { asRecord, optionalString, textBlock } from './host.js'
+import { asRecord, optionalEnum, optionalString } from './host.js'
+import {
+  BudgetSectionSchema,
+  defineMemoryTool,
+  failedValue,
+  makePresentCall,
+  mapBudgetSection,
+  NullableStringSchema,
+} from './toolkit.js'
+import type { BudgetSectionValue } from './toolkit.js'
 
 /** A launched run only waits for the agents gateway; plan is pure math. */
 export const DREAM_TIMEOUT_MS = 300_000
@@ -58,24 +67,6 @@ const CANDIDATE_SCHEMA: JsonSchemaNode = {
   },
 }
 
-const BUDGET_SCHEMA: JsonSchemaNode = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['budget_tokens', 'used_tokens', 'measured', 'over_budget', 'global_note_count', 'global_note_paths'],
-  properties: {
-    budget_tokens: { type: 'integer' },
-    used_tokens: { type: 'integer' },
-    measured: { type: 'boolean' },
-    over_budget: { type: 'boolean' },
-    global_note_count: { type: 'integer' },
-    global_note_paths: { type: 'array', items: { type: 'string' } },
-  },
-}
-
-const nullableTime: JsonSchemaNode = {
-  oneOf: [{ type: 'string' }, { type: 'null' }],
-}
-
 /** Closed output union keyed on kind. */
 export const DREAM_OUTPUT: JsonSchemaNode = {
   oneOf: [
@@ -86,7 +77,7 @@ export const DREAM_OUTPUT: JsonSchemaNode = {
       properties: {
         kind: { type: 'string', const: 'plan' },
         generated_at: { type: 'string' },
-        last_dream_at: nullableTime,
+        last_dream_at: NullableStringSchema,
         prompt: { type: 'string' },
         plan: { type: 'string' },
         candidates: { type: 'array', items: CANDIDATE_SCHEMA },
@@ -103,7 +94,7 @@ export const DREAM_OUTPUT: JsonSchemaNode = {
             total_bytes: { type: 'integer' },
           },
         },
-        budget: BUDGET_SCHEMA,
+        budget: BudgetSectionSchema,
         skipped: { type: 'array', items: { type: 'string' } },
       },
     },
@@ -166,14 +157,7 @@ export type DreamValue
     }>
     clusters: string[][]
     stats: { notes: number, global_notes: number, oversized: number, stale_or_unread: number, total_bytes: number }
-    budget: {
-      budget_tokens: number
-      used_tokens: number
-      measured: boolean
-      over_budget: boolean
-      global_note_count: number
-      global_note_paths: string[]
-    }
+    budget: BudgetSectionValue
     skipped: string[]
   }
   | { kind: 'started', run_id: string, message: string }
@@ -186,7 +170,7 @@ const DREAM_OPERATIONS = ['plan', 'run'] as const
 /** Execute one memory_dream call; guard rejections become kind values. */
 export async function executeDream(service: MemoryService, args: unknown): Promise<DreamValue> {
   const raw = asRecord(args)
-  const operation = optionalOperation(raw)
+  const operation = optionalEnum(raw, 'operation', DREAM_OPERATIONS) as DreamRequest['operation']
   const model = optionalString(raw, 'model')
   const request: DreamRequest = {
     ...(operation === undefined ? {} : { operation }),
@@ -202,20 +186,8 @@ export async function executeDream(service: MemoryService, args: unknown): Promi
     if (error instanceof DreamBlockedError) {
       return { kind: 'dream_blocked', message: error.message }
     }
-    const message = error instanceof Error ? error.message : String(error)
-    return ({ kind: 'failed' as const, message: `memory_dream could not complete: ${message}` })
+    return failedValue(TOOL_MEMORY_DREAM, error)
   }
-}
-
-function optionalOperation(args: Record<string, unknown>): DreamRequest['operation'] {
-  const value = args.operation
-  if (value === undefined || value === null) {
-    return undefined
-  }
-  if (typeof value !== 'string' || !(DREAM_OPERATIONS as readonly string[]).includes(value)) {
-    throw new Error(`obsidian-mem tool: "operation" must be one of ${DREAM_OPERATIONS.join(' | ')}`)
-  }
-  return value === 'run' ? 'run' : 'plan'
 }
 
 function mapResult(result: DreamEngineResult): DreamValue {
@@ -262,14 +234,7 @@ function mapPlan(plan: DreamPlan): DreamValue {
       stale_or_unread: plan.stats.staleOrUnread,
       total_bytes: plan.stats.totalBytes,
     },
-    budget: {
-      budget_tokens: plan.budget.budgetTokens,
-      used_tokens: plan.budget.usedTokens,
-      measured: plan.budget.measured,
-      over_budget: plan.budget.overBudget,
-      global_note_count: plan.budget.globalNoteCount,
-      global_note_paths: [...plan.budget.globalNotePaths],
-    },
+    budget: mapBudgetSection(plan.budget),
     skipped: [...plan.skipped],
   }
 }
@@ -313,24 +278,19 @@ export function renderDream(value: DreamValue): string {
 
 /** Build the memory_dream definition for one service seam. */
 export function createDreamTool(service: MemoryService): ToolDefinition {
-  return {
+  return defineMemoryTool({
     name: TOOL_MEMORY_DREAM,
     description: DREAM_DESCRIPTION,
     parameters: DREAM_PARAMETERS,
-    output: {
-      schema: DREAM_OUTPUT,
-      render: (_args, value) => [textBlock(renderDream(value as DreamValue))],
-    },
+    output: DREAM_OUTPUT,
     timeoutMs: DREAM_TIMEOUT_MS,
     execute: async (args) => await executeDream(service, args),
-    presentCall: (args) => {
-      const operation = (args as { operation?: unknown }).operation
-      return {
-        card: 'generic' as const,
-        kind: operation === 'run' ? ('execute' as const) : ('other' as const),
-        title: `${TOOL_MEMORY_DREAM} ${typeof operation === 'string' ? operation : 'plan'}`,
-        rawInput: args,
-      }
-    },
-  }
+    render: renderDream,
+    presentCall: makePresentCall({
+      tool: TOOL_MEMORY_DREAM,
+      kind: (operation) => operation === 'run' ? 'execute' : 'other',
+      field: 'operation',
+      fallback: 'plan',
+    }),
+  })
 }

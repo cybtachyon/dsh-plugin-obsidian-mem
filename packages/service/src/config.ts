@@ -31,6 +31,7 @@ import {
   TRANSFORMERS_PIPELINE_OPTIONS,
   VAULT_MODES,
   VECTOR_DIM_DEFAULT,
+  VECTOR_DIM_LOSSY,
 } from '../../core/lib/index.js'
 import type { VaultMode } from '../../core/lib/index.js'
 
@@ -212,7 +213,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
       resolved.vectorDim = value.vectorDim
     } else {
       issues.push({
-        message: 'vectorDim must be 384 (full width) or one of 128/192/256/320 '
+        message: `vectorDim must be ${String(VECTOR_DIM_DEFAULT)} (full width) or one of ${VECTOR_DIM_LOSSY.join('/')} `
           + '(LOSSY truncation, forces a full re-index)',
         path: ['vectorDim'],
       })

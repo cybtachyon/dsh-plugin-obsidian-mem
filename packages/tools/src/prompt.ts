@@ -17,6 +17,7 @@
  */
 
 import { SYSTEM_PROMPT_SECTION_NAME, SYSTEM_PROMPT_SECTION_ORDER } from '../../core/lib/index.js'
+import { describeError } from '../../service/lib/errors.js'
 
 // Local structural mirror of the host `systemPrompt` seam slice (this
 // package never imports dsh packages at runtime; PLAN TASK-031 canon).
@@ -99,8 +100,7 @@ export function neverThrowingText(source: () => string, warn: (message: string) 
     } catch (error: unknown) {
       if (!warned) {
         warned = true
-        const message = error instanceof Error ? error.message : String(error)
-        warn(`${SYSTEM_PROMPT_SECTION_NAME} system-prompt section unavailable: ${message}`)
+        warn(`${SYSTEM_PROMPT_SECTION_NAME} system-prompt section unavailable: ${describeError(error)}`)
       }
       return ''
     }

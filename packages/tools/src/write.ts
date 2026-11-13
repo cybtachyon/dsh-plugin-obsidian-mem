@@ -20,6 +20,7 @@ import {
   classifyPath,
   contentHash,
   ensureWhyAndHow,
+  formatLocalDate,
   isReservedNonIndexed,
   markdownDir,
   parseNote,
@@ -30,7 +31,8 @@ import {
 import type { NoteMeta } from '../../core/lib/index.js'
 import { expandHomePath } from '../../service/lib/config.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
-import { asRecord, optionalBoolean, requiredString, textBlock, todayDate } from './host.js'
+import { asRecord, optionalBoolean, requiredString } from './host.js'
+import { defineMemoryTool, makePresentCall, noticeHeader, withNotice } from './toolkit.js'
 
 /** Fast file write plus one single-file reindex. */
 export const WRITE_TIMEOUT_MS = 10_000
@@ -196,7 +198,7 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
   const vaults = service.listVaults()
   const classified = classifyPath(vaults, target)
   if (classified === null || !classified.insideMarkdownDir) {
-    return ({
+    return withNotice({
       kind: 'outside_markdown' as const,
       path: target,
       message: classified === null
@@ -205,27 +207,24 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
       shared_note_dirs: vaults
         .filter((vault) => vault.mode === 'shared')
         .map((vault) => markdownDir(vault.path)),
-      ...(notice === undefined ? {} : { notice }),
-    })
+    }, notice)
   }
   if (classified.mode !== 'shared') {
-    return ({
+    return withNotice({
       kind: 'read_only_vault' as const,
       path: target,
       vault: classified.vault.path,
       message: `${target} lies in read-only vault ${classified.vault.path}. Register a shared vault (settings card or config.vaults) to write memory.`,
-      ...(notice === undefined ? {} : { notice }),
-    })
+    }, notice)
   }
 
   // Guard 2: reserved protocol files are never authored notes.
   if (isReservedNonIndexed(basename(target))) {
-    return ({
+    return withNotice({
       kind: 'reserved_file' as const,
       path: target,
       message: `${basename(target)} is a reserved vault file (.INTENTS.md, DREAMS.md, *_history.md); those are owned by the plugin. Write memory as a regular .md note.`,
-      ...(notice === undefined ? {} : { notice }),
-    })
+    }, notice)
   }
 
   // Guard 3: read-before-write staleness. The on-disk re-hash is the whole
@@ -235,29 +234,27 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
   const record = service.readRecord(target)
   let existingMeta: NoteMeta | undefined
   if (exists && record === undefined) {
-    return ({
+    return withNotice({
       kind: 'read_required' as const,
       path: target,
       message: `${target} exists but this session has not read it. Call memory_read on it first, then repeat this write with your edits merged into what you read.`,
-      ...(notice === undefined ? {} : { notice }),
-    })
+    }, notice)
   }
   if (exists && record !== undefined) {
     const current = readFileSync(target, 'utf8')
     if (contentHash(current) !== record.contentHash) {
-      return ({
+      return withNotice({
         kind: 'stale' as const,
         path: target,
         message: `${target} changed on disk after your last memory_read. Call memory_read on it again and merge your edit into the fresh text before writing.`,
-        ...(notice === undefined ? {} : { notice }),
-      })
+      }, notice)
     }
     existingMeta = parseNote(current).meta
   }
 
   // Guard 4: frontmatter contract. Errors refuse; discipline nudges ride
   // along on the success value.
-  const today = todayDate()
+  const today = formatLocalDate(new Date())
   const meta: NoteMeta = {
     index_title: indexTitle,
     index_description: indexDescription,
@@ -270,12 +267,11 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
   }
   const validation = validateMeta(meta)
   if (validation.errors.length > 0) {
-    return ({
+    return withNotice({
       kind: 'invalid_meta' as const,
       path: target,
       errors: validation.errors,
-      ...(notice === undefined ? {} : { notice }),
-    })
+    }, notice)
   }
   const warnings = [...validation.warnings, ...ensureWhyAndHow(contents)]
 
@@ -284,15 +280,14 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
   const finalPath = exists ? target : join(dirname(target), titleToFilename(indexTitle, takenMarkdownNames(dirname(target))))
 
   const result = await service.applyWrite(finalPath, meta, contents)
-  return ({
+  return withNotice({
     kind: 'written' as const,
     path: result.path,
     created: result.created,
     vault: result.vaultPath,
     warnings,
     write_through: 'attempted' as const,
-    ...(notice === undefined ? {} : { notice }),
-  })
+  }, notice)
 }
 
 // Existing .md names beside the target, for titleToFilename's collision
@@ -306,7 +301,7 @@ function takenMarkdownNames(dir: string): string[] {
 
 /** Model-facing rendering of one memory_write value. */
 export function renderWrite(value: WriteValue): string {
-  const notice = value.notice === undefined ? '' : `${value.notice}\n\n`
+  const notice = noticeHeader(value.notice)
   if (value.kind === 'written') {
     const lines = [
       `${value.created ? 'Created' : 'Updated'} memory note: ${value.path} (vault ${value.vault}; write-through indexing ran for the note).`,
@@ -319,30 +314,20 @@ export function renderWrite(value: WriteValue): string {
   if (value.kind === 'invalid_meta') {
     return `${notice}memory_write refused: the frontmatter needs fixing.\n${value.errors.map((error) => `- ${error}`).join('\n')}`
   }
-  const message = 'message' in value ? value.message : 'memory_write refused.'
-  return `${notice}${message}`
+  // The five remaining refusals all carry their full instruction.
+  return `${notice}${value.message}`
 }
 
 /** Build the memory_write definition for one service seam. */
 export function createWriteTool(service: MemoryService): ToolDefinition {
-  return {
+  return defineMemoryTool({
     name: TOOL_MEMORY_WRITE,
     description: WRITE_DESCRIPTION,
     parameters: WRITE_PARAMETERS,
-    output: {
-      schema: WRITE_OUTPUT,
-      render: (_args, value) => [textBlock(renderWrite(value as WriteValue))],
-    },
+    output: WRITE_OUTPUT,
     timeoutMs: WRITE_TIMEOUT_MS,
     execute: async (args) => await executeWrite(service, args),
-    presentCall: (args) => {
-      const path = (args as { path?: unknown }).path
-      return {
-        card: 'generic' as const,
-        kind: 'edit' as const,
-        title: `${TOOL_MEMORY_WRITE} ${typeof path === 'string' ? path : ''}`,
-        rawInput: args,
-      }
-    },
-  }
+    render: renderWrite,
+    presentCall: makePresentCall({ tool: TOOL_MEMORY_WRITE, kind: 'edit', field: 'path', fallback: '' }),
+  })
 }

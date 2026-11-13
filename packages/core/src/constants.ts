@@ -73,7 +73,8 @@ export const VAULT_METADATA_DIR = 'metadata'
 /** Vault-root file listing the intent markers; never indexed. */
 export const INTENTS_FILE = '.INTENTS.md'
 /** Vault-root dream diary appended by memory_dream; never indexed. */
-export const DREAMS_FILE = 'DREAMS.md'/** Suffix of archive-history notes moved out of oversized notes. */
+export const DREAMS_FILE = 'DREAMS.md'
+/** Suffix of archive-history notes moved out of oversized notes. */
 export const ARCHIVE_HISTORY_SUFFIX = '_history.md'
 
 /**
@@ -121,6 +122,11 @@ export function modelCacheDir(homedir: string): string {
 /** Builds the plugin state dir (indexer + audit state) under dbDir. */
 export function stateDir(homedir: string): string {
   return join(dbDir(homedir), STATE_DIR)
+}
+
+/** Builds the plugin state dir under an already-resolved dbPath. */
+export function dbStateDir(dbPath: string): string {
+  return join(dbPath, STATE_DIR)
 }
 
 /** Tag name that fences injected recalled memory in agent context. */
@@ -244,6 +250,8 @@ export const CHUNK_MAX_TOKENS = 500
 
 /** Default row cap for one memory_audit call; rollups cover the whole store. */
 export const AUDIT_DEFAULT_LIMIT = 50
+/** Largest row cap one memory_audit call may ask for; bigger requests clamp. */
+export const AUDIT_MAX_LIMIT = 500
 
 /**
  * AUDIT_NOTE_READ_CAP_BYTES is the doctor read cap: a note past it is
@@ -297,6 +305,11 @@ const APPROX_CHARS_PER_TOKEN = 4
 /** Estimates the token count of text at ~4 characters per token. */
 export function approxTokens(text: string): number {
   return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN)
+}
+
+/** ClampInt holds value inside the closed range [min, max]. */
+export function clampInt(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
 /**

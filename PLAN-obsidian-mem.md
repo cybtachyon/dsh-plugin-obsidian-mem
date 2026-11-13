@@ -84,7 +84,7 @@ task file lists explicit cross-phase prerequisites.
 - [x] [TASK-034-tool-memory-audit](docs/PLAN-obsidian-mem-TASK-034-tool-memory-audit.md)
 - [x] [TASK-035-tool-memory-dream](docs/PLAN-obsidian-mem-TASK-035-tool-memory-dream.md)
 - [x] [TASK-036-system-prompt-section](docs/PLAN-obsidian-mem-TASK-036-system-prompt-section.md)
-- [ ] [Refactor: review Phase 4 files for code risks](docs/PLAN-obsidian-mem-TASK-037-refactor-tools.md)
+- [x] [Refactor: review Phase 4 files for code risks](docs/PLAN-obsidian-mem-TASK-037-refactor-tools.md)
 
 ### Phase 5: Lifecycle events (packages/events)
 
@@ -206,3 +206,19 @@ task file lists explicit cross-phase prerequisites.
   TASK-025 note above for `applyWrite`. `sessionRegistry` is NOT on the seam
   yet: TASK-040 adds it. `audit()`/`dream()` are typed not-implemented seams
   until TASK-034/035.
+- 2026-11-12 **Phase 4 review-pass decisions** (TASK-037): the five tool
+  modules assemble through `tools/toolkit.ts` (`defineMemoryTool` keeps the
+  verified cordis 4.1.0 register shape, `makePresentCall` the generic card,
+  `withNotice`/`noticeHeader` the one-time provisioning notice pair,
+  `failedValue` the `failed` kind, and `BudgetSectionSchema`/
+  `mapBudgetSection` the budget section identical in audit and dream).
+  The say-once allocation from the 4B2 report stays BINDING: write
+  preconditions on memory_write, dream timing on memory_dream, cross-tool
+  workflow in the section; descriptions were not moved. Single sources now:
+  core `AUDIT_MAX_LIMIT` + `AUDIT_DEFAULT_LIMIT` (clamp and parameter
+  text), `clampInt` (bounded request ints), `formatLocalDate` (YYYY-MM-DD
+  stamps), `dbStateDir` + `DREAM_STATE_FILE` (dream stamp paths), service
+  `AUDIT_VIEWS` (schema enum, argument guard, and `AuditView` union) and
+  exported `dayEnd` (staleness and unread-since-dream share the day
+  boundary). Audit and the dream plan share one `inventoryVault` walk,
+  verified no second enumeration exists.

@@ -27,6 +27,7 @@ import { MetricType, RRFRanker } from '@zilliz/milvus2-sdk-node'
 
 import {
   approxCharsForTokens,
+  clampInt,
   MILVUS_COLLECTION,
   MILVUS_CONSISTENCY_LEVEL,
   MILVUS_FIELDS,
@@ -448,7 +449,7 @@ function truncateToTokens(text: string, tokens: number): string {
 
 function clampTopK(value: number | undefined): number {
   const wanted = value === undefined || !Number.isFinite(value) ? SEARCH_DEFAULT_TOP_K : Math.trunc(value)
-  return Math.max(1, Math.min(SEARCH_MAX_RESULTS, wanted))
+  return clampInt(wanted, 1, SEARCH_MAX_RESULTS)
 }
 
 function quoteExpr(value: string): string {

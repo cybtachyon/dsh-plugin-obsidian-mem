@@ -25,7 +25,8 @@
  * the file prose that lists people, paths, and decisions never floods the
  * vocabulary with generic tokens. Regex-scan only, no embedding; a block
  * with no hit is dropped. On a hit: `service.search`
- * with the block text (capped) as query and the matched terms as
+ * with only the sentences of the block that carry a matched term (capped)
+ * as the query and the matched terms as
  * `wakeKeywords` (top 2), the once-per-session source filter (shared in
  * toolkit.ts, where a session never gets back what it itself wrote, no
  * matter which agent instance of that session wrote it), the per-turn
@@ -296,7 +297,7 @@ async function runThinkRecall(
   let results: MemorySearchResult[]
   try {
     results = await memory.search({
-      query: blockText.slice(0, THINK_QUERY_MAX_CHARS),
+      query: intentSentencesOf(blockText, matched),
       wakeKeywords: matched,
       topK: THINK_SEARCH_TOP_K,
     })
@@ -417,6 +418,31 @@ function termPresent(haystackLower: string, term: string): boolean {
 
 function isWordChar(char: string): boolean {
   return char !== '' && /[a-z0-9_]/.test(char)
+}
+
+// ---------------------------------------------------------------------------
+// Query scoping: the search carries the block's intent sentences, not the
+// whole reasoning stream.
+
+// IntentSentencesOf joins (with newlines) the sentences of a think block
+// that carry at least one matched vocabulary term, reusing the scan's
+// word-boundary test, capped at THINK_QUERY_MAX_CHARS. Splitting is on
+// newlines plus `.`, `!`, `?` terminators. A block whose sentences carry no
+// term answers with the full capped text: the query never narrows to
+// nothing.
+export function intentSentencesOf(blockText: string, matchedTerms: readonly string[]): string {
+  const carried = blockText
+    .split('\n')
+    .flatMap((line) => line.split(/(?<=[.!?])\s+/))
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => {
+      const lower = sentence.toLowerCase()
+      return matchedTerms.some((term) => termPresent(lower, term))
+    })
+  if (carried.length === 0) {
+    return blockText.slice(0, THINK_QUERY_MAX_CHARS)
+  }
+  return carried.join('\n').slice(0, THINK_QUERY_MAX_CHARS)
 }
 
 // ---------------------------------------------------------------------------

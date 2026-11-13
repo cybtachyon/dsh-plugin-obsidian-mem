@@ -19,7 +19,7 @@ import { GLOBAL_MEMORY_FILE_DEFAULT, TOOL_MEMORY_WRITE } from '../../core/lib/in
 import { IndexOfflineError } from '../../service/lib/search.js'
 import type { AssistantStreamFrameMirror, HookLogger } from '../src/host.ts'
 import { mountLifecycle } from '../src/index.ts'
-import { installThinkIntercept, extractCompletedThinkBlocks, readRecordedIntentTerms, THINK_QUERY_MAX_CHARS } from '../src/thinkIntercept.ts'
+import { installThinkIntercept, extractCompletedThinkBlocks, intentSentencesOf, readRecordedIntentTerms, THINK_QUERY_MAX_CHARS } from '../src/thinkIntercept.ts'
 import { SessionRegistry, sourceKeyFor, wakeTermsForSource } from '../src/sessions.ts'
 import {
   fakeAgent,
@@ -548,6 +548,44 @@ describe('think sleep after injection (TASK-005)', () => {
     // No injection happened, so block two was processed as usual.
     expect(h.memory.searchRequests).toHaveLength(2)
     expect(h.agent.injected).toHaveLength(0)
+  })
+})
+
+describe('think query sentence scoping (TASK-006)', () => {
+  it('keeps only the sentences carrying a matched term', () => {
+    const block = [
+      'the registry is unrelated.',
+      'debug the retry loop before touching the queue.',
+      'check grafana after standup?',
+    ].join('\n')
+    expect(intentSentencesOf(block, ['debug'])).toBe('debug the retry loop before touching the queue.')
+    expect(intentSentencesOf(block, ['grafana', 'debug'])).toBe(
+      'debug the retry loop before touching the queue.\ncheck grafana after standup?',
+    )
+  })
+
+  it('splits multiple sentences inside one line on terminators', () => {
+    const block = 'debug the retry loop. check grafana later. maybe restart?'
+    expect(intentSentencesOf(block, ['grafana'])).toBe('check grafana later.')
+  })
+
+  it('holds the word boundary and falls back to the full block', () => {
+    // 'options' does not carry the term 'ops' (same boundary test as the
+    // scan), so no sentence matches and the full text answers: never empty.
+    const block = 'options look fine here.\nsecond line about the site.'
+    expect(intentSentencesOf(block, ['ops'])).toBe(block)
+  })
+
+  it('caps the joined sentences at THINK_QUERY_MAX_CHARS', () => {
+    const block = Array.from({ length: 30 }, (unused, n) => `debug line ${n} ${'x'.repeat(60)}.`).join('\n')
+    expect(intentSentencesOf(block, ['debug']).length).toBe(THINK_QUERY_MAX_CHARS)
+  })
+
+  it('searches with the narrowed query, not the full block', async () => {
+    const h = harness({ searchResults: [topic] })
+    stream(h.agent, streamStart('a1', 1), textDelta('<think>why did the build fail\nthe registry is unrelated.\nthe dns cache looks fine.</think>', 'a1'))
+    await h.settle()
+    expect(h.memory.searchRequests[0]?.query).toBe('why did the build fail')
   })
 })
 

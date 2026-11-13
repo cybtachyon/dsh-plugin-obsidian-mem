@@ -140,7 +140,7 @@ export default plugin;
 export { READ_INJECTION_CAP_PER_SESSION, READ_INJECTION_THROTTLE_MS, SESSION_TTL_MS, SESSIONS_FILE_NAME, SESSIONS_LRU_MAX, SESSIONS_PERSIST_DEBOUNCE_MS, SessionRegistry, sourceKeyFor, wakeTermsForSource, } from './sessions.js';
 export { guidanceLine, installTurnStart, nodeManifestFs } from './turnStart.js';
 export { dirSignalsOf, HARNESS_READ_TOOL_NAME, importSnippetFrom, installReadIntercept, } from './readIntercept.js';
-export { extractCompletedThinkBlocks, installThinkIntercept, readRecordedIntentTerms, THINK_QUERY_MAX_CHARS, THINK_SEARCH_TOP_K, THINK_SLEEP_BLOCKS_AFTER_INJECTION, } from './thinkIntercept.js';
+export { extractCompletedThinkBlocks, installThinkIntercept, intentSentencesOf, readRecordedIntentTerms, THINK_QUERY_MAX_CHARS, THINK_SEARCH_TOP_K, THINK_SLEEP_BLOCKS_AFTER_INJECTION, } from './thinkIntercept.js';
 export { installMemoryToolWatch, installTurnEnd, isTrivialTurn, TURN_END_REMINDER, TRIVIAL_TURN_MAX_CHARS, turnEndReminder, WORK_MARKER, } from './turnEnd.js';
 export { compactionInstruction } from './budget.js';
 export { installWriteLedger } from './writeLedger.js';

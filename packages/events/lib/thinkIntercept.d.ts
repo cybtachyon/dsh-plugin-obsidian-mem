@@ -25,7 +25,8 @@
  * the file prose that lists people, paths, and decisions never floods the
  * vocabulary with generic tokens. Regex-scan only, no embedding; a block
  * with no hit is dropped. On a hit: `service.search`
- * with the block text (capped) as query and the matched terms as
+ * with only the sentences of the block that carry a matched term (capped)
+ * as the query and the matched terms as
  * `wakeKeywords` (top 2), the once-per-session source filter (shared in
  * toolkit.ts, where a session never gets back what it itself wrote, no
  * matter which agent instance of that session wrote it), the per-turn
@@ -80,5 +81,6 @@ export declare function extractCompletedThinkBlocks(text: string, from: number):
     blocks: string[];
     next: number;
 };
+export declare function intentSentencesOf(blockText: string, matchedTerms: readonly string[]): string;
 export declare function readRecordedIntentTerms(memory: MemoryEventsService, intentsFs: IntentsFs | undefined): string[];
 //# sourceMappingURL=thinkIntercept.d.ts.map

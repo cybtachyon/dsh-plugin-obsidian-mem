@@ -19,7 +19,7 @@ through the reflection gateway, mirroring the existing
 1. Define a local structural type (in `dream.ts` or `service.ts`, wherever
    the `DreamAgentsGateway` sibling belongs):
    `interface DreamDefaultModelGateway { currentSelection(): { provider: string, model: string } }`.
-2. In `dreamEngine()`: 
+2. In `dreamEngine()`:
    `defaultAgentOptions: () => (this.ctx.get('agentDefaultModel') as DreamDefaultModelGateway | undefined)?.currentSelection() ?? undefined`.
    Wrap in try/catch only if the host `ctx.get` throws for unmounted
    services instead of returning undefined — match how `agentsGateway`

@@ -181,7 +181,12 @@ function deps(fixture: DepsOptions): DreamDeps {
     fs: fixture.fs ?? new MemFs(),
     config: fixture.config ?? configFixture(),
     inventories: () => fixture.inventories ?? [],
-    globalIndex: () => fixture.globalIndex ?? { budgetTokens: 1500, usedTokens: 0, remainingTokens: 1500 },
+    // GlobalMemoryIndex requires overBudget under exactOptionalPropertyTypes;
+    // supply the production default (used > budget) when the fixture omits it.
+    globalIndex: () => {
+      const globalIndex = fixture.globalIndex ?? { budgetTokens: 1500, usedTokens: 0, remainingTokens: 1500 }
+      return { ...globalIndex, overBudget: globalIndex.overBudget ?? globalIndex.usedTokens > globalIndex.budgetTokens }
+    },
     agentsGateway: () => fixture.gateway ?? undefined,
     defaultAgentOptions: fixture.defaultAgentOptions ?? (() => ({ provider: 'acme', model: 'm-1' })),
     noteVectors: fixture.vectors ?? (async () => new Map<string, number[]>()),

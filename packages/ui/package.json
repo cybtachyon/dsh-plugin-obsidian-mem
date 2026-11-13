@@ -1,0 +1,33 @@
+{
+  "name": "dsh-plugin-obsidian-mem-ui",
+  "version": "1.0.0",
+  "description": "Host HTTP routes for the dsh Obsidian Mem plugin: the /obsidian-mem/* API the Web GUI settings card calls to manage vaults, trigger indexing, and read audit/dream state",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "cordis-plugin",
+    "memory",
+    "routes",
+    "http"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

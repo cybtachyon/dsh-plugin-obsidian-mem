@@ -1,0 +1,33 @@
+{
+  "name": "dsh-plugin-obsidian-mem-tools",
+  "version": "1.0.0",
+  "description": "Model-facing tools for the dsh Obsidian Mem plugin: memory_read, memory_search, memory_write, memory_dream, and memory_audit, plus the system-prompt section that tells the agent when to reach for them",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "cordis-plugin",
+    "memory",
+    "tools",
+    "agent"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

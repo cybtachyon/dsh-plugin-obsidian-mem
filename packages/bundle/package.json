@@ -1,0 +1,35 @@
+{
+  "name": "dsh-plugin-obsidian-mem-bundle",
+  "version": "1.0.0",
+  "description": "Installable meta-package for the dsh Obsidian Mem plugin: no source, just the cordis.patch.yml that wires the service, ui, tools, and events into one profile layer",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "cordis-plugin",
+    "memory",
+    "obsidian",
+    "bundle"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dependencies": {
+    "dsh-plugin-obsidian-mem-service": "workspace:^",
+    "dsh-plugin-obsidian-mem-ui": "workspace:^",
+    "dsh-plugin-obsidian-mem-tools": "workspace:^",
+    "dsh-plugin-obsidian-mem-events": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.6-alpha.2"
+  }
+}

@@ -1,26 +1,120 @@
 {
   "name": "dsh-plugin-obsidian-mem",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "DeepSeek Harness plugin that turns Markdown vaults (Obsidian-style) into shared agent memory: vector recall over Milvus-Lite, human-editable memory notes, and the five memory_read/search/write/dream/audit tools with lifecycle-hooked automatic recall. Installable bundle that mounts the obsidianMem service, host routes, tools, and lifecycle events as one profile layer.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "cordis",
+    "cordis-plugin",
+    "memory",
+    "obsidian",
+    "markdown",
+    "milvus",
+    "vector-search",
+    "embeddings",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": "^22.19 || >=24"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "exports": {
+    ".": "./dsh/host.js",
+    "./client": "./dsh/client.js",
+    "./core": {
+      "types": "./packages/core/lib/index.d.ts",
+      "default": "./packages/core/lib/index.js"
+    },
+    "./service": {
+      "types": "./packages/service/lib/index.d.ts",
+      "default": "./packages/service/lib/index.js"
+    },
+    "./ui": {
+      "types": "./packages/ui/lib/index.d.ts",
+      "default": "./packages/ui/lib/index.js"
+    },
+    "./tools": {
+      "types": "./packages/tools/lib/index.d.ts",
+      "default": "./packages/tools/lib/index.js"
+    },
+    "./events": {
+      "types": "./packages/events/lib/index.d.ts",
+      "default": "./packages/events/lib/index.js"
+    },
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json",
+    "dsh/client.js",
+    "dsh/host.js",
+    "packages/core/package.json",
+    "packages/core/lib/**/*.js",
+    "packages/core/lib/**/*.d.ts",
+    "packages/service/package.json",
+    "packages/service/lib/**/*.js",
+    "packages/service/lib/**/*.d.ts",
+    "packages/ui/package.json",
+    "packages/ui/lib/**/*.js",
+    "packages/ui/lib/**/*.d.ts",
+    "packages/tools/package.json",
+    "packages/tools/lib/**/*.js",
+    "packages/tools/lib/**/*.d.ts",
+    "packages/events/package.json",
+    "packages/events/lib/**/*.js",
+    "packages/events/lib/**/*.d.ts"
+  ],
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
+    "@zilliz/milvus2-sdk-node": "^3.0.6",
+    "gray-matter": "^4.0.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.6-alpha.2"
+  },
+  "scripts": {
+    "build": "tsc -b --force && node scripts/build-client.mjs && node scripts/build-format.mjs && node scripts/verify-emit.mjs",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "clean": "tsc -b --clean"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.14.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0",
+    "yaml": "^2.9.1"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
       "version": "12.18.0",
       "onFail": "download"
     }
-  },
-  "packageManager": "pnpm@12.18.0",
-  "type": "module",
-  "devDependencies": {
-    "@types/node": "^26.6.6",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
   }
 }

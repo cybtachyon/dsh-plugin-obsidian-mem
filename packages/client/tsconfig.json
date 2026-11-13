@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib",
+    // The card is browser-only: the locale selector reads document and the
+    // card components will need the DOM event and element types. @types/node
+    // web globals are written to coexist with lib.dom.
+    "lib": ["es2024", "dom"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../ui" }
+  ]
+}

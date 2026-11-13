@@ -1,5 +1,7 @@
 # TASK-001 pnpm workspace scaffold
 
+Status: done
+
 Depends: none. Study `/home/derek/src/dsh-plugin-local-infer` first (root package.json,
 tsconfig.base.json, eslint.config.mjs, vitest.config.ts, scripts/build-client.mjs,
 scripts/build-format.mjs, scripts/verify-emit.mjs, pnpm-workspace.yaml). Copy and adapt.

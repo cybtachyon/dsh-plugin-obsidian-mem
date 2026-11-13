@@ -1,0 +1,27 @@
+{
+  "name": "dsh-plugin-obsidian-mem-client",
+  "version": "1.0.0",
+  "description": "Browser card for the dsh Obsidian Mem plugin: the lazy-CJS module that renders the Obsidian Mem settings card (vault registry, Dreaming triggers, index state) in the DSH Web GUI",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "cordis-plugin",
+    "memory",
+    "obsidian",
+    "web-ui"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  }
+}

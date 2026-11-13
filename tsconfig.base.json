@@ -1,0 +1,32 @@
+{
+  // Shared compiler settings for every packages/* project. NEVER add
+  // include/files here: it would leak into every extending project. Unlike
+  // dsh-plugin-local-infer (bundler resolution + .ts import specifiers), this
+  // repo compiles plain NodeNext: sources and cross-package imports use
+  // explicit `.js` specifiers (relative lib paths, e.g.
+  // '../../core/lib/index.js'), so `node` loads the emitted output with zero
+  // resolution assistance.
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "declaration": true,
+    "sourceMap": true,
+    "declarationMap": true,
+    "composite": true,
+    "incremental": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    // The sources build optional fields with conditional spreads and never
+    // assign `key: undefined`; turning this off would silently allow both.
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node"]
+  }
+}

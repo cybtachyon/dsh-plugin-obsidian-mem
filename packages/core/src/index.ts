@@ -15,5 +15,6 @@
 export * from './constants.js'
 export * from './chunk.js'
 export * from './idhash.js'
+export * from './manifest.js'
 export * from './note.js'
 export * from './vaults.js'

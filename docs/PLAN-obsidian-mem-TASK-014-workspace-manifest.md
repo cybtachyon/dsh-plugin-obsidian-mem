@@ -1,5 +1,7 @@
 # TASK-014 Workspace manifest scanner
 
+Status: done
+
 Depends: TASK-010. `packages/core/src/manifest.ts`.
 
 ## Scope

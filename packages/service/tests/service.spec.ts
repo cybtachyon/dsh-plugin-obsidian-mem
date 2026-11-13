@@ -821,27 +821,66 @@ describe('status, placeholders, and not-implemented seams', () => {
     expect(status.vectorDim).toBe(VECTOR_DIM_DEFAULT)
   })
 
-  it('globalMemoryIndex is the TODO-045 placeholder over the configured budget', () => {
+  it('globalMemoryIndex reports the configured budget with zero use until wired', () => {
     const h = harness({ config: { budgets: { globalMemoryTokens: 2500 } } })
     expect(h.service.globalMemoryIndex()).toEqual({
       budgetTokens: 2500,
       usedTokens: 0,
       remainingTokens: 2500,
+      overBudget: false,
     })
     expect(harness().service.globalMemoryIndex().budgetTokens).toBe(GLOBAL_MEMORY_TOKENS)
   })
 
-  it('setSessionRegistry wires the events-owned registry (TASK-040 seam)', () => {
+  it('globalMemoryIndex echoes the wired registry with the flip at the cap', () => {
+    const h = harness({ config: { budgets: { globalMemoryTokens: 2500 } } })
+    let used = 2400
+    h.service.setSessionRegistry({ totalRecallTokensUsed: () => used })
+    expect(h.service.globalMemoryIndex()).toEqual({
+      budgetTokens: 2500,
+      usedTokens: 2400,
+      remainingTokens: 100,
+      overBudget: false,
+    })
+    // Exactly at the cap is not over; the flip happens at cap + 1.
+    used = 2500
+    expect(h.service.globalMemoryIndex().overBudget).toBe(false)
+    used = 2501
+    expect(h.service.globalMemoryIndex()).toEqual({
+      budgetTokens: 2500,
+      usedTokens: 2501,
+      remainingTokens: 0,
+      overBudget: true,
+    })
+    h.service.setSessionRegistry(null)
+    expect(h.service.globalMemoryIndex().usedTokens).toBe(0)
+  })
+
+  it('audit echoes the wired registry budget numbers (TASK-045)', async () => {
+    const h = harness({ config: { budgets: { globalMemoryTokens: 2500 } } })
+    await h.service.ensureMemoryAccess()
+    h.service.setSessionRegistry({ totalRecallTokensUsed: () => 3200 })
+    const report = await h.service.audit()
+    expect(report.budget.usedTokens).toBe(3200)
+    expect(report.budget.budgetTokens).toBe(2500)
+    expect(report.budget.measured).toBe(true)
+    expect(report.budget.overBudget).toBe(true)
+    const over = report.issues.find((entry) => entry.id === 'budget.over')
+    expect(over?.detail).toContain('3200 of 2500 tokens used')
+    expect(over?.remediation).toContain('memory_dream')
+  })
+
+  it('setSessionRegistry wires the events-owned registry into the budget view', () => {
     const h = harness()
     expect(h.service.sessionRegistry).toBeNull()
     const registry = { totalRecallTokensUsed: () => 42 }
     h.service.setSessionRegistry(registry)
     expect(h.service.sessionRegistry).toBe(registry)
-    // The placeholder index still reports zero use: TASK-045 owns reading
-    // the wired registry; the seam only makes it reachable.
-    expect(h.service.globalMemoryIndex().usedTokens).toBe(0)
+    // TASK-045: the wired registry's sums feed globalMemoryIndex directly.
+    expect(h.service.globalMemoryIndex().usedTokens).toBe(42)
     h.service.setSessionRegistry(null)
     expect(h.service.sessionRegistry).toBeNull()
+    expect(h.service.globalMemoryIndex().usedTokens).toBe(0)
   })
 
   it('dream() defaults to the deterministic plan and seeds the prompt once', async () => {

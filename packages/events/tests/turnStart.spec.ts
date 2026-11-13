@@ -56,6 +56,7 @@ interface HarnessOptions {
   searchResults?: ReturnType<typeof memoryResult>[]
   searchError?: Error
   turnStartRecallTokens?: number
+  globalMemoryTokens?: number
   /** null answers no provisioning notice on the first ensure call. */
   notice?: string | null
 }
@@ -74,6 +75,9 @@ function turnStartHarness(options: HarnessOptions = {}) {
       ...(options.turnStartRecallTokens === undefined
         ? {}
         : { turnStartRecallTokens: options.turnStartRecallTokens }),
+      ...(options.globalMemoryTokens === undefined
+        ? {}
+        : { globalMemoryTokens: options.globalMemoryTokens }),
     },
   })
   const ctx = fakeEventsCtx(memory)
@@ -355,5 +359,61 @@ describe('guidanceLine', () => {
       topExtensions: [],
       dirSignals: [],
     })).toBe('')
+  })
+})
+
+// TASK-045: while the summed recall injections (registry.totalRecallTokensUsed,
+// the same number the service echoes through globalMemoryIndex) sit past
+// budgets.globalMemoryTokens, turn-start swaps the recall sections for the
+// memory_dream compaction pointer.
+describe('global memory budget switch', () => {
+  it('injects the compaction pointer instead of recall sections when over budget', async () => {
+    const { agent, memory, preStep, registry, scans } = turnStartHarness({
+      searchResults: [factA, factB],
+      globalMemoryTokens: 100,
+      notice: null,
+    })
+    // A prior session already spent the global budget.
+    registry.addRecallTokens('agent-0', 101)
+    await preStep(1, 1)
+    await settled()
+    expect(memory.searchRequests).toHaveLength(0)
+    expect(scans).toHaveLength(0) // the manifest scan never runs either
+    const texts = agent.injected.map((message) => message.content[0]!.text)
+    expect(texts).toHaveLength(1)
+    expect(texts[0]).toContain('global memory recall budget is spent')
+    expect(texts[0]).toContain('memory_dream')
+    expect(texts[0]).toContain('101 of 100')
+    expect(recalledBlocks(agent)).toHaveLength(0)
+    // The pointer itself is accounted; the total keeps the truth straight.
+    expect(registry.totalRecallTokensUsed()).toBeGreaterThan(101)
+  })
+
+  it('flips exactly at the cap: usage == budget still gets fresh recall', async () => {
+    const at = turnStartHarness({ searchResults: [factA], globalMemoryTokens: 100, notice: null })
+    at.registry.addRecallTokens('agent-0', 100)
+    await at.preStep(1, 1)
+    await settled()
+    expect(recalledBlocks(at.agent)).toHaveLength(1)
+
+    const over = turnStartHarness({ searchResults: [factA], globalMemoryTokens: 100, notice: null })
+    over.registry.addRecallTokens('agent-0', 101)
+    await over.preStep(1, 1)
+    await settled()
+    expect(recalledBlocks(over.agent)).toHaveLength(0)
+    expect(over.agent.injected).toHaveLength(1)
+  })
+
+  it('the one-time notice still precedes the pointer', async () => {
+    const { agent, preStep, registry } = turnStartHarness({
+      searchResults: [factA],
+      globalMemoryTokens: 10,
+    })
+    registry.addRecallTokens('agent-0', 11)
+    await preStep(1, 1)
+    await settled()
+    const texts = agent.injected.map((message) => message.content[0]!.text)
+    expect(texts[0]).toBe(DEFAULT_NOTICE)
+    expect(texts[1]).toContain('memory_dream')
   })
 })

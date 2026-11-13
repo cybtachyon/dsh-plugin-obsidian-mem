@@ -150,11 +150,14 @@ export interface ObsidianMemWriteResult {
   relPath: string
 }
 
-/** Placeholder shape for the global per-session recall budget (TASK-045). */
+/** The global recall-budget view (TASK-045): configured budget vs injected usage. */
 export interface GlobalMemoryIndex {
   budgetTokens: number
+  /** Recall tokens injected across every session the wired registry knows. */
   usedTokens: number
   remainingTokens: number
+  /** True when usedTokens exceeds budgetTokens (strictly over). */
+  overBudget: boolean
 }
 
 /**
@@ -737,15 +740,21 @@ export class ObsidianMemService extends Service {
   }
 
   /**
-   * GlobalMemoryIndex is the global per-session recall-budget shape
-   * (TASK-045): the placeholder reports the configured budget with zero
-   * usage; TASK-045 owns the real accounting, reading the wired
-   * {@link ObsidianMemService.sessionRegistry} for per-session use.
-   * TODO-045: replace the empty implementation with the session budget index.
+   * GlobalMemoryIndex is the global recall-budget view (TASK-045): the
+   * configured budget against the recall tokens the wired
+   * {@link ObsidianMemService.sessionRegistry} sums across every session it
+   * knows. Before the events row wires a registry the view reports zero use
+   * (nothing in this process has injected anything yet).
    */
   globalMemoryIndex(): GlobalMemoryIndex {
     const budgetTokens = this.config.budgets.globalMemoryTokens
-    return { budgetTokens, usedTokens: 0, remainingTokens: budgetTokens }
+    const usedTokens = this.sessionRegistryValue?.totalRecallTokensUsed() ?? 0
+    return {
+      budgetTokens,
+      usedTokens,
+      remainingTokens: Math.max(0, budgetTokens - usedTokens),
+      overBudget: usedTokens > budgetTokens,
+    }
   }
 
   /**

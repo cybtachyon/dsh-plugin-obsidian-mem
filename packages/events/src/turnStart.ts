@@ -16,7 +16,9 @@
  * trimming to `budgets.turnStartRecallTokens`, the once-per-session source
  * filter, `core.wrapRecalled` envelopes (defang included), the
  * memory_search guidance line naming the discovered extensions/languages/
- * frameworks, and the token accounting TASK-045 consumes.
+ * frameworks, the token accounting TASK-045 consumes, and TASK-045's
+ * budget switch: an over-budget session gets the memory_dream compaction
+ * pointer instead of the fresh recall sections.
  * @module dsh-plugin-obsidian-mem/events/turnStart
  */
 
@@ -26,6 +28,7 @@ import { approxTokens, manifestQueryText, scanManifest, wrapRecalled } from '../
 import type { ManifestFs, WorkspaceManifest } from '../../core/lib/index.js'
 import { describeError } from '../../service/lib/errors.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
+import { compactionInstruction, isGlobalBudgetSpent } from './budget.js'
 import type { HookLogger, LiveAgent, MemoryEventsService, PreStepListener, StepMessage } from './host.js'
 import { firstUserText, makeNoticeMessage } from './host.js'
 import { sourceKeyFor, wakeTermsForSource, type SessionRegistry } from './sessions.js'
@@ -122,6 +125,22 @@ async function runTurnStartRecall(
   const notice = await memory.ensureMemoryAccess()
   if (notice !== undefined) {
     injectedTokens += inject(newId(), 'obsidian-mem: default memory vault provisioned', notice)
+  }
+
+  // TASK-045: the global memory budget. While the summed recall injections
+  // across this process's sessions sit past `budgets.globalMemoryTokens`,
+  // fresh recall is replaced by the compaction pointer (the audit's
+  // budget.over line names the same remedy with the same numbers).
+  const budgetTokens = memory.config.budgets.globalMemoryTokens
+  if (isGlobalBudgetSpent(registry, budgetTokens)) {
+    const usedTokens = registry.totalRecallTokensUsed()
+    injectedTokens += inject(
+      newId(),
+      'obsidian-mem: global memory budget spent, run memory_dream',
+      compactionInstruction(usedTokens, budgetTokens),
+    )
+    registry.addRecallTokens(sessionId, injectedTokens)
+    return
   }
 
   // Step 1: one manifest scan for the session, at the agent's workspace.

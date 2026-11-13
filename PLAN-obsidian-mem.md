@@ -93,7 +93,7 @@ task file lists explicit cross-phase prerequisites.
 - [x] [TASK-042-read-intercept](docs/PLAN-obsidian-mem-TASK-042-read-intercept.md)
 - [x] [TASK-043-think-intercept](docs/PLAN-obsidian-mem-TASK-043-think-intercept.md)
 - [x] [TASK-044-turn-end-reminder](docs/PLAN-obsidian-mem-TASK-044-turn-end-reminder.md)
-- [ ] [TASK-045-global-memory-budget](docs/PLAN-obsidian-mem-TASK-045-global-memory-budget.md)
+- [x] [TASK-045-global-memory-budget](docs/PLAN-obsidian-mem-TASK-045-global-memory-budget.md)
 - [ ] [Refactor: review Phase 5 files for code risks](docs/PLAN-obsidian-mem-TASK-046-refactor-events.md)
 
 ### Phase 6: Settings card (packages/client + routes)

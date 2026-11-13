@@ -105,8 +105,6 @@ describe('validateObsidianMemConfig: rejection table', () => {
     ['vault entry not an object', { vaults: ['x'] }, ['vaults.0']],
     ['vault path blank', { vaults: [{ path: '  ' }] }, ['vaults.0.path']],
     ['vault mode not in enum', { vaults: [{ path: '/v', mode: 'writable' }] }, ['vaults.0.mode']],
-    ['vault globalFile empty', { vaults: [{ path: '/v', globalFile: '' }] }, ['vaults.0.globalFile']],
-    ['vault globalFile blank', { vaults: [{ path: '/v', globalFile: '   ' }] }, ['vaults.0.globalFile']],
     ['vault globalFile leading slash', { vaults: [{ path: '/v', globalFile: '/GLOBAL.md' }] }, ['vaults.0.globalFile']],
     ['vault globalFile .. segment', { vaults: [{ path: '/v', globalFile: 'memory/../GLOBAL.md' }] }, ['vaults.0.globalFile']],
     ['vault globalFile bare ..', { vaults: [{ path: '/v', globalFile: '..' }] }, ['vaults.0.globalFile']],
@@ -199,6 +197,17 @@ describe('validateObsidianMemConfig: vault globalFile', () => {
     }) as { value: ResolvedObsidianMemConfig }).value
 
     expect(resolved.vaults.map((v) => v.globalFile)).toEqual(['GLOBAL.md', 'memory/GLOBAL.md'])
+  })
+
+  it('defaults a blank or whitespace-only globalFile like core resolveVaults (R1 ruling)', () => {
+    const resolved = (validate({
+      vaults: [{ path: '/v', globalFile: '' }, { path: '/w', globalFile: '   ' }],
+    }) as { value: ResolvedObsidianMemConfig }).value
+
+    expect(resolved.vaults.map((v) => v.globalFile)).toEqual([
+      GLOBAL_MEMORY_FILE_DEFAULT,
+      GLOBAL_MEMORY_FILE_DEFAULT,
+    ])
   })
 
   it('treats globalFile as a known vault key: never in UNKNOWN_CONFIG_KEYS', () => {

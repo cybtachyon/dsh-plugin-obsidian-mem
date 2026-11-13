@@ -114,7 +114,7 @@ export function modelCacheDir(homedir) {
 }
 /** Builds the plugin state dir (indexer + audit state) under dbDir. */
 export function stateDir(homedir) {
-    return join(dbDir(homedir), STATE_DIR);
+    return dbStateDir(dbDir(homedir));
 }
 /** Builds the plugin state dir under an already-resolved dbPath. */
 export function dbStateDir(dbPath) {

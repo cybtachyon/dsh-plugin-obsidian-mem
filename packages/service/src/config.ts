@@ -21,20 +21,21 @@ import {
   dbDir,
   DEFAULT_MODEL_ID,
   DREAM_NEAR_DUPLICATE_THRESHOLD,
-  GLOBAL_MEMORY_FILE_DEFAULT,
   GLOBAL_MEMORY_TOKENS,
   isVectorDim,
   MILVUS_SCALAR_MAX_LENGTHS,
   RECALL_READ_MAX_SECTIONS,
   RECALL_READ_SECTION_TOKENS,
   RECALL_TURN_START_TOKENS,
+  resolveGlobalFile,
   SEARCH_DEFAULT_TOP_K,
   TRANSFORMERS_PIPELINE_OPTIONS,
+  VAULT_MODE_SHARED,
   VAULT_MODES,
   VECTOR_DIM_DEFAULT,
   VECTOR_DIM_LOSSY,
 } from '../../core/lib/index.js'
-import type { VaultMode } from '../../core/lib/index.js'
+import type { VaultConfig, VaultMode } from '../../core/lib/index.js'
 
 /** G13: cold uvx on an empty cache can exceed 400 s (1.3 GB wheels). */
 export const DEFAULT_READINESS_TIMEOUT_MS = 600_000
@@ -49,9 +50,30 @@ export interface DreamingSchedule {
   everySeconds?: number
 }
 
+/**
+ * MountedVaultEntry is one `vaults` row as it arrives in config: mode
+ * defaults to shared and globalFile to the layout default during validation.
+ */
+export interface MountedVaultEntry {
+  path: string
+  mode?: string
+  globalFile?: string
+}
+
+/**
+ * ResolvedVaultEntry is one validated `vaults` row: mode and globalFile are
+ * present, paths still raw. After resolveServiceConfig absolutizes the path
+ * the entry is a core VaultConfig.
+ */
+export interface ResolvedVaultEntry {
+  path: string
+  mode: string
+  globalFile: string
+}
+
 /** Mounted (pre-default) config shape: every field optional. */
 export interface ObsidianMemConfig {
-  vaults?: { path: string; mode?: string; globalFile?: string }[]
+  vaults?: MountedVaultEntry[]
   vectorDim?: number
   model?: { id?: string; dtype?: string }
   milvus?: {
@@ -80,8 +102,8 @@ export interface ObsidianMemConfig {
 
 /** The fully defaulted config the service runs on (paths still raw). */
 export interface ObsidianMemResolvedConfig {
-  /** globalFile is resolved: an omitted entry globalFile takes GLOBAL_MEMORY_FILE_DEFAULT. */
-  vaults: { path: string; mode: string; globalFile: string }[]
+  /** globalFile is resolved: blank or omitted takes GLOBAL_MEMORY_FILE_DEFAULT via core resolveGlobalFile. */
+  vaults: ResolvedVaultEntry[]
   vectorDim: number
   model: { id: string; dtype: string }
   milvus: { mode: 'spawn' | 'external'; address: string; dbPath: string; readinessTimeoutMs: number }
@@ -99,8 +121,8 @@ export interface ObsidianMemResolvedConfig {
 
 /** The config after path resolution: vault paths and dbPath are absolute. */
 export interface ResolvedObsidianMemConfig extends ObsidianMemResolvedConfig {
-  /** Narrowed by schema validation (VAULT_MODES membership). */
-  vaults: { path: string; mode: VaultMode; globalFile: string }[]
+  /** Mode narrowed by schema validation (VAULT_MODES membership); entries are core VaultConfigs. */
+  vaults: VaultConfig[]
 }
 
 /**
@@ -127,6 +149,10 @@ export type ObsidianMemConfigValidation =
 type Issue = ConfigIssue
 
 const TOP_KEYS = ['vaults', 'vectorDim', 'model', 'milvus', 'budgets', 'llm', 'dreaming'] as const
+
+// Known keys of a mounted `vaults` row; anything else lands in
+// UNKNOWN_CONFIG_KEYS.
+const VAULT_ENTRY_KEYS = ['path', 'mode', 'globalFile'] as const
 
 // The default budgets table (core constants are the single source;
 // thinkShotsPerTurn has no core constant: TASK-043 is its consumer).
@@ -185,30 +211,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
     if (!Array.isArray(value.vaults)) {
       issues.push({ message: 'vaults must be an array', path: ['vaults'] })
     } else {
-      const vaults: { path: string; mode: string; globalFile: string }[] = []
-      value.vaults.forEach((entry, index) => {
-        if (!isObject(entry)) {
-          issues.push({ message: 'vault entry must be an object', path: ['vaults', index] })
-          return
-        }
-        collectUnknown(entry, ['vaults', index], ['path', 'mode', 'globalFile'], unknownKeys)
-        if (typeof entry.path !== 'string' || entry.path.trim() === '') {
-          issues.push({ message: 'vault path must be a non-empty string', path: ['vaults', index, 'path'] })
-          return
-        }
-        const mode = entry.mode === undefined ? 'shared' : entry.mode
-        if (typeof mode !== 'string' || !(VAULT_MODES as readonly string[]).includes(mode)) {
-          issues.push({
-            message: `vault mode must be one of ${VAULT_MODES.join(' | ')}, got ${JSON.stringify(entry.mode)}`,
-            path: ['vaults', index, 'mode'],
-          })
-          return
-        }
-        const globalFile = validateGlobalFile(entry.globalFile, index, issues)
-        if (globalFile === null) return
-        vaults.push({ path: entry.path, mode, globalFile })
-      })
-      resolved.vaults = vaults
+      resolved.vaults = validateVaultEntries(value.vaults, unknownKeys, issues)
     }
   }
 
@@ -329,13 +332,51 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   return succeed(resolved, unknownKeys)
 }
 
+// ValidateVaultEntries validates and defaults the mounted `vaults` rows:
+// mode defaults to the shared constant and globalFile through core
+// resolveGlobalFile. Rows that trip an issue are dropped; the issues join
+// the caller's list.
+function validateVaultEntries(
+  entries: readonly unknown[],
+  unknownKeys: string[],
+  issues: Issue[],
+): ResolvedVaultEntry[] {
+  const vaults: ResolvedVaultEntry[] = []
+  entries.forEach((entry, index) => {
+    if (!isObject(entry)) {
+      issues.push({ message: 'vault entry must be an object', path: ['vaults', index] })
+      return
+    }
+    collectUnknown(entry, ['vaults', index], VAULT_ENTRY_KEYS, unknownKeys)
+    if (typeof entry.path !== 'string' || entry.path.trim() === '') {
+      issues.push({ message: 'vault path must be a non-empty string', path: ['vaults', index, 'path'] })
+      return
+    }
+    const mode = entry.mode === undefined ? VAULT_MODE_SHARED : entry.mode
+    if (typeof mode !== 'string' || !(VAULT_MODES as readonly string[]).includes(mode)) {
+      issues.push({
+        message: `vault mode must be one of ${VAULT_MODES.join(' | ')}, got ${JSON.stringify(entry.mode)}`,
+        path: ['vaults', index, 'mode'],
+      })
+      return
+    }
+    const globalFile = validateGlobalFile(entry.globalFile, index, issues)
+    if (globalFile === null) return
+    vaults.push({ path: entry.path, mode, globalFile })
+  })
+  return vaults
+}
+
 /**
- * ValidateGlobalFile checks one vault entry's optional globalFile: a
- * vault-root-relative path (may nest with `/`, must not start with `/` or
- * carry a `..` segment). Omitted takes GLOBAL_MEMORY_FILE_DEFAULT; an
- * invalid form reports at ['vaults', index, 'globalFile'] and returns null
- * so the caller drops the entry. Trimmed blanks are garbage here (the
- * blank-default seam lives in core resolveVaults for the card-side file).
+ * ValidateGlobalFile resolves one vault entry's optional globalFile through
+ * core resolveGlobalFile: blank, whitespace-only, and omitted all take
+ * GLOBAL_MEMORY_FILE_DEFAULT. R1 ruling: this row-config boundary defaults
+ * exactly like core resolveVaults treats card-side vaults.json entries, per
+ * the layout contract ("Blank/omitted defaults to GLOBAL.md"); a previously
+ * blank-rejecting schema would fork that rule in two places. Structural
+ * forms stay rejected here: a non-string, a leading `/`, or a `..` segment.
+ * Invalid rows report at ['vaults', index, 'globalFile'] and return null so
+ * the caller drops the entry.
  */
 function validateGlobalFile(
   given: unknown,
@@ -343,12 +384,11 @@ function validateGlobalFile(
   issues: Issue[],
 ): string | null {
   const path: (string | number)[] = ['vaults', index, 'globalFile']
-  if (given === undefined) return GLOBAL_MEMORY_FILE_DEFAULT
-  const value = typeof given === 'string' ? given.trim() : ''
-  if (value === '') {
-    issues.push({ message: 'vault globalFile must be a non-empty string', path })
+  if (given !== undefined && typeof given !== 'string') {
+    issues.push({ message: 'vault globalFile must be a string', path })
     return null
   }
+  const value = resolveGlobalFile(given)
   if (value.startsWith('/')) {
     issues.push({ message: 'vault globalFile must be vault-root-relative, not absolute', path })
     return null

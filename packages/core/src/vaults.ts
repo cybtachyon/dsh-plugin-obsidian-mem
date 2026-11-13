@@ -121,7 +121,7 @@ export function pluginDir(vaultPath: string): string {
  * dream diary.
  */
 export function metadataDir(vaultPath: string): string {
-  return join(vaultPath, PLUGIN_VAULT_DIR, VAULT_METADATA_DIR)
+  return join(pluginDir(vaultPath), VAULT_METADATA_DIR)
 }
 
 /**
@@ -182,9 +182,16 @@ export function resolveVaults(
   }
 }
 
-// Blank, whitespace-only, and omitted globalFile config all take the layout
-// default; anything else is used verbatim as the vault-root-relative path.
-function resolveGlobalFile(value: string | undefined): string {
+/**
+ * ResolveGlobalFile normalizes one vault's globalFile config: blank,
+ * whitespace-only, and omitted all take GLOBAL_MEMORY_FILE_DEFAULT; anything
+ * else is trimmed and used verbatim as the vault-root-relative path. This is
+ * the layout's one blank-default seam (PLAN-vault-layout "Config model
+ * change": "Blank/omitted defaults to GLOBAL.md"); the service config schema
+ * calls it too, so the row-config and card-side boundaries default alike.
+ * Structural checks (absolute, `..` segments) stay at the row-config schema.
+ */
+export function resolveGlobalFile(value: string | undefined): string {
   const trimmed = value?.trim() ?? ''
   return trimmed === '' ? GLOBAL_MEMORY_FILE_DEFAULT : trimmed
 }

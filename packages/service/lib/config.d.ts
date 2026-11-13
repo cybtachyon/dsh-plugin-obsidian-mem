@@ -14,7 +14,7 @@
  * @module dsh-plugin-obsidian-mem/service/config
  */
 import type { Plugin } from '@deepseek-ai/cordis';
-import type { VaultMode } from '../../core/lib/index.js';
+import type { VaultConfig } from '../../core/lib/index.js';
 /** G13: cold uvx on an empty cache can exceed 400 s (1.3 GB wheels). */
 export declare const DEFAULT_READINESS_TIMEOUT_MS = 600000;
 /** One card-managed dreaming trigger row (mirrors the DSH schedule shapes). */
@@ -26,13 +26,28 @@ export interface DreamingSchedule {
     /** fixed interval seconds; XOR expression. */
     everySeconds?: number;
 }
+/**
+ * MountedVaultEntry is one `vaults` row as it arrives in config: mode
+ * defaults to shared and globalFile to the layout default during validation.
+ */
+export interface MountedVaultEntry {
+    path: string;
+    mode?: string;
+    globalFile?: string;
+}
+/**
+ * ResolvedVaultEntry is one validated `vaults` row: mode and globalFile are
+ * present, paths still raw. After resolveServiceConfig absolutizes the path
+ * the entry is a core VaultConfig.
+ */
+export interface ResolvedVaultEntry {
+    path: string;
+    mode: string;
+    globalFile: string;
+}
 /** Mounted (pre-default) config shape: every field optional. */
 export interface ObsidianMemConfig {
-    vaults?: {
-        path: string;
-        mode?: string;
-        globalFile?: string;
-    }[];
+    vaults?: MountedVaultEntry[];
     vectorDim?: number;
     model?: {
         id?: string;
@@ -68,12 +83,8 @@ export interface ObsidianMemConfig {
 }
 /** The fully defaulted config the service runs on (paths still raw). */
 export interface ObsidianMemResolvedConfig {
-    /** globalFile is resolved: an omitted entry globalFile takes GLOBAL_MEMORY_FILE_DEFAULT. */
-    vaults: {
-        path: string;
-        mode: string;
-        globalFile: string;
-    }[];
+    /** globalFile is resolved: blank or omitted takes GLOBAL_MEMORY_FILE_DEFAULT via core resolveGlobalFile. */
+    vaults: ResolvedVaultEntry[];
     vectorDim: number;
     model: {
         id: string;
@@ -107,12 +118,8 @@ export interface ObsidianMemResolvedConfig {
 }
 /** The config after path resolution: vault paths and dbPath are absolute. */
 export interface ResolvedObsidianMemConfig extends ObsidianMemResolvedConfig {
-    /** Narrowed by schema validation (VAULT_MODES membership). */
-    vaults: {
-        path: string;
-        mode: VaultMode;
-        globalFile: string;
-    }[];
+    /** Mode narrowed by schema validation (VAULT_MODES membership); entries are core VaultConfigs. */
+    vaults: VaultConfig[];
 }
 /**
  * UNKNOWN_CONFIG_KEYS carries the dot-joined paths of unknown config keys

@@ -104,6 +104,16 @@ export declare function isPluginInternalPath(vaultPath: string, absPath: string)
  */
 export declare function resolveVaults(configs: readonly VaultConfigLike[], probe: FsProbe): VaultResolution;
 /**
+ * ResolveGlobalFile normalizes one vault's globalFile config: blank,
+ * whitespace-only, and omitted all take GLOBAL_MEMORY_FILE_DEFAULT; anything
+ * else is trimmed and used verbatim as the vault-root-relative path. This is
+ * the layout's one blank-default seam (PLAN-vault-layout "Config model
+ * change": "Blank/omitted defaults to GLOBAL.md"); the service config schema
+ * calls it too, so the row-config and card-side boundaries default alike.
+ * Structural checks (absolute, `..` segments) stay at the row-config schema.
+ */
+export declare function resolveGlobalFile(value: string | undefined): string;
+/**
  * Creates the default shared vault's directory tree under the injected
  * homedir and returns its VaultConfig. Lazy by contract: only the service's
  * ensureMemoryAccess seam calls it, so installs without memory use create no

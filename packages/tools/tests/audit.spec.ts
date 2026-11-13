@@ -23,7 +23,7 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
     issues: [
       { id: 'vault.writable', severity: 'ISSUE', detail: 'shared vault "/v" is not writable', remediation: 'make the directory writable or switch to read-only' },
       { id: 'index.live', severity: 'INFO', detail: 'milvus at 127.0.0.1:19530', remediation: 'none' },
-      { id: 'budget.over', severity: 'ISSUE', detail: 'global memory injection is over budget: 2000 of 1500 tokens used, injected since the last successful dream or host restart', remediation: 'run memory_dream to process and compact all global memory markdown files, least-read first' },
+      { id: 'budget.over', severity: 'ISSUE', detail: 'global memory injection is over budget: 2000 of 1500 tokens used, injected since the last successful dream or host restart', remediation: 'as the lighter remedy, compact the global memory only, least-read first: "/v/unread.md", "/v/a.md"; survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves; also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store' },
     ],
     stats: {
       vaultCount: 1,
@@ -130,7 +130,7 @@ describe('memory_audit execute', () => {
 })
 
 describe('memory_audit render', () => {
-  it('leads with the rollup, lists issues in service order, and names the compaction order', async () => {
+  it('leads with the rollup, lists issues in service order, and names the manual compaction order', async () => {
     const { service } = fixture()
     const value = await executeAudit(service, {})
     const text = renderAudit(value)
@@ -138,7 +138,10 @@ describe('memory_audit render', () => {
     expect(lines[0]).toContain('found problems')
     const issueLines = lines.filter((line) => line.startsWith('- [ISSUE]') || line.startsWith('- [INFO]'))
     expect(issueLines[0]).toContain('vault.writable')
-    expect(text).toContain('OVER BUDGET: run memory_dream')
+    expect(text).toContain('OVER BUDGET: as the lighter remedy, compact the global memory only')
+    expect(text).toContain('ask the user to approve this manual compaction and do not start until the user approves')
+    expect(text).toContain('the much heavier memory_dream is available for a more complete optimization of the whole memory store')
+    expect(text).toContain('Global notes to compact, least-read first:')
     expect(text.indexOf('/v/unread.md')).toBeLessThan(text.indexOf('/v/a.md'))
     expect(text).toContain('never read')
     expect(text).toContain('not indexed')
@@ -170,8 +173,10 @@ describe('memory_audit render', () => {
     }))
     const text = renderAudit(await executeAudit(service, {}))
     expect(text).toContain('OVER BUDGET: compaction cannot help')
+    expect(text).toContain('with the user\'s approval, tighten these files by hand to shrink every session')
     expect(text).toContain('- /v/GLOBAL.md')
-    expect(text).not.toContain('OVER BUDGET: run memory_dream')
+    const overLine = text.split('\n').find((line) => line.startsWith('OVER BUDGET:')) ?? ''
+    expect(overLine).not.toContain('memory_dream')
   })
 
   it('renders the failed kind as its message', () => {

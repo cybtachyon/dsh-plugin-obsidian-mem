@@ -24,7 +24,7 @@ markdown memory.
   by deleting files; archived notes stay out of recall.
 - memory_audit is read-only and safe to run any time: when memory feels
   disorganized or before large vault cleanups. Its over-budget line names
-  the compaction run to do next.
+  the compaction remedy to apply next.
 - Vaults are shared across agents or read-only; managed in the Obsidian
   Mem settings card. Reads answer from every registered vault; writes go
   to shared vaults only."

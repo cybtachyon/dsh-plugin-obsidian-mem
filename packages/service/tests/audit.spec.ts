@@ -573,11 +573,14 @@ describe('runStoreAudit: global budget section', () => {
     expect(report.budget.compactableGlobalNotePaths).toEqual(report.budget.globalNotePaths)
   })
 
-  it('over budget: reports an ISSUE instructing memory_dream over the least-read-first list', async () => {
+  it('over budget: reports an ISSUE naming the manual compaction list and the memory_dream suggestion', async () => {
     const report = await run({ fs: budgetFs(), globalIndex: globalIndexFixture({ usedTokens: 2000 }), vaults: [vault('/v')] })
     const over = findIssue(report, 'budget.over')
     expect(over?.severity).toBe('ISSUE')
-    expect(over?.remediation).toContain('run memory_dream to process and compact the global memory markdown files, least-read first')
+    expect(over?.remediation).toContain('as the lighter remedy, compact the global memory only, least-read first')
+    expect(over?.remediation).toContain('survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true')
+    expect(over?.remediation).toContain('ask the user to approve this manual compaction and do not start until the user approves')
+    expect(over?.remediation).toContain('the much heavier memory_dream is available for a more complete optimization of the whole memory store')
     const remediation = over?.remediation ?? ''
     expect(remediation.indexOf('unread.md')).toBeLessThan(remediation.indexOf('popular.md'))
     expect(issueIds(report)).not.toContain('budget.tracker')
@@ -645,9 +648,9 @@ describe('runStoreAudit: global budget section', () => {
     const over = findIssue(report, 'budget.over')
     expect(over?.severity).toBe('ISSUE')
     expect(over?.remediation).toContain('compaction cannot help')
-    expect(over?.remediation).toContain('manually tighten')
+    expect(over?.remediation).toContain('with the user\'s approval, manually tighten')
     expect(over?.remediation).toContain('/v/GLOBAL.md')
-    expect(over?.remediation).not.toContain('run memory_dream')
+    expect(over?.remediation).not.toContain('memory_dream')
   })
 })
 

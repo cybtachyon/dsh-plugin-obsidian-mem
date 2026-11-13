@@ -399,48 +399,48 @@ export class MilvusLauncher {
 
   /**
    * WaitForReady is the SDK-3.0.6 replacement for the nonexistent
-   * waitForMilvusReady: await connectPromise, then poll checkHealth on the
-   * interval until the deadline (findings §4.1, §5.2.4).
+   * waitForMilvusReady: poll health + version until the deadline
+   * (findings §4.1, §5.2.4). Each poll builds a FRESH probe client: a gRPC
+   * channel constructed against a not-yet-listening port never recovers
+   * against milvus-lite (verified 2026-11-12: TCP opens later, but the
+   * stuck channel answers UNAVAILABLE forever), while a client constructed
+   * after the port listens connects immediately.
    */
   private async waitForReady(address: string, watch: ChildWatch | null): Promise<string> {
     const deadline = Date.now() + this.readinessTimeoutMs
-    const probe = this.probeFactory(address)
     let lastError: unknown = null
-    try {
-      if (probe.connectPromise) {
-        await probe.connectPromise.catch((error: unknown) => {
-          lastError = error
-        })
+    for (;;) {
+      if (watch?.exit) {
+        throw this.childDiedError(address, watch)
       }
-      for (;;) {
-        if (watch?.exit) {
-          throw this.childDiedError(address, watch)
+      const probe = this.probeFactory(address)
+      try {
+        if (probe.connectPromise) {
+          await probe.connectPromise
         }
-        try {
-          const health = await probe.checkHealth()
-          if (health.isHealthy) {
-            const { version } = await probe.getVersion()
-            if (this.config.mode !== 'external' && !version.startsWith(LITE_VERSION_PREFIX)) {
-              throw new MilvusForeignServerError(
-                `the server spawned for ${address} reports ${version}, not ${LITE_VERSION_PREFIX}-*; `
-                + `the version pin guards the 3.x storage layout`,
-              )
-            }
-            return version
+        const health = await probe.checkHealth()
+        if (health.isHealthy) {
+          const { version } = await probe.getVersion()
+          if (this.config.mode !== 'external' && !version.startsWith(LITE_VERSION_PREFIX)) {
+            throw new MilvusForeignServerError(
+              `the server spawned for ${address} reports ${version}, not ${LITE_VERSION_PREFIX}-*; `
+              + `the version pin guards the 3.x storage layout`,
+            )
           }
-        } catch (error) {
-          if (error instanceof MilvusForeignServerError) {
-            throw error
-          }
-          lastError = error
+          return version
         }
-        if (Date.now() >= deadline) {
-          break
+      } catch (error) {
+        if (error instanceof MilvusForeignServerError) {
+          throw error
         }
-        await sleep(this.readinessIntervalMs)
+        lastError = error
+      } finally {
+        await Promise.resolve(probe.close()).catch(() => undefined)
       }
-    } finally {
-      await Promise.resolve(probe.close()).catch(() => undefined)
+      if (Date.now() >= deadline) {
+        break
+      }
+      await sleep(this.readinessIntervalMs)
     }
     throw new Error(
       `milvus launcher: no healthy milvus-lite at ${address} within ${this.readinessTimeoutMs} ms `

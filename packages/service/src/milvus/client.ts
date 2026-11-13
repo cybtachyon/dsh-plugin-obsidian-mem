@@ -15,10 +15,24 @@ import { assertOk } from './ok.js'
 /** Default gRPC request budget for plugin calls, in ms. */
 export const MILVUS_REQUEST_TIMEOUT_MS = 60_000
 
+// The SDK's BaseClient forces keepalive pings every 10 s with
+// keepalive_permit_without_calls=1. milvus-lite's pure-Python gRPC server
+// enforces an HTTP/2 keepalive policy and answers that with GOAWY
+// ENHANCE_YOUR_CALM ("rejected ... because of excess pings"); the channel
+// then reports UNAVAILABLE forever, even though the TCP port stays open.
+// Full Milvus (Go) tolerates the SDK defaults; lite does not (verified on
+// 3.2.2, 2026-11-12). Pinning the interval past any realistic session
+// stops the pings; loopback TCP needs no app-level keepalive.
+const KEEPALIVE_SUPPRESSION = {
+  'grpc.keepalive_time_ms': 86_400_000,
+  'grpc.keepalive_permit_without_calls': 0,
+}
+
 /**
  * CreateMilvusClient constructs a client for a host:port gRPC address
  * (Milvus-Lite binds 127.0.0.1; lite has no auth, so no token is ever
- * sent). Consistency is pinned Strong at createCollection and on the
+ * sent). Keepalive pings are suppressed (see KEEPALIVE_SUPPRESSION).
+ * Consistency is pinned Strong at createCollection and on the
  * read calls (SDK 3.0.6 ClientConfig has no client-level
  * consistency_level field), telemetry is opted out (3.0.x enables it by
  * default), and the pool stays small: one local process is the whole
@@ -35,6 +49,7 @@ export function createMilvusClient(
     logLevel: 'warn',
     telemetry: { enabled: false },
     pool: { max: 4, min: 1 },
+    channelOptions: { ...KEEPALIVE_SUPPRESSION },
   })
 }
 

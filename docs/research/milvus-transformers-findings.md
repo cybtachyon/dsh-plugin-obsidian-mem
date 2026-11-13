@@ -320,6 +320,29 @@ Server: `milvus-lite 3.2.2` (`getVersion()` → `"milvus_lite-3.2.2"`), gRPC on
 - **G9 — dynamic-field projection quirk.** `output_fields: ['$meta["nested"]["n"]']` returned
   `{"$meta":{}}` while the *filter* on the same path matched. Request `'$meta'` if you need
   the values back. `[U]`
+- **G10 — search results omit the primary key unless asked (Phase 3A addendum).** On lite
+  3.2.2, `search` rows came back as `{score, <output_fields…>}` with NO `chunk_id` key until
+  `chunk_id` was added to `output_fields`. Always list the PK explicitly in search/query
+  projections. `[V]` (2026-11-12, live check)
+- **G11 — SDK keepalive pings kill long-lived channels against lite.** SDK 3.0.6 `BaseClient`
+  forces `grpc.keepalive_time_ms: 10000` + `keepalive_permit_without_calls: 1`; lite's Python
+  gRPC server enforces HTTP/2 keepalive and answers with GOAWY `ENHANCE_YOUR_CALM`
+  ("rejected by server because of excess pings. Increasing ping interval to 20000 ms"), after
+  which the pooled channel is unreliable. Plugin clients must pass
+  `channelOptions: {'grpc.keepalive_time_ms': 86_400_000, 'grpc.keepalive_permit_without_calls': 0}`
+  (done in `milvus/client.ts createMilvusClient`). `[V]` (2026-11-12)
+- **G12 — a gRPC client constructed against a not-yet-listening port never recovers.** The
+  pool caches the ECONNREFUSED state: even after the server starts listening, its calls keep
+  failing with `14 UNAVAILABLE ... connect ECONNREFUSED`. The readiness loop must construct a
+  FRESH probe client per poll (done in `milvus/launcher.ts waitForReady`), and long-lived
+  service clients must only be created after readiness. `[V]` (2026-11-12)
+- **G13 — cold `uvx` on an empty uv cache can exceed 90 s.** The first-ever
+  `uvx --with pymilvus --from milvus-lite==3.2.2 …` on this machine resolved and cached
+  ~1.3 GB of wheels across multiple `uv` invocations; 90 s and even 400 s were exceeded,
+  while warm-cache starts reach `LISTEN` in 2-25 s and full launcher `start()` took ~1.5 s.
+  The §5.1 "~60 s cold" figure assumes a partially warm cache. First-run UI must not treat a
+  >90 s cold start as failure (TASK-030/063: pass a generous `readinessTimeoutMs` or
+  pre-warm with the same uvx command during install). `[V]` (2026-11-12)
 
 ---
 
@@ -522,6 +545,9 @@ uvx --with pymilvus --from milvus-lite milvus-lite server \
 4. wait-ready: poll every 250ms up to ~90s (cold uvx): connect with the Node SDK and call
    checkHealth() (not just TCP connect — gRPC accept is not the same as ready).
    There is no waitForMilvusReady in the SDK; this loop is the replacement.
+   Phase 3A addendum: build a FRESH client per poll (G12: a client constructed before the
+   port listens never recovers) and suppress keepalive pings on it (G11); a first-ever cold
+   uvx with an empty cache can exceed even 400 s (G13).
 5. data-dir lock: if spawn exits with DataDirLockedError, either another plugin instance owns
    it (find its port file and attach) or the dir is being used by a non-lite Milvus;
    fail with an actionable message rather than retrying.

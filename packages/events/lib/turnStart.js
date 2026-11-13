@@ -63,7 +63,7 @@ export function installTurnStart(deps) {
     const listener = async (payload, next) => {
         // Observation only: a broken recall gate never touches the decision.
         runGuarded(deps.logger, 'turn-start recall gate', () => {
-            claimTurnStart(deps, payload.agent, payload.messages, payload.turn, payload.step);
+            claimTurnStart(deps, payload);
         });
         const decision = await next();
         return { ...decision };
@@ -73,17 +73,18 @@ export function installTurnStart(deps) {
 }
 // Synchronous claim: per-turn bookkeeping, then the once-per-session slot.
 // Marking done BEFORE the async work prevents a second step from starting a
-// parallel recall while the first is still searching.
-function claimTurnStart(deps, agent, messages, turn, step) {
-    const sessionId = String(agent.id);
+// parallel recall while the first is still searching. The payload travels
+// whole; its agent/turn/step/messages fields are a group in every use here.
+function claimTurnStart(deps, payload) {
+    const sessionId = String(payload.agent.id);
     // The first user text rides into the registry for TASK-044's trivial-turn
     // guard (the turn-stopping payload carries no messages).
-    deps.registry.noteTurn(sessionId, turn, firstUserText(messages));
-    if (step !== 1 || deps.registry.isTurnStartDone(sessionId)) {
+    deps.registry.noteTurn(sessionId, payload.turn, firstUserText(payload.messages));
+    if (payload.step !== 1 || deps.registry.isTurnStartDone(sessionId)) {
         return;
     }
     deps.registry.markTurnStartDone(sessionId);
-    fireAndForget(deps.logger, 'turn-start recall', runTurnStartRecall(deps, sessionId, messages));
+    fireAndForget(deps.logger, 'turn-start recall', runTurnStartRecall(deps, sessionId, payload.messages));
 }
 /** RunTurnStartRecall is the whole once-per-session flow, errors contained. */
 async function runTurnStartRecall(deps, sessionId, messages) {
@@ -114,33 +115,13 @@ async function runTurnStartRecall(deps, sessionId, messages) {
     const manifest = cwd === null
         ? null
         : scanManifestSafe(cwd, deps.manifestFs ?? nodeManifestFs, deps.logger);
-    // Steps 2-3: query = first user text alone; budget-fit trim. The
+    // Steps 2-3: search the first user text alone, budget-fit trim. The
     // manifest text stays out of the query: the TASK-015 A/B
     // (docs/PLAN-milvus-tuning-TASK-015-manifest-text-ab.md) measured its
     // token soup pulling generic-process notes into the dual-route band
     // and displacing in-domain rows (P@6 0.417 vs 0.267). The manifest
     // still feeds the guidance line below, unchanged.
-    const query = firstUserText(messages);
-    const kept = [];
-    if (query !== '') {
-        let results;
-        try {
-            results = await memory.search({ query, topK: memory.config.budgets.searchTopK });
-        }
-        catch (error) {
-            logSearchFailure({ logger: deps.logger, label: 'turn-start recall', error });
-            results = [];
-        }
-        let used = 0;
-        for (const item of collectFreshSources(registry, sessionId, results)) {
-            const cost = approxTokens(item.block);
-            if (used + cost > memory.config.budgets.turnStartRecallTokens) {
-                break;
-            }
-            used += cost;
-            kept.push(item);
-        }
-    }
+    const kept = await budgetedRecallSources(deps, sessionId, firstUserText(messages));
     // Recall bodies first, so the guidance line reads last.
     for (const item of kept) {
         injectedTokens += injectNotice(deps.agent, newId(), 'obsidian-mem: turn-start recall', [item.block]);
@@ -154,6 +135,36 @@ async function runTurnStartRecall(deps, sessionId, messages) {
     }
     // TASK-045's global budget counts every token this flow injected.
     registry.addRecallTokens(sessionId, injectedTokens);
+}
+// BudgetedRecallSources answers the search-recall blocks to inject:
+// search the query at the turn-start searchTopK, drop sources this
+// session already injected, then keep blocks while they fit the
+// turnStartRecallTokens budget. A failed search is logged and answers
+// empty; an empty query (a session opening on non-text) searches
+// nothing.
+async function budgetedRecallSources(deps, sessionId, query) {
+    if (query === '') {
+        return [];
+    }
+    let results;
+    try {
+        results = await deps.memory.search({ query, topK: deps.memory.config.budgets.searchTopK });
+    }
+    catch (error) {
+        logSearchFailure({ logger: deps.logger, label: 'turn-start recall', error });
+        results = [];
+    }
+    const kept = [];
+    let used = 0;
+    for (const item of collectFreshSources(deps.registry, sessionId, results)) {
+        const cost = approxTokens(item.block);
+        if (used + cost > deps.memory.config.budgets.turnStartRecallTokens) {
+            break;
+        }
+        used += cost;
+        kept.push(item);
+    }
+    return kept;
 }
 /**
  * InjectPinnedGlobalMemory injects each shared vault's global memory file

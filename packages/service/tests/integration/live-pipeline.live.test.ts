@@ -393,12 +393,18 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     }
   })
 
+  // Search answers ABSOLUTE source_paths (the memory_read contract);
+  // assertions compare the vault-relative suffix.
+  const relOf = (p: string): string =>
+    p.startsWith(`${vaultDir}/`) ? p.slice(vaultDir.length + 1) : p
+
   it('full run indexes active notes only: archived, reserved, dotfile, and non-md stay out', async () => {
     expect(await rowCount()).toBe(expectedChunks)
 
     // The keyword-only probe: 'petrichor' exists in exactly one live note.
     const hits = await service!.search({ query: 'petrichor', topK: 5 })
-    expect(hits[0]?.source_path).toBe('markdown/petrichor-garden.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/petrichor-garden.md')
+    expect(hits[0]!.source_path.startsWith(`${vaultDir}/`)).toBe(true)
 
     // Archived-only tokens: hybrid search always answers nearest rows,
     // so the exclusion is proven by absence of the archived paths.
@@ -406,15 +412,15 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     for (const token of ['centavo', 'password-only logins']) {
       const archivedHits = await service!.search({ query: token, topK: 10 })
       for (const path of archivedPaths) {
-        expect(archivedHits.map((hit) => hit.source_path), `${token} -> ${path}`).not.toContain(path)
+        expect(archivedHits.map((hit) => relOf(hit.source_path)), `${token} -> ${path}`).not.toContain(path)
       }
     }
 
     // Reserved/dotfile/non-markdown decoys never enter the index.
     for (const token of ['obol', 'intentmarker']) {
       const decoyHits = await service!.search({ query: token, topK: 10 })
-      expect(decoyHits.map((hit) => hit.source_path), token).not.toContain('markdown/billing_history.md')
-      expect(decoyHits.map((hit) => hit.source_path), token).not.toContain('markdown/.draft-note.md')
+      expect(decoyHits.map((hit) => relOf(hit.source_path)), token).not.toContain('markdown/billing_history.md')
+      expect(decoyHits.map((hit) => relOf(hit.source_path)), token).not.toContain('markdown/.draft-note.md')
     }
 
     const state = JSON.parse(
@@ -439,7 +445,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
       topK: 5,
     })
 
-    expect(hits[0]?.source_path).toBe('markdown/memory-leak.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/memory-leak.md')
   }, 180_000)
 
   it('hybrid search: paraphrase query ranks the keepalive note first (mixed routes)', async () => {
@@ -448,14 +454,14 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
       topK: 5,
     })
 
-    expect(hits[0]?.source_path).toBe('markdown/milvus-keepalive.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/milvus-keepalive.md')
   }, 180_000)
 
   it('scalar filters: ARRAY trigger extension, wake keywords, and scope partition routing', async () => {
     // ARRAY_CONTAINS on trigger_extensions: only the ts-fenced note qualifies.
     const extHits = await service!.search({ query: 'keepalive ping channel', ext: '.ts', topK: 10 })
     expect(extHits.length).toBeGreaterThan(0)
-    expect(new Set(extHits.map((hit) => hit.source_path))).toEqual(
+    expect(new Set(extHits.map((hit) => relOf(hit.source_path)))).toEqual(
       new Set(['markdown/milvus-keepalive.md']),
     )
 
@@ -467,7 +473,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
       topK: 10,
     })
     expect(keywordHits.length).toBeGreaterThan(0)
-    expect(new Set(keywordHits.map((hit) => hit.source_path))).toEqual(
+    expect(new Set(keywordHits.map((hit) => relOf(hit.source_path)))).toEqual(
       new Set(['markdown/http-cache.md']),
     )
 
@@ -476,7 +482,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     expect(domainHits.length).toBeGreaterThan(0)
     for (const hit of domainHits) {
       expect(hit.scope).toBe('domain')
-      expect(hit.source_path).toBe('markdown/memory-leak.md')
+      expect(relOf(hit.source_path)).toBe('markdown/memory-leak.md')
     }
 
     // The result rows carry the registry-resolved vault mode.
@@ -495,7 +501,8 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     // Strong consistency + the write-through hook: the fresh token must
     // answer without waiting on the watcher or the stat sweep.
     const hits = await service!.search({ query: 'zephyrline misting loop', topK: 5 })
-    expect(hits[0]?.source_path).toBe('markdown/petrichor-garden.md')
+    expect(relOf(hits[0]?.source_path ?? '')).toBe('markdown/petrichor-garden.md')
+    expect(hits[0]!.source_path.startsWith(`${vaultDir}/`)).toBe(true)
     expect(hits[0]?.chunk_text).toContain('zephyrline')
 
     const state = JSON.parse(
@@ -517,7 +524,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     }, { timeout: 60_000, interval: 500 })
 
     const hits = await service!.search({ query: 's-maxage stale-while-revalidate', topK: 10 })
-    expect(hits.map((hit) => hit.source_path)).not.toContain('markdown/http-cache.md')
+    expect(hits.map((hit) => relOf(hit.source_path))).not.toContain('markdown/http-cache.md')
   }, 180_000)
 
   it('dim drift: ensureCollection reports {needsRebuild} against the live 384-d collection; rebuild + reindex restores', async () => {

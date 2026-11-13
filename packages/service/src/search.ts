@@ -23,6 +23,7 @@
  * @module dsh-plugin-obsidian-mem/service/search
  */
 
+import { isAbsolute, join } from 'node:path'
 import { MetricType, RRFRanker } from '@zilliz/milvus2-sdk-node'
 
 import {
@@ -155,7 +156,12 @@ export interface SearchRequest {
 
 /** Parameters of the Read-intercept exact-section recall. */
 export interface ExactSectionRequest {
-  /** Vault-relative source_path of the file being read. */
+  /**
+   * Vault-relative source_path for the exact-match pass. An ABSOLUTE path
+   * (the Read intercept's usual input, a file outside every vault) skips
+   * the exact pass: stored source_paths are vault-relative, so equality
+   * against it can never match and only the ext/framework fallback applies.
+   */
   filePath: string
   /** Extension of that file, e.g. ".tsx"; filters trigger_extensions. */
   ext?: string
@@ -267,11 +273,12 @@ export async function hybridSearch(
 }
 
 /**
- * SearchExactSections serves the Read intercept: chunks of the exact
- * file first (source_path == filter); when that file has no indexed
- * chunks, a fallback search by trigger_extensions (ext), frameworks,
- * and the query text. Same section budget per result as the main search;
- * offline degrades to IndexOfflineError.
+ * SearchExactSections serves the Read intercept: with a vault-relative
+ * filePath, chunks of that exact file (source_path == filter) come first;
+ * otherwise (absolute path, or no indexed chunks) a fallback search by
+ * trigger_extensions (ext), frameworks, and the query text. Same section
+ * budget per result as the main search; offline degrades to
+ * IndexOfflineError. Output source_paths are absolute (see toResults).
  */
 export async function searchExactSections(
   deps: SearchDependencies,
@@ -289,14 +296,18 @@ export async function searchExactSections(
   }
   const dense = await deps.embedder.embedQuery(queryText)
 
-  const exactExpr = buildFilterExpr({
-    sourcePath: request.filePath,
-    ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
-  })
-  const exactRows = await dispatchHybrid(deps, queryText, dense, exactExpr, candidatesFor(k))
-  const exact = topSections(toResults(deps, exactRows, sectionTokens), k)
-  if (exact.length > 0) {
-    return exact
+  const exactFilter = isAbsolute(request.filePath)
+    ? null
+    : buildFilterExpr({
+      sourcePath: request.filePath,
+      ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
+    })
+  if (exactFilter !== null) {
+    const exactRows = await dispatchHybrid(deps, queryText, dense, exactFilter, candidatesFor(k))
+    const exact = topSections(toResults(deps, exactRows, sectionTokens), k)
+    if (exact.length > 0) {
+      return exact
+    }
   }
 
   // Fallback: ext/framework-filtered recall on the query text. Directory
@@ -392,9 +403,16 @@ function toResults(
 ): MemorySearchResult[] {
   return rows.map((row) => {
     const vault = String(row[MILVUS_FIELDS.vault] ?? '')
+    const stored = String(row[MILVUS_FIELDS.sourcePath] ?? '')
     return {
       chunk_id: Number(row[MILVUS_FIELDS.chunkId] ?? 0),
-      source_path: String(row[MILVUS_FIELDS.sourcePath] ?? ''),
+      // Storage keeps source_path vault-RELATIVE (portable vaults, hashed
+      // chunk ids); every agent-facing surface takes ABSOLUTE paths
+      // (memory_read resolves only those, <recalled_memory source=...>
+      // carries them), so re-anchor on read.
+      source_path: stored === '' || vault === '' || isAbsolute(stored)
+        ? stored
+        : join(vault, stored),
       section_header: String(row[MILVUS_FIELDS.sectionHeader] ?? ''),
       chunk_text: truncateToTokens(String(row[MILVUS_FIELDS.chunkText] ?? ''), tokenCap),
       scope: String(row[MILVUS_FIELDS.scope] ?? ''),

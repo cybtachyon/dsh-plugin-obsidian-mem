@@ -35,7 +35,7 @@ not persisted, so no write). Spec in the events session spec: totals drop
 to 0; per-session `recallTokensUsed` 0; injected-sources ledger and
 throttle state unchanged; no persist call triggered by the reset alone.
 
-### TASK-002 dream wiring + wording
+### TASK-002 dream wiring + wording [x]
 
 - `packages/service/src/dream.ts`: add optional
   `onRunSucceeded?: () => void` to `DreamDeps`, called after

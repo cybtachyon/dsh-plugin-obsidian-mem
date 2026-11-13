@@ -139,9 +139,10 @@ async function runTurnStartRecall(
   injectedTokens += deliverProvisionNotice(deps.agent, newId, registry)
 
   // TASK-045: the global memory budget. While the summed recall injections
-  // across this process's sessions sit past `budgets.globalMemoryTokens`,
-  // fresh recall is replaced by the compaction pointer (the audit's
-  // budget.over line names the same remedy with the same numbers).
+  // since the last successful dream or host restart sit past
+  // `budgets.globalMemoryTokens`, fresh recall is replaced by the
+  // compaction pointer (the audit's budget.over line names the same remedy
+  // with the same numbers).
   const budgetTokens = memory.config.budgets.globalMemoryTokens
   if (isGlobalBudgetSpent(registry, budgetTokens)) {
     const usedTokens = registry.totalRecallTokensUsed()

@@ -626,6 +626,10 @@ export class ObsidianMemService extends Service {
                 // answers undefined for an unmounted service, so no try/catch.
                 defaultAgentOptions: () => this.ctx.get('agentDefaultModel')?.currentSelection() ?? undefined,
                 noteVectors: (targets) => this.fetchNoteVectors(targets),
+                // Successful compaction rebaselines the global recall budget
+                // (PLAN-budget-rebaseline TASK-002): the closure reads the wired
+                // registry at call time, and no-ops before the events row wires one.
+                onRunSucceeded: () => { this.sessionRegistryValue?.resetRecallUsage(); },
                 log: (message) => {
                     this.log.info(`dream: ${message}`);
                 },

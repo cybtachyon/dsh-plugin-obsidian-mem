@@ -24,6 +24,9 @@ export declare function isGlobalBudgetSpent(registry: SessionRegistry, budgetTok
  * recall sections while the budget is spent: a short pointer naming
  * `memory_dream` (the compactor) and `memory_audit` (the report naming the
  * least-read global notes), mirroring the audit budget.over remediation.
+ * The sentence names the window the number is summed over: a successful
+ * dream resets the counters (service dream wiring), so usage counts from
+ * the last successful dream or host restart.
  */
 export declare function compactionInstruction(usedTokens: number, budgetTokens: number): string;
 //# sourceMappingURL=budget.d.ts.map

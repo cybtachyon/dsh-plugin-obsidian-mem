@@ -102,15 +102,20 @@ export interface GlobalMemorySource {
     content: string;
 }
 /**
- * SessionRegistryView is the minimal read slice the service needs of the
+ * SessionRegistryView is the minimal slice the service needs of the
  * per-session memory registry (TASK-040 seam). The events package owns and
  * constructs the registry instance; the service only holds the wired
  * reference, so the package dependency stays events → service, never back.
- * TASK-045 reads recall usage through it inside globalMemoryIndex.
+ * TASK-045 reads recall usage through it inside globalMemoryIndex; a
+ * successful dream zeroes it through resetRecallUsage (TASK-002), so the
+ * summed number means "tokens injected since the last successful dream or
+ * host restart".
  */
 export interface SessionRegistryView {
     /** Sums the recall tokens injected across every session the registry knows. */
     totalRecallTokensUsed(): number;
+    /** Zeroes every live session's recall counter; wired to the dream ok path. */
+    resetRecallUsage(): void;
 }
 /** The seam's status answer; sync so the card can poll without provisioning. */
 export interface ObsidianMemStatus {

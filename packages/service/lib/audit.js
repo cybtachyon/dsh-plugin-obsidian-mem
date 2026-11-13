@@ -580,7 +580,7 @@ export async function runStoreAudit(deps, request = {}) {
         issue('budget.tracker', 'INFO', `no recall budget spent in this process yet; configured budget is ${String(budget.budgetTokens)} tokens`, 'none: usage counts from the first turn-start recall injection');
     }
     if (budget.overBudget) {
-        issue('budget.over', 'ISSUE', `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used`, budgetOverRemediation(budget, limit));
+        issue('budget.over', 'ISSUE', `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used, injected since the last successful dream or host restart`, budgetOverRemediation(budget, limit));
     }
     // 9. Rows: bounded view; rollups above covered the whole store.
     const live = allNotes.filter((note) => note.meta?.archive !== true);

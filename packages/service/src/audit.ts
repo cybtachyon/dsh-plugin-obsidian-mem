@@ -863,7 +863,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   }
   if (budget.overBudget) {
     issue('budget.over', 'ISSUE',
-      `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used`,
+      `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used, injected since the last successful dream or host restart`,
       budgetOverRemediation(budget, limit))
   }
 

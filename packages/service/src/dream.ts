@@ -14,7 +14,9 @@
  * anyway, so a `turn/end` with `reason.kind === 'error'` throws before the
  * stamp and the post-pass; TASK-003), then dispose, and a deterministic
  * post-pass that re-scores relevancy purely from frontmatter read
- * evidence, THEN stamps lastDreamAt (order load-bearing).
+ * evidence, THEN stamps lastDreamAt (order load-bearing) and only then
+ * fires the optional `onRunSucceeded` dep, the ok-path global-budget
+ * rebaseline (PLAN-budget-rebaseline TASK-002).
  *
  * Git-churn stressors are a documented deviation from the ext: vaults are
  * not necessarily git repos here, so stress is read-staleness, staleness
@@ -272,6 +274,14 @@ export interface DreamDeps {
   defaultAgentOptions: () => DreamAgentRoute | undefined
   /** Stored chunk vectors averaged per note; empty map when index cold. */
   noteVectors: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>
+  /**
+   * Fires on the ok path only, right after the lastDreamAt stamp: the
+   * service wires it to the session registry's budget reset, so a
+   * successful compaction rebaselines the global recall window
+   * (PLAN-budget-rebaseline TASK-002). A failed run, a busy or blocked
+   * throw, and `plan` never reach it.
+   */
+  onRunSucceeded?: () => void
   log: (message: string) => void
 }
 
@@ -780,6 +790,11 @@ export class DreamOrchestrator {
       // stamp lastDreamAt.
       const scoring = this.applyDreamScoring()
       this.setLastDream(Date.now())
+      // Budget rebaseline (PLAN-budget-rebaseline TASK-002): the ok path
+      // zeroes the live per-session recall counters through the wired dep,
+      // so the global budget window starts at this run. Failed paths never
+      // reach here, so a dead agent never reopens the gate.
+      this.deps.onRunSucceeded?.()
       this.deps.log(`dream ${id} done: ${String(scoring.bumped)} bumped, ${String(scoring.degraded)} degraded, ${String(scoring.archiveCandidates.length)} archive candidates`)
       return finish(true, null, scoring)
     } catch (error: unknown) {

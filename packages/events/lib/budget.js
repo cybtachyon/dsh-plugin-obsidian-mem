@@ -25,10 +25,13 @@ export function isGlobalBudgetSpent(registry, budgetTokens) {
  * recall sections while the budget is spent: a short pointer naming
  * `memory_dream` (the compactor) and `memory_audit` (the report naming the
  * least-read global notes), mirroring the audit budget.over remediation.
+ * The sentence names the window the number is summed over: a successful
+ * dream resets the counters (service dream wiring), so usage counts from
+ * the last successful dream or host restart.
  */
 export function compactionInstruction(usedTokens, budgetTokens) {
     return 'Obsidian Mem: the global memory recall budget is spent '
-        + `(${String(usedTokens)} of ${String(budgetTokens)} tokens injected across this process's sessions). `
+        + `(${String(usedTokens)} of ${String(budgetTokens)} tokens injected since the last successful dream or host restart). `
         + 'No fresh recall sections are injected while it stays over budget. '
         + 'Run the `memory_dream` tool to compact the global memory notes (least-read first), '
         + 'then `memory_audit` to see the budget report.';

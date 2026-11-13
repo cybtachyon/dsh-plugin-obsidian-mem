@@ -6,12 +6,13 @@
  * provider/model AgentOptions, followup, whenIdle, dispose), the
  * provider/model precedence and blocked resolution (dream-launch
  * TASK-001), the host agentDefaultModel route (TASK-002), failed-turn
- * detection from the session log (TASK-003), and the load-bearing scoring
+ * detection from the session log (TASK-003), the load-bearing scoring
  * order (relevancy scored against the PREVIOUS stamp, THEN lastDreamAt
- * written). Everything external is a fake: ServiceFs in memory,
- * inventories as data, a fake agents gateway (whose agent double answers
- * ownEvents with a scripted transcript), a fake host default-model route,
- * faked vectors.
+ * written), and the ok-path onRunSucceeded dep firing exactly once
+ * (PLAN-budget-rebaseline TASK-002). Everything external is a fake:
+ * ServiceFs in memory, inventories as data, a fake agents gateway (whose
+ * agent double answers ownEvents with a scripted transcript), a fake host
+ * default-model route, faked vectors.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -173,6 +174,7 @@ interface DepsOptions {
   gateway?: DreamAgentsGateway | null
   defaultAgentOptions?: () => { provider?: string; model?: string } | undefined
   vectors?: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>
+  onRunSucceeded?: () => void
   logs?: string[]
 }
 
@@ -190,6 +192,7 @@ function deps(fixture: DepsOptions): DreamDeps {
     agentsGateway: () => fixture.gateway ?? undefined,
     defaultAgentOptions: fixture.defaultAgentOptions ?? (() => ({ provider: 'acme', model: 'm-1' })),
     noteVectors: fixture.vectors ?? (async () => new Map<string, number[]>()),
+    onRunSucceeded: fixture.onRunSucceeded ?? (() => {}),
     log: (message) => {
       ;(fixture.logs ?? []).push(message)
     },
@@ -560,6 +563,89 @@ describe('run: single flight and the launch sequence', () => {
     const before = fs.mutations.length
     await new DreamOrchestrator(deps({ fs, inventories, gateway: fakeGateway().gateway })).startRun().done
     expect(fs.mutations.slice(before).filter((entry) => entry.includes('DREAMS.md'))).toEqual([])
+  })
+})
+
+// PLAN-budget-rebaseline TASK-002: the ok-path dep is how a successful
+// compaction rebaselines the service-side global recall budget. Exactly
+// once on success, never on any failure, busy, or plan path.
+describe('run: onRunSucceeded ok-path dep', () => {
+  it('fires exactly once, after the lastDreamAt stamp, on a successful run', async () => {
+    const fs = stampedFs()
+    const observedStamps: Array<number | null> = []
+    const orchestrator = new DreamOrchestrator(deps({
+      fs,
+      gateway: fakeGateway().gateway,
+      onRunSucceeded: () => {
+        // Observe the stamp from inside the dep: only the ok-path write
+        // moves it past the seeded LAST_DREAM_ISO value.
+        const state = JSON.parse(fs.files.get(`${DB}/state/state.json`) ?? 'null') as { lastDreamAt?: number } | null
+        observedStamps.push(state?.lastDreamAt ?? null)
+      },
+    }))
+    const summary = await orchestrator.startRun().done
+    expect(summary.ok).toBe(true)
+    expect(observedStamps).toHaveLength(1)
+    expect(observedStamps[0]).not.toBeNull()
+    expect(observedStamps[0] as number).toBeGreaterThan(Date.parse(LAST_DREAM_ISO))
+  })
+
+  it('never fires when a failed turn aborts the run', async () => {
+    let calls = 0
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: fakeGateway({ sessionEvents: [failedTurnError('dead agent')] }).gateway,
+      onRunSucceeded: () => { calls += 1 },
+    }))
+    await expect(orchestrator.startRun().done).rejects.toThrow('dream agent turn failed: dead agent')
+    expect(calls).toBe(0)
+  })
+
+  it('never fires when whenIdle rejects', async () => {
+    let calls = 0
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: fakeGateway({ whenIdle: () => Promise.reject(new Error('agent died')) }).gateway,
+      onRunSucceeded: () => { calls += 1 },
+    }))
+    await expect(orchestrator.startRun().done).rejects.toThrow('agent died')
+    expect(calls).toBe(0)
+  })
+
+  it('never fires for a run refused as busy, and fires for the guarded run itself', async () => {
+    let opened = false
+    const resolvers: Array<() => void> = []
+    const recorder = fakeGateway({
+      whenIdle: () => (opened ? Promise.resolve() : new Promise<void>((resolve) => { resolvers.push(resolve) })),
+    })
+    let calls = 0
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: recorder.gateway,
+      onRunSucceeded: () => { calls += 1 },
+    }))
+    const first = orchestrator.startRun()
+    expect(() => orchestrator.startRun()).toThrow(DreamBusyError)
+    expect(calls).toBe(0)
+    opened = true
+    resolvers.splice(0).forEach((resolve) => {
+      resolve()
+    })
+    await first.done
+    expect(calls).toBe(1)
+  })
+
+  it('never fires for a blocked startRun or a plan', async () => {
+    let calls = 0
+    const blocked = new DreamOrchestrator(deps({
+      gateway: null,
+      onRunSucceeded: () => { calls += 1 },
+    }))
+    expect(() => blocked.startRun()).toThrow(DreamBlockedError)
+    await blocked.plan()
+    expect(calls).toBe(0)
+    await new DreamOrchestrator(deps({
+      gateway: fakeGateway().gateway,
+      onRunSucceeded: () => { calls += 1 },
+    })).plan()
+    expect(calls).toBe(0)
   })
 })
 

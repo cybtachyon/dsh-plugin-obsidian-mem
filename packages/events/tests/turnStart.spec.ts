@@ -388,6 +388,8 @@ describe('global memory budget switch', () => {
     expect(texts[0]).toContain('global memory recall budget is spent')
     expect(texts[0]).toContain('memory_dream')
     expect(texts[0]).toContain('101 of 100')
+    // TASK-002 wording: the pointer names the window the number covers.
+    expect(texts[0]).toContain('tokens injected since the last successful dream or host restart')
     expect(recalledBlocks(agent)).toHaveLength(0)
     // The pointer itself is accounted; the total keeps the truth straight.
     expect(registry.totalRecallTokensUsed()).toBeGreaterThan(101)

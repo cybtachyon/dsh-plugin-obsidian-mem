@@ -1006,7 +1006,10 @@ describe('status, placeholders, and not-implemented seams', () => {
   it('globalMemoryIndex echoes the wired registry with the flip at the cap', () => {
     const h = harness({ config: { budgets: { globalMemoryTokens: 2500 } } })
     let used = 2400
-    h.service.setSessionRegistry({ totalRecallTokensUsed: () => used })
+    h.service.setSessionRegistry({
+      totalRecallTokensUsed: () => used,
+      resetRecallUsage: () => { used = 0 },
+    })
     expect(h.service.globalMemoryIndex()).toEqual({
       budgetTokens: 2500,
       usedTokens: 2400,
@@ -1030,7 +1033,7 @@ describe('status, placeholders, and not-implemented seams', () => {
   it('audit echoes the wired registry budget numbers (TASK-045)', async () => {
     const h = harness({ config: { budgets: { globalMemoryTokens: 2500 } } })
     await h.service.ensureMemoryAccess()
-    h.service.setSessionRegistry({ totalRecallTokensUsed: () => 3200 })
+    h.service.setSessionRegistry({ totalRecallTokensUsed: () => 3200, resetRecallUsage: () => {} })
     const report = await h.service.audit()
     expect(report.budget.usedTokens).toBe(3200)
     expect(report.budget.budgetTokens).toBe(2500)
@@ -1038,13 +1041,15 @@ describe('status, placeholders, and not-implemented seams', () => {
     expect(report.budget.overBudget).toBe(true)
     const over = report.issues.find((entry) => entry.id === 'budget.over')
     expect(over?.detail).toContain('3200 of 2500 tokens used')
+    // TASK-002 wording: the line names the window the number covers.
+    expect(over?.detail).toContain('injected since the last successful dream or host restart')
     expect(over?.remediation).toContain('memory_dream')
   })
 
   it('setSessionRegistry wires the events-owned registry into the budget view', () => {
     const h = harness()
     expect(h.service.sessionRegistry).toBeNull()
-    const registry = { totalRecallTokensUsed: () => 42 }
+    const registry = { totalRecallTokensUsed: () => 42, resetRecallUsage: () => {} }
     h.service.setSessionRegistry(registry)
     expect(h.service.sessionRegistry).toBe(registry)
     // TASK-045: the wired registry's sums feed globalMemoryIndex directly.
@@ -1117,6 +1122,65 @@ describe('dream run launch wiring (TASK-002)', () => {
     expect(agents.created).toEqual([])
     // The same reason surfaces on status so the card disables Run.
     expect(h.service.status().dream.blocked).toContain('no provider/model can be resolved')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PLAN-budget-rebaseline TASK-002: a successful dream run rewires the
+// service-side DreamDeps.onRunSucceeded to the wired registry's
+// resetRecallUsage, so the over-budget view recovers without a restart.
+
+describe('dream budget rebaseline wiring', () => {
+  it('a successful dream run resets the wired registry so the budget view recovers', async () => {
+    const agents = fakeGateway()
+    const h = harness({
+      config: { budgets: { globalMemoryTokens: 2500 } },
+      services: {
+        agents: agents.gateway,
+        agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      },
+    })
+    let used = 3200
+    let resets = 0
+    h.service.setSessionRegistry({
+      totalRecallTokensUsed: () => used,
+      resetRecallUsage: () => {
+        used = 0
+        resets += 1
+      },
+    })
+    expect(h.service.globalMemoryIndex().overBudget).toBe(true)
+    const result = await h.service.dream({ operation: 'run' })
+    if (result.operation !== 'run') {
+      throw new Error('expected the run operation')
+    }
+    expect((await result.done).ok).toBe(true)
+    expect(resets).toBe(1)
+    expect(h.service.globalMemoryIndex()).toEqual({
+      budgetTokens: 2500,
+      usedTokens: 0,
+      remainingTokens: 2500,
+      overBudget: false,
+    })
+  })
+
+  it('a refused run leaves the wired registry usage untouched', async () => {
+    const agents = fakeGateway()
+    const h = harness({
+      // Blocked: no agentDefaultModel service, so the run is refused.
+      services: { agents: agents.gateway },
+    })
+    let resets = 0
+    h.service.setSessionRegistry({
+      totalRecallTokensUsed: () => 9999,
+      resetRecallUsage: () => { resets += 1 },
+    })
+    await expect(h.service.dream({ operation: 'run' })).rejects.toThrow(
+      'no provider/model can be resolved for the dream agent',
+    )
+    expect(agents.created).toEqual([])
+    expect(resets).toBe(0)
+    expect(h.service.globalMemoryIndex().usedTokens).toBe(9999)
   })
 })
 

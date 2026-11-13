@@ -331,3 +331,42 @@ hybrid-garbage variants identical):
 ```
 {"error_code":"Success","reason":"could not convert string to float: 'not-a-number'","code":1,"retriable":false}
 ```
+
+## Final shipped tuning (converged 2026-11-13, PLAN-milvus-tuning loop)
+
+Constants in packages/service/src/search.ts (exported; eval harnesses
+import them, commit 671b2bb):
+
+| knob | value | basis |
+| --- | --- | --- |
+| dense ef | 64 | unchanged |
+| dense radius / range_filter | 0.78 / 1.0 | required per task; plateau in 0.78-0.84, 0.82+ cuts relevant |
+| sparse BM25 floor (client, -score) | 2.5 | required per task; guards junk pages only |
+| RRF k | 60 | k 10-60 indistinguishable at this corpus size |
+| fused score floor (default minScore) | 1/(k+2) | the working lever; knee of the floor sweep with planted notes in the labels |
+
+Pipeline shape: two standalone searches + client RRF fusion (lite
+ignores per-route radii inside hybridSearch, §4); fused floor applied
+in hybridSearch AND the searchExactSections fallback leg (exact-file
+leg floor-free); turn-start search query = first user text alone
+(workspace manifest text halves machinae-subset precision when
+appended, TASK-015 A/B).
+
+Before/after aggregates (17 labeled queries, topK 6; labels updated
+2026-11-13 to include planted tuning-test notes): P@k 0.216 -> 0.276,
+forbidden-rate 0.294 -> 0.211, page volume 102 -> 76 returned rows,
+recall-of-labeled 0.682 -> 0.667.
+
+Rejected with measurements: rrfK change; WeightedRanker (route scores
+unseparable: dense class medians 0.863/0.836/0.838); BM25 k1/b
+re-index (shared-vocabulary problem, destructive); bge-reranker-base
+cross-encoder (docs/research/cross-encoder-findings.md: zero-
+relevant-loss cutoff 0.0028 only kills deep-tail garbage; residual
+forbidden inseparable; 283 MB + ~0.5 s CPU/query).
+
+Live loop evidence: three probe iterations on /home/derek/src/
+machinae-game (15 -> 14 -> 12 injections; planted POS surfaced once
+the floor admitted single-route rank-2; one planted NEG rode the
+deliberate rank-2 pass). Residual noise lives in the think-intercept
+trigger vocabulary and the read-intercept ext fallback: query-design
+issues, not tuning constants (follow-ups in the task reports).

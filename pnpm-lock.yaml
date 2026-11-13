@@ -231,7 +231,11 @@ importers:
 
   packages/client: {}
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      gray-matter:
+        specifier: ^4.0.3
+        version: 4.0.3
 
   packages/events: {}
 

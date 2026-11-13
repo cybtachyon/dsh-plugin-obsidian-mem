@@ -255,11 +255,12 @@ export function renderDream(value: DreamValue): string {
   ]
   if (value.budget.over_budget) {
     if (value.budget.protected_only) {
-      lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart; compaction cannot help: every live global note is a protected vault global file; tighten these files by hand:`)
+      lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart; compaction cannot help: every live global note is a protected vault global file; with the user's approval, tighten these files by hand to reclaim budget:`)
       lines.push(...value.budget.global_note_paths.map((path) => `- ${path}`))
     } else {
       lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart; ${String(value.budget.global_note_count)} live global notes inject, compactable least-read first:`)
       lines.push(...value.budget.compactable_global_note_paths.map((path) => `- ${path}`))
+      lines.push('As the lighter remedy, compact just these notes: survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves. Also suggest to the user that executing this plan via operation run is the much heavier, more complete optimization of the whole memory store.')
     }
   } else if (value.budget.measured) {
     lines.push('', `Budget headroom: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart.`)

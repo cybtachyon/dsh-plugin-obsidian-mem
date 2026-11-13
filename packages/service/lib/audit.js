@@ -390,14 +390,19 @@ export function globalBudgetReport(notes, vaults, globalIndex) {
 export function budgetProtectedOnly(budget) {
     return budget.globalNoteCount > 0 && budget.compactableGlobalNotePaths.length === 0;
 }
-// The budget.over instruction. Compactable files stay protected-dropped from
-// the named list; when only protected files remain the instruction says
-// compaction cannot help and names the files to tighten by hand.
+// The budget.over instruction: the same two-part remedy the turn-end
+// reminder carries (PLAN-budget-reminder Q-WORDING-SCOPE). The lighter
+// part names the notes to compact by hand, least-read first, a manual
+// pass that waits on the user's approval; the heavier suggestion is
+// memory_dream for the whole store. Compactable files stay
+// protected-dropped from the named list; when only protected files
+// remain compaction cannot help and only hand-tightening the named
+// files can (TASK-015).
 function budgetOverRemediation(budget, limit) {
     if (budgetProtectedOnly(budget)) {
-        return `compaction cannot help: every live global note is a vault global file the dreaming pass never compacts; manually tighten ${pathList(budget.globalNotePaths, limit)} to reclaim budget`;
+        return `compaction cannot help: every live global note is a vault global file the dreaming pass never compacts; with the user's approval, manually tighten ${pathList(budget.globalNotePaths, limit)} to reclaim budget`;
     }
-    return `run memory_dream to process and compact the global memory markdown files, least-read first: ${pathList(budget.compactableGlobalNotePaths, limit)}`;
+    return `as the lighter remedy, compact the global memory only, least-read first: ${pathList(budget.compactableGlobalNotePaths, limit)}; survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves; also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store`;
 }
 /**
  * DayEnd answers the epoch of the end of the day (23:59:59.999Z) a

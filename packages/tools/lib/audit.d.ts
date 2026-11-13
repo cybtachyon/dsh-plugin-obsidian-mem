@@ -14,7 +14,7 @@ import type { BudgetSectionValue } from './toolkit.js';
 /** Whole-store stat walk plus two live-index reads, capped below the dream. */
 export declare const AUDIT_TIMEOUT_MS = 30000;
 /** The description the model sees for `memory_audit`. */
-export declare const AUDIT_DESCRIPTION = "Run a read-only doctor pass over the memory vaults, the indexer state, the vector index, and the global memory budget. Returns every finding as an ISSUE (needs fixing) or INFO line with its remediation, whole-store rollups, a bounded list of note rows (size, read stats, indexed and archive flags), and the global memory budget section. Audit never writes, bumps read stats, or provisions the default vault: a missing store is reported, never created. Run it any time; an over-budget line names the memory_dream compaction order.";
+export declare const AUDIT_DESCRIPTION = "Run a read-only doctor pass over the memory vaults, the indexer state, the vector index, and the global memory budget. Returns every finding as an ISSUE (needs fixing) or INFO line with its remediation, whole-store rollups, a bounded list of note rows (size, read stats, indexed and archive flags), and the global memory budget section. Audit never writes, bumps read stats, or provisions the default vault: a missing store is reported, never created. Run it any time; an over-budget line names the manual compaction order and the heavier memory_dream alternative.";
 /** Parameter schema; view meanings and the rollup guarantee live on them. */
 export declare const AUDIT_PARAMETERS: JsonSchemaNode;
 /** Closed output union keyed on kind. */

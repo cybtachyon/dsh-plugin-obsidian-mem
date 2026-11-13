@@ -77,7 +77,7 @@ Task bodies live in the linked files. Execute top to bottom.
 
 ### Phase 2b: budget-sentence alignment (service + tools, per Q-WORDING-SCOPE)
 
-- [ ] [TASK-006-budget-sentences](docs/PLAN-budget-reminder-TASK-006-budget-sentences.md)
+- [x] [TASK-006-budget-sentences](docs/PLAN-budget-reminder-TASK-006-budget-sentences.md)
 - [ ] [TASK-007-sentence-specs](docs/PLAN-budget-reminder-TASK-007-sentence-specs.md)
 
 ### Phase 3: refactor and verification

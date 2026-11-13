@@ -895,9 +895,9 @@ function renderPlanText(input: {
   }
   if (input.budget.overBudget) {
     if (budgetProtectedOnly(input.budget)) {
-      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; manually tighten ${input.budget.globalNotePaths.join(', ')} to reclaim budget.`)
+      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; with the user's approval, manually tighten ${input.budget.globalNotePaths.join(', ')} to reclaim budget.`)
     } else {
-      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart). ${String(input.budget.globalNoteCount)} live global notes inject; compact least-read first: ${input.budget.compactableGlobalNotePaths.join(', ')}.`)
+      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart). ${String(input.budget.globalNoteCount)} live global notes inject; as the lighter remedy, compact just these notes, least-read first: ${input.budget.compactableGlobalNotePaths.join(', ')}; survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves. Also suggest to the user that executing this plan via operation run is the much heavier, more complete optimization of the whole memory store.`)
     }
   } else {
     lines.push(`${next()} Global budget headroom: ${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, injected since the last successful dream or host restart, ${String(input.budget.globalNoteCount)} live global notes.`)

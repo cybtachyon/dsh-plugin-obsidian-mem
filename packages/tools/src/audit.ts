@@ -30,7 +30,7 @@ export const AUDIT_TIMEOUT_MS = 30_000
 
 /** The description the model sees for `memory_audit`. */
 export const AUDIT_DESCRIPTION
-  = 'Run a read-only doctor pass over the memory vaults, the indexer state, the vector index, and the global memory budget. Returns every finding as an ISSUE (needs fixing) or INFO line with its remediation, whole-store rollups, a bounded list of note rows (size, read stats, indexed and archive flags), and the global memory budget section. Audit never writes, bumps read stats, or provisions the default vault: a missing store is reported, never created. Run it any time; an over-budget line names the memory_dream compaction order.'
+  = 'Run a read-only doctor pass over the memory vaults, the indexer state, the vector index, and the global memory budget. Returns every finding as an ISSUE (needs fixing) or INFO line with its remediation, whole-store rollups, a bounded list of note rows (size, read stats, indexed and archive flags), and the global memory budget section. Audit never writes, bumps read stats, or provisions the default vault: a missing store is reported, never created. Run it any time; an over-budget line names the manual compaction order and the heavier memory_dream alternative.'
 
 /** Parameter schema; view meanings and the rollup guarantee live on them. */
 export const AUDIT_PARAMETERS: JsonSchemaNode = {
@@ -298,10 +298,10 @@ export function renderAudit(value: AuditValue): string {
   lines.push('', `Global memory budget: ${tracker}; ${String(value.budget.global_note_count)} live global notes.`)
   if (value.budget.over_budget) {
     if (value.budget.protected_only) {
-      lines.push('OVER BUDGET: compaction cannot help: every live global note is a protected vault global file; tighten these files by hand to shrink every session:',
+      lines.push('OVER BUDGET: compaction cannot help: every live global note is a protected vault global file; with the user\'s approval, tighten these files by hand to shrink every session:',
         ...value.budget.global_note_paths.map((path) => `- ${path}`))
     } else {
-      lines.push('OVER BUDGET: run memory_dream to process and compact the global memory markdown files, least-read first:',
+      lines.push('OVER BUDGET: as the lighter remedy, compact the global memory only: survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves. Also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store. Global notes to compact, least-read first:',
         ...value.budget.compactable_global_note_paths.map((path) => `- ${path}`))
     }
   }

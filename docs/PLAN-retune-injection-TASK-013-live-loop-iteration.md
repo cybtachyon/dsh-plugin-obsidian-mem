@@ -25,6 +25,44 @@ here):
 Ledger table (append per iteration): iteration / relevant hit / decoy hit /
 forbidden / misses / notes.
 
+## Iteration 2 ledger (probe 3b1c027d, 2026-11-13, restart-then-launch-first)
+
+| item | result |
+| --- | --- |
+| Turn-start channel | FIRED (gate evaluated before parent post-restart burn; late-spliced into first tool result). GLOBAL pinned yes, guidance line not observed, search rows = 4 |
+| Turn-start search rows | budget-gating meta (near-miss), concurrent-git-index note (unrelated), pnpm-dir-cwd (unrelated), +1; ZERO machinae rows |
+| R1 / R2 seeds | not recalled (turn-start contaminated, see 1; R2 never surfaced) |
+| typescript-simulation-style.md | not recalled |
+| Think channel | 3 rounds, 5 injections: transcript-probe, memory-hooks (meta), drupal11-entity-form-di, npm-publish-404, hf-cli-resume. Task-domain terms NEVER appeared in trigger lists |
+| Decoys D1/D2 | not recalled |
+| Self-serve | 0 calls |
+| Code result | task pre-satisfied (see 2); typecheck + 77 tests green |
+
+Findings:
+1. PROTOCOL CONTAMINATION (decisive): the probe brief's observation-
+   protocol section supplies the turn-start query's dominant vocabulary
+   ("recalled_memory", "memory_search", "turn-start", "think"), so all
+   4 search rows were memory-meta notes, and the think trigger terms
+   leaked the probe's protocol meta-reasoning ("probe", "recall",
+   "session", "git") instead of the bitECS task domain. Both channels
+   scored zero task-domain rows. Iterations 1-2 are the contaminated
+   baseline; the plugin's ranking was never asked a clean question.
+2. TESTBED CONTAMINATION: iteration 2 started on a CLEAN tree because
+   iteration 1's work had been committed as `58c50e4` "feat(ecs): Adds
+   fixed-step beacon pulse system" at 15:09:04, ~10 s after the probe
+   session began. Neither probe transcript contains any git-write tool
+   call (forensic grep of both transcripts' `tool/call` records; reflog
+   shows the bare commit). Author identity + message style match the
+   human user; disposition (keep vs reset testbed to f118494) to be
+   confirmed with the user, decides the iteration-3 brief.
+   Consequence: iteration 2's think signal is weak (probe verified
+   rather than wrote).
+3. Iteration 3 design: coding-task-ONLY first message (the turn-start
+   query source), observation protocol delivered AFTER launch via
+   send_message; testbed reset first per the user's disposition of
+   58c50e4; requires restart 3 for a clean 1500-token window; brief
+   constant from iteration 3 onward.
+
 ## Iteration 1 ledger (probe 2f43660f, 2026-11-13, post-restart launch)
 
 | item | result |

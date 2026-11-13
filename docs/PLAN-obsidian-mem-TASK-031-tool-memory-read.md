@@ -1,5 +1,7 @@
 # TASK-031 Tool: memory_read
 
+Status: done
+
 Depends: TASK-030. `packages/tools/src/read.ts`.
 
 ## Registration canon (shared by TASK-031..035; ext §2.3)

@@ -11,6 +11,7 @@
 import { Buffer } from 'node:buffer'
 import type { IncomingLike, OutgoingLike, RouteService, ScheduleGateway, WebServerRoute } from '../src/index.ts'
 import { ROUTES } from '../src/index.ts'
+import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
 import type { ObsidianMemStatus, VaultEntry } from '../../service/lib/index.js'
 import type { AuditReport, AuditRequest } from '../../service/lib/audit.js'
 import type { DreamEngineResult, DreamRequest, DreamRunSummary } from '../../service/lib/dream.js'
@@ -80,7 +81,7 @@ export interface RouteServiceOptions {
 
 /** Recorded seam calls the specs assert pass-through shapes on. */
 export interface RouteServiceCalls {
-  addVault: { path: string, mode?: string }[]
+  addVault: { path: string, mode?: string, globalFile?: string }[]
   removeVault: string[]
   audit: AuditRequest[]
   dream: DreamRequest[]
@@ -107,7 +108,13 @@ export function makeRouteServiceWithCalls(options: RouteServiceOptions = {}): Fa
     addVault: (request) => {
       calls.addVault.push(request)
       if (options.addVaultError !== undefined) throw options.addVaultError
-      return { path: '/vault/added', mode: 'shared', source: 'card' }
+      // Mirrors the service: an omitted globalFile comes back resolved.
+      return {
+        path: '/vault/added',
+        mode: 'shared',
+        globalFile: request.globalFile ?? GLOBAL_MEMORY_FILE_DEFAULT,
+        source: 'card',
+      }
     },
     removeVault: async (path) => {
       calls.removeVault.push(path)
@@ -141,7 +148,12 @@ export function baseStatus(overrides: Partial<ObsidianMemStatus> = {}): Obsidian
     state: 'ready',
     notice: null,
     defaultVaultPath: null,
-    vaults: [{ path: '/home/u/.dsh/obsidian-mem', mode: 'shared', source: 'default' }],
+    vaults: [{
+      path: '/home/u/.dsh/obsidian-mem',
+      mode: 'shared',
+      globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
+      source: 'default',
+    }],
     vectorDim: 384,
     model: { id: 'Xenova/multilingual-e5-small', dtype: 'q8' },
     milvus: {

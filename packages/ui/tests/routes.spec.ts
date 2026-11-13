@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import plugin, { buildRoutes, ROUTES } from '../src/index.ts'
+import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
 import { DreamBlockedError, DreamBusyError } from '../../service/lib/dream.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import {
@@ -203,13 +204,15 @@ describe('GET /obsidian-mem/status', () => {
       state: string
       dream: { state: string, lastDreamAt: number }
       indexer: { indexed: number }
-      vaults: unknown[]
+      vaults: { path: string, mode: string, source: string, globalFile: string }[]
     }
     expect(body.noticeActive).toBe(false)
     expect(body.state).toBe('ready')
     expect(body.dream.state).toBe('idle')
     expect(body.indexer.indexed).toBe(12)
     expect(body.vaults).toHaveLength(1)
+    // The status echo carries the resolved globalFile on every vault row.
+    expect(body.vaults[0]!.globalFile).toBe(GLOBAL_MEMORY_FILE_DEFAULT)
   })
 
   it('flips noticeActive while the default-vault notice is live', async () => {
@@ -236,6 +239,19 @@ describe('/obsidian-mem/vaults', () => {
     expect((response.json as { vaults: unknown[] }).vaults).toHaveLength(0)
   })
 
+  it('GET echoes globalFile on every registry row', async () => {
+    const context = harness({
+      vaults: [{
+        path: '/vaults/work', mode: 'shared', globalFile: 'MEMORY.md', source: 'card',
+      }],
+    })
+    const response = await send(context, 'GET', '/obsidian-mem/vaults')
+    expect(response.status).toBe(200)
+    expect((response.json as { vaults: unknown[] }).vaults).toEqual([{
+      path: '/vaults/work', mode: 'shared', globalFile: 'MEMORY.md', source: 'card',
+    }])
+  })
+
   it('POST registers and answers 201 with the new entry', async () => {
     const { context, calls } = harnessWithCalls()
     const response = await send(context, 'POST', '/obsidian-mem/vaults', {
@@ -250,6 +266,49 @@ describe('/obsidian-mem/vaults', () => {
     const { context, calls } = harnessWithCalls()
     await send(context, 'POST', '/obsidian-mem/vaults', { path: '/vaults/plain' })
     expect(calls.addVault).toEqual([{ path: '/vaults/plain' }])
+  })
+
+  it('POST forwards a trimmed globalFile and echoes it in the 201 vault', async () => {
+    const { context, calls } = harnessWithCalls()
+    const response = await send(context, 'POST', '/obsidian-mem/vaults', {
+      path: '/vaults/work', globalFile: ' notes/global.md ',
+    })
+    expect(response.status).toBe(201)
+    expect(calls.addVault).toEqual([{ path: '/vaults/work', globalFile: 'notes/global.md' }])
+    expect((response.json as { vault: { globalFile: string } }).vault.globalFile).toBe('notes/global.md')
+  })
+
+  it('POST answers the service GLOBAL.md default when globalFile is omitted', async () => {
+    const { context, calls } = harnessWithCalls()
+    const response = await send(context, 'POST', '/obsidian-mem/vaults', { path: '/vaults/plain' })
+    expect(calls.addVault).toEqual([{ path: '/vaults/plain' }])
+    expect((response.json as { vault: { globalFile: string } }).vault.globalFile).toBe(GLOBAL_MEMORY_FILE_DEFAULT)
+  })
+
+  it('POST rejects an empty or non-string globalFile before the service', async () => {
+    const { context, calls } = harnessWithCalls()
+    const blank = await send(context, 'POST', '/obsidian-mem/vaults', { path: '/x', globalFile: '   ' })
+    expect(blank.status).toBe(400)
+    expect(envelopeOf(blank.json).error.code).toBe('vault_invalid')
+    const wrongType = await send(context, 'POST', '/obsidian-mem/vaults', { path: '/x', globalFile: 7 })
+    expect(wrongType.status).toBe(400)
+    expect(envelopeOf(wrongType.json).error.code).toBe('vault_invalid')
+    expect(calls.addVault).toEqual([])
+  })
+
+  it('POST maps a service globalFile shape refusal to 400 vault_invalid verbatim', async () => {
+    const context = harness({
+      addVaultError: new Error(
+        'obsidian-mem addVault: globalFile must be vault-root-relative, not absolute, got "/etc/GLOBAL.md"',
+      ),
+    })
+    const response = await send(context, 'POST', '/obsidian-mem/vaults', {
+      path: '/x', globalFile: '/etc/GLOBAL.md',
+    })
+    expect(response.status).toBe(400)
+    const body = envelopeOf(response.json)
+    expect(body.error.code).toBe('vault_invalid')
+    expect(body.error.message).toContain('vault-root-relative')
   })
 
   it('POST validates path and mode before the service', async () => {

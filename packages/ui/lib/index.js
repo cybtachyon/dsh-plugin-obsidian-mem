@@ -57,12 +57,12 @@ export const ROUTES = [
     {
         method: 'GET',
         path: '/obsidian-mem/vaults',
-        description: 'Lists the vault registry as { vaults: [{ path, mode, source }] }.',
+        description: 'Lists the vault registry as { vaults: [{ path, mode, source, globalFile }] }; globalFile is the resolved vault-root-relative global memory file.',
     },
     {
         method: 'POST',
         path: '/obsidian-mem/vaults',
-        description: 'Registers a vault from the JSON body { path, mode? ("shared" | "read-only", default "shared") }; answers 201 { vault }. Duplicates and settings/default shadowing answer 409, unusable paths 400; the service restarts the indexer in the background.',
+        description: 'Registers a vault from the JSON body { path, mode? ("shared" | "read-only", default "shared"), globalFile? (vault-root-relative global memory file; omitted takes the GLOBAL.md default) }; answers 201 { vault } as { path, mode, source, globalFile }. Duplicates and settings/default shadowing answer 409, unusable paths and empty or absolute or ".." globalFile forms 400; the service restarts the indexer in the background.',
     },
     {
         method: 'DELETE',
@@ -174,6 +174,16 @@ function ok(json, status = 200) {
 /** RequiredString reads a non-blank string body field or answers the named 400 code. */
 function requiredString(body, key, code) {
     const value = body[key];
+    if (typeof value !== 'string' || value.trim() === '') {
+        throw new RouteError(400, code, `${key} must be a non-empty string`);
+    }
+    return value.trim();
+}
+/** OptionalString reads a body field that may be absent; present means a non-blank string, returned trimmed. */
+function optionalString(body, key, code) {
+    const value = body[key];
+    if (value === undefined)
+        return undefined;
     if (typeof value !== 'string' || value.trim() === '') {
         throw new RouteError(400, code, `${key} must be a non-empty string`);
     }
@@ -582,7 +592,15 @@ function routeHandlers(deps) {
         if (mode !== undefined && (typeof mode !== 'string' || !isVaultMode(mode))) {
             throw new RouteError(400, ROUTE_ERROR_CODES.vaultInvalid, `mode must be one of ${VAULT_MODES.join(' | ')}, got ${JSON.stringify(mode ?? null)}`);
         }
-        const request = { path, ...(mode !== undefined ? { mode } : {}) };
+        // The route only checks wire shape (a provided globalFile is a non-empty
+        // string); the GLOBAL.md default and the structural rules stay in the
+        // service, and its refusal answers 400 through vaultAnswer below.
+        const globalFile = optionalString(body, 'globalFile', ROUTE_ERROR_CODES.vaultInvalid);
+        const request = {
+            path,
+            ...(mode !== undefined ? { mode } : {}),
+            ...(globalFile !== undefined ? { globalFile } : {}),
+        };
         try {
             return ok({ vault: deps.service.addVault(request) }, 201);
         }

@@ -70,9 +70,9 @@ Facts heading) stays.
 
 - [x] [TASK-08-build-and-commit-artifacts](docs/PLAN-release-prep-TASK-08-build-and-commit-artifacts.md)
 - [x] [TASK-09-verify-build-idempotency](docs/PLAN-release-prep-TASK-09-verify-build-idempotency.md)
-- [ ] [TASK-24-drop-devengines-pin](docs/PLAN-release-prep-TASK-24-drop-devengines-pin.md)
-- [ ] [TASK-25-remove-research-findings-scratch](docs/PLAN-release-prep-TASK-25-remove-research-findings-scratch.md)
-- [ ] [TASK-26-ignore-idea-directory](docs/PLAN-release-prep-TASK-26-ignore-idea-directory.md)
+- [x] [TASK-24-drop-devengines-pin](docs/PLAN-release-prep-TASK-24-drop-devengines-pin.md)
+- [x] [TASK-25-remove-research-findings-scratch](docs/PLAN-release-prep-TASK-25-remove-research-findings-scratch.md)
+- [x] [TASK-26-ignore-idea-directory](docs/PLAN-release-prep-TASK-26-ignore-idea-directory.md)
 - [ ] [TASK-10-refactor-review-phase-1-3](docs/PLAN-release-prep-TASK-10-refactor-review-phase-1-3.md)
 
 ### Phase 4: GitHub Actions build workflow

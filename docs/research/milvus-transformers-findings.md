@@ -63,9 +63,12 @@ Test scaffolding lived entirely under `/tmp/mltest` (a `uv` venv with `milvus-li
 So today the machine has **no Milvus at all**, but has `uv`/`uvx` (the bootstrap you picked)
 and docker as a heavier fallback.
 
-**Caveat for npm commands in this repo**: `/home/derek/src/dsh-plugin-obsidian-mem/package.json`
-declares `devEngines.packageManager = pnpm@12.18.0`, so bare `npm info` / `npm view` run from
-the repo root fail with `EBADDEVENGINES`. Run registry queries from a neutral cwd (`/tmp`). `[V]`
+**Caveat for npm commands in this repo (resolved)**: the root
+`/home/derek/src/dsh-plugin-obsidian-mem/package.json` declared
+`devEngines.packageManager = pnpm@12.18.0`, so bare `npm info` / `npm view` run from
+the repo root then failed with `EBADDEVENGINES` and registry queries had to run from a
+neutral cwd (`/tmp`). The `devEngines` block was deleted by TASK-24 and npm commands now
+run from the repo root. `[V]`
 
 ### Package facts from the registries `[V]`
 

@@ -1,31 +1,34 @@
 # Obsidian Mem
 
 Shared agent memory for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness),
-built on plain Markdown vaults. Obsidian Mem turns the Obsidian-style vaults you
-already edit into a frictionless, human-editable working wiki that every agent
-session can read from and write to. Recall is vector search over Milvus-Lite;
-the notes themselves stay yours: open them, edit them, sync them with Obsidian or
-git, and the index follows.
+built on plain Markdown vaults.
+
+Obsidian Mem turns your Obsidian-style vaults into a frictionless,
+human-editable working wiki that every agent session can read from and write to.
+
+Recall is vector search over Milvus-Lite;
+Open, edit, and sync your notes with a Markdown editor like Obsidian + git,
+then watch your agents learn from shared experiences.
 
 ## What you get
 
+- **Automatic recall.** Lifecycle hooks inject relevant notes at turn start,
+  when the agent reads a file, and when the Think stream hits a vault keyword.
+  A turn-end reminder tells the agent what is worth saving.
 - **Five agent tools**
   - `memory_read`: open a memory note from a vault by path.
   - `memory_search`: hybrid vector + keyword recall across your vaults.
   - `memory_write`: save a durable memory note (shared vaults only).
   - `memory_audit`: report vault size, index state, and over-budget warnings.
   - `memory_dream`: run the split-compaction pass that merges and prunes notes.
-- **Automatic recall.** Lifecycle hooks inject relevant notes at turn start,
-  when the agent reads a file, and when the Think stream hits a vault keyword.
-  A turn-end reminder tells the agent what is worth saving.
-- **Vault sharing modes.** Adopt a vault as **Adopt and Share** (agents read
-  and write) or **Read-only** (agents query but never write).
 - **Works out of the box.** With no vault configured, the first memory access
   (first tool call or lifecycle hook that touches memory) creates a default
   shared vault at `$HOME/.dsh/obsidian-mem/`, and the agent is told it is
   working in the default vault and given the full path. Installing the plugin
   never touches your disk: activation is side-effect free until a run actually
   uses memory, so you can set up your own vaults before the first agent run.
+- **Vault sharing modes.** Adopt a vault as **Adopt and Share** (agents read
+  and write) or **Read-only** (agents query but never write).
 - **Settings card.** The "Obsidian Mem" card in the Web GUI manages the vault
   registry (paths, modes, re-index), the vector/index knobs, and the Dreaming
   section, where you add DSH schedule/timer triggers that wake agents to run

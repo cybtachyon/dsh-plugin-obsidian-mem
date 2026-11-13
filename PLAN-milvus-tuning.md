@@ -136,6 +136,21 @@ not worth pursuing given the score-separability collapse (no weights
 fix unseparable route scores); cross-encoder reranker (TASK-012)
 remains the hypothesis for the residual ~0.20 forbidden rate.
 
+Cross-encoder follow-up (closed, TASK-012, docs/research/
+cross-encoder-findings.md + scripts/eval/cross-encoder-rerank.mjs,
+commit 41dacb0): measured the hypothesis on the current production
+page (this run's none-row 63 rows, P@k 0.286 forbRate 0.206 recall
+0.636). Zero-shot bge-reranker-base sigmoid probs separate class
+bodies (R median 0.603 vs F median 0.002) but the tail overlap
+[0.0029, 0.0651] contains 6 relevant AND 6 forbidden rows: the
+zero-relevant-loss cutoff is p >= 0.0028 (forbRate 0.206 -> 0.133; 6
+forbidden survive), and forbRate 0.0 requires p >= 0.07 at recall
+0.636 -> 0.409. Re-sort is a no-op (best-relevant index 1.286 both
+ways). Verdict per A4: REJECTED; the residual forbidden class is
+design-relevance-shaped and inseparable by a zero-shot cross-encoder;
+cost is 283 MB + ~0.5 s CPU/query. The manifest-contamination fix
+(TASK-015) attacks the same residual from the query side instead.
+
 ## Live test-loop log
 
 ### Iteration 1 (2026-11-13 00:41 restart; dense 0.78 / sparse 2.5 / fused floor 1/(k+1))

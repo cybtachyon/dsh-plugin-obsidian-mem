@@ -1,5 +1,7 @@
 # TASK-042 Read tool-call intercept
 
+Status: done
+
 Depends: TASK-040, TASK-024. `packages/events/src/readIntercept.ts`.
 
 ## Scope
@@ -22,3 +24,22 @@ Depends: TASK-040, TASK-024. `packages/events/src/readIntercept.ts`.
 
 Tests: ext/signal extraction fixtures, filter calls (fake search captures args), once-
 per-source skip, vault-file skip, error containment; commit.
+
+## Status notes
+
+- The service gained the public `searchExactSections(request)` method this flow needs
+  (ensureMemoryAccess + the shared offline discipline, via the extracted
+  `searchClient()` guard `search` now shares).
+- Polarity note: implemented per this file, "Never inject for reads of files inside
+  vaults". The intercept fires for files OUTSIDE every registered vault
+  (`classifyPath(listVaults(), absPath) !== null` skips). Flagged to the coordinating
+  agent: the parent brief stated the opposite ("only inside a vault's markdown/").
+- Tool name is the harness registry's lowercase `read` (verified live); `memory_read`
+  never matches, which is the anti-loop coverage for the plugin's own tool.
+- Guards, in order: name/agent/error, path resolution (relative paths against the
+  session cwd), vault containment, per-turn path dedupe, 15 s throttle, cap of 6 per
+  session (think-budget-independent), covered-directory skip. All search work is
+  fire-and-forget; offline answers a silent skip plus one warning per install.
+- One envelope per fire: a locality note naming the file being read, then the
+  `wrapRecalled` sections; the provisioning notice rides as a separate first message
+  when `ensureMemoryAccess` still holds one.

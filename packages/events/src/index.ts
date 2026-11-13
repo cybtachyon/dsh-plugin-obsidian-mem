@@ -29,6 +29,7 @@ import type {} from '../../service/lib/index.js'
 import { OBSIDIAN_MEM_SEAM } from '../../service/lib/index.js'
 import { describeError } from '../../service/lib/errors.js'
 import type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope } from './host.js'
+import { installReadIntercept } from './readIntercept.js'
 import { SESSIONS_FILE_NAME, SessionRegistry } from './sessions.js'
 import { installTurnStart } from './turnStart.js'
 
@@ -41,6 +42,8 @@ export interface MountOptions {
   manifestFs?: ManifestFs
   /** Message id factory for injected messages; defaults to random UUIDs. */
   newMessageId?: () => string
+  /** Clock for the session registry's throttle/TTL state; defaults to Date.now. */
+  now?: () => number
 }
 
 /**
@@ -71,6 +74,7 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
     file: join(dbStateDir(memory.config.milvus.dbPath), SESSIONS_FILE_NAME),
     thinkShotsPerTurn: memory.config.budgets.thinkShotsPerTurn,
     log: (message) => logger.warn(message),
+    ...(options.now === undefined ? {} : { now: options.now }),
   })
   memory.setSessionRegistry(registry)
   ctx.effect(() => () => {
@@ -132,6 +136,10 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
     }
   })
 
+  // Plugin-level tool observation: tools/result is keyed by exec.agent and
+  // observed here (not per agent.ctx); see TASK-042.
+  installReadIntercept({ ctx, memory, registry, logger: logger as HookLogger })
+
   return registry
 }
 
@@ -173,3 +181,10 @@ export type {
 } from './host.js'
 export { guidanceLine, installTurnStart, nodeManifestFs } from './turnStart.js'
 export type { TurnStartDeps } from './turnStart.js'
+export {
+  dirSignalsOf,
+  HARNESS_READ_TOOL_NAME,
+  importSnippetFrom,
+  installReadIntercept,
+} from './readIntercept.js'
+export type { ReadInterceptDeps } from './readIntercept.js'

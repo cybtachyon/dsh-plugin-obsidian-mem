@@ -167,7 +167,7 @@ export function fakeEventsCtx(obsidianMem: MemoryEventsService): FakeEventsCtx {
     effectDisposers,
     emit(name, ...args) {
       for (const listener of [...(handlers.get(name) ?? [])]) {
-        ;(listener as (a: unknown) => void)(args[0])
+        ;(listener as (...a: unknown[]) => void)(...args)
       }
     },
   }

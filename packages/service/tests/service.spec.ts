@@ -780,6 +780,22 @@ describe('search', () => {
     h.launcher.setDegraded(true)
     await expect(h.service.search({ query: 'anything' })).rejects.toThrow(/respawn is pending/)
   })
+
+  it('searchExactSections shares the pipeline and the offline discipline', async () => {
+    const h = harness()
+    await h.service.ensureMemoryAccess()
+    const results = await h.service.searchExactSections({
+      filePath: '/work/src/App.tsx',
+      ext: '.tsx',
+      snippet: 'import { App } from "./App"',
+    })
+    expect(results[0]?.chunk_id).toBe(7)
+    expect(h.client.calls).toContain('hybridSearch')
+
+    h.launcher.setDegraded(true)
+    await expect(h.service.searchExactSections({ filePath: 'src/App.tsx' }))
+      .rejects.toThrow(/respawn is pending/)
+  })
 })
 
 describe('status, placeholders, and not-implemented seams', () => {

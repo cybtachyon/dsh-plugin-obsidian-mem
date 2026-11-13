@@ -90,7 +90,7 @@ task file lists explicit cross-phase prerequisites.
 
 - [x] [TASK-040-session-tracking](docs/PLAN-obsidian-mem-TASK-040-session-tracking.md)
 - [x] [TASK-041-turn-start-recall](docs/PLAN-obsidian-mem-TASK-041-turn-start-recall.md)
-- [ ] [TASK-042-read-intercept](docs/PLAN-obsidian-mem-TASK-042-read-intercept.md)
+- [x] [TASK-042-read-intercept](docs/PLAN-obsidian-mem-TASK-042-read-intercept.md)
 - [ ] [TASK-043-think-intercept](docs/PLAN-obsidian-mem-TASK-043-think-intercept.md)
 - [ ] [TASK-044-turn-end-reminder](docs/PLAN-obsidian-mem-TASK-044-turn-end-reminder.md)
 - [ ] [TASK-045-global-memory-budget](docs/PLAN-obsidian-mem-TASK-045-global-memory-budget.md)

@@ -89,8 +89,13 @@ import { MILVUS_LITE_VERSION, MilvusLauncher } from './milvus/launcher.js'
 import type { MilvusLauncherOptions, MilvusStartResult } from './milvus/launcher.js'
 import { assertOk } from './milvus/ok.js'
 import { ensureCollection, rebuildCollection, storedDenseDim } from './milvus/schema.js'
-import { hybridSearch, IndexOfflineError } from './search.js'
-import type { MemorySearchResult, SearchDependencies, SearchRequest } from './search.js'
+import { hybridSearch, IndexOfflineError, searchExactSections } from './search.js'
+import type {
+  ExactSectionRequest,
+  MemorySearchResult,
+  SearchDependencies,
+  SearchRequest,
+} from './search.js'
 
 /** Seam name this service publishes; the patch rows inject this name. */
 export const OBSIDIAN_MEM_SEAM = 'obsidianMem'
@@ -646,6 +651,37 @@ export class ObsidianMemService extends Service {
    */
   async search(request: SearchRequest): Promise<MemorySearchResult[]> {
     await this.ensureMemoryAccess()
+    return await hybridSearch({
+      // Structural casts of the whole client to the narrow slices search
+      // and the indexer declare: the SDK's overloaded method unions do not
+      // line up with the plain shapes under exactOptionalPropertyTypes,
+      // while the dispatched request shapes are the verified ones
+      // (milvus-live.spec, search.spec, indexer.spec).
+      client: this.searchClient() as unknown as SearchDependencies['client'],
+      embedder: this.getEmbedder(),
+      vaultModeFor: (vault) => this.modeForVaultValue(vault),
+      defaultTokenCap: this.config.budgets.readSectionTokens,
+    }, request)
+  }
+
+  /**
+   * SearchExactSections routes the Read intercept (TASK-042) through
+   * ensureMemoryAccess and the shared exact-section pipeline, with the same
+   * offline discipline as `search` (typed IndexOfflineError, never a hang).
+   */
+  async searchExactSections(request: ExactSectionRequest): Promise<MemorySearchResult[]> {
+    await this.ensureMemoryAccess()
+    return await searchExactSections({
+      client: this.searchClient() as unknown as SearchDependencies['client'],
+      embedder: this.getEmbedder(),
+      vaultModeFor: (vault) => this.modeForVaultValue(vault),
+      defaultTokenCap: this.config.budgets.readSectionTokens,
+    }, request)
+  }
+
+  // The offline discipline both search entries share: a never-started or
+  // degraded index answers the typed IndexOfflineError, never a crash.
+  private searchClient(): MilvusClient {
     const client = this.client
     if (client === null) {
       throw new IndexOfflineError(
@@ -655,17 +691,7 @@ export class ObsidianMemService extends Service {
     if (this.launcher?.degraded === true) {
       throw new IndexOfflineError('milvus child died; a respawn is pending, retry shortly')
     }
-    return await hybridSearch({
-      // Structural casts of the whole client to the narrow slices search
-      // and the indexer declare: the SDK's overloaded method unions do not
-      // line up with the plain shapes under exactOptionalPropertyTypes,
-      // while the dispatched request shapes are the verified ones
-      // (milvus-live.spec, search.spec, indexer.spec).
-      client: client as unknown as SearchDependencies['client'],
-      embedder: this.getEmbedder(),
-      vaultModeFor: (vault) => this.modeForVaultValue(vault),
-      defaultTokenCap: this.config.budgets.readSectionTokens,
-    }, request)
+    return client
   }
 
   /** Status answers the card and audit without triggering provisioning. */

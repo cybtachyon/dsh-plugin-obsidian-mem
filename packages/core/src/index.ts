@@ -13,3 +13,4 @@
  */
 
 export * from './constants.js'
+export * from './vaults.js'

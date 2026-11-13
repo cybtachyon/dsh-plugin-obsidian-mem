@@ -1,5 +1,7 @@
 # TASK-011 Vault config + default-vault bootstrap
 
+Status: done
+
 Depends: TASK-010. `packages/core/src/vaults.ts`.
 
 ## Scope

@@ -1,5 +1,7 @@
 # TASK-022 Milvus collection schema + indexes
 
+Status: done
+
 Depends: TASK-021; follow research findings on lite-supported features.
 `packages/service/src/milvus/schema.ts`.
 

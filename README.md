@@ -65,6 +65,14 @@ The plugin manages its own vector database: on first memory use it ensures a
 `@zilliz/milvus2-sdk-node`. There is no user-facing Python or Milvus install
 step, and no external Milvus to operate.
 
+The `obsidian_mem` collection uses the BM25 Function path: `chunk_text` is
+stored clean (no embed-time prefixes) with `enable_analyzer` on, a BM25
+Function generates a `SparseFloatVector`, and dense (HNSW/COSINE) and sparse
+(SPARSE_INVERTED_INDEX/BM25) indexes serve hybrid search. The client-side
+keyword-scoring fallback is not needed because milvus-lite 3.2.2 supports the
+analyzer and BM25 Function (verified, `docs/research/milvus-transformers-findings.md`
+§3).
+
 ## Model download and offline use
 
 On first embedding the plugin downloads `Xenova/multilingual-e5-small` (ONNX

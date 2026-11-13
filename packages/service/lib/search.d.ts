@@ -6,6 +6,11 @@
  * results, plus searchExactSections for the Read intercept and the
  * typed IndexOfflineError callers degrade quietly on.
  *
+ * The stop-word strip (sparseQueryText, TASK-002) rides the SPARSE route
+ * ONLY: the BM25 `data` carries the stripped text while embedQuery, run by
+ * the callers on the untouched query, keeps the dense route on the FULL
+ * query text (e5 is trained on natural language).
+ *
  * One `hybridSearch` cannot carry the per-route cutoffs on this stack:
  * milvus-lite 3.2.2 PARSES route-level `params.radius` but does not
  * honor it (docs/research/radius-tuning-findings.md §4), so each route
@@ -45,7 +50,8 @@ import type { Embedder } from './embedder.js';
 export declare const SEARCH_OUTPUT_FIELDS: readonly string[];
 /**
  * SearchRouteDispatch is one standalone route `search` this module
- * dispatches: dense (vector data) or sparse (raw query text data).
+ * dispatches: dense (vector data) or sparse (stop-word-stripped query
+ * text data, see sparseQueryText).
  */
 export interface SearchRouteDispatch {
     collection_name: string;
@@ -268,6 +274,29 @@ export declare const CANDIDATE_OVERSAMPLE = 2;
  * `scope IN [...]`, ARRAY_CONTAINS, ARRAY_CONTAINS_ANY, `==`, `IN`.
  */
 export declare function buildFilterExpr(criteria: FilterCriteria): string | undefined;
+/**
+ * SparseQueryText renders the query text the BM25 route receives: tokens
+ * split on non-word chars (SPARSE_TOKEN_RUN; Han per codepoint), the
+ * {@link SPARSE_QUERY_STOPWORDS} list applied via stopword's
+ * case-insensitive match (nothing re-cased here), survivors re-joined with
+ * single spaces. Its ONE application point is dispatchRoutes' sparse
+ * `data`, covering both hybridSearch and searchExactSections; the dense
+ * route keeps the FULL query (the callers embed before dispatch).
+ * Fail-open: an all-stop-word or symbols-only query returns the ORIGINAL
+ * text; an empty BM25 data string must never reach lite.
+ *
+ * Recorded choice (TASK-002, plan A2): CJK runs are split into single
+ * codepoints and re-joined with single spaces so the 78 single-character
+ * `zho` entries can fire. OPEN QUESTION for the TASK-005 A/B: whether
+ * those re-joined codepoints still match what the analyzer produced at
+ * index time (schema.ts enables the default analyzer, no jieba); if they
+ * provably cannot, keep CJK text UNSTRIPPED (fail-open) and document that
+ * `zho` only guards mixed-language noise.
+ *
+ * Exported (like RRF_RANKER_K) so scripts/eval replays production from
+ * the shipped module (TASK-004).
+ */
+export declare function sparseQueryText(query: string): string;
 /**
  * HybridSearch runs the dense + BM25 two-search dispatch with client-side
  * RRF fusion and returns deduped, budget-cut, registry-resolved results.

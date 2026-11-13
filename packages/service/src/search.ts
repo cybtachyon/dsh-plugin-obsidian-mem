@@ -6,6 +6,11 @@
  * results, plus searchExactSections for the Read intercept and the
  * typed IndexOfflineError callers degrade quietly on.
  *
+ * The stop-word strip (sparseQueryText, TASK-002) rides the SPARSE route
+ * ONLY: the BM25 `data` carries the stripped text while embedQuery, run by
+ * the callers on the untouched query, keeps the dense route on the FULL
+ * query text (e5 is trained on natural language).
+ *
  * One `hybridSearch` cannot carry the per-route cutoffs on this stack:
  * milvus-lite 3.2.2 PARSES route-level `params.radius` but does not
  * honor it (docs/research/radius-tuning-findings.md §4), so each route
@@ -38,6 +43,7 @@
 
 import { isAbsolute, join } from 'node:path'
 import { MetricType } from '@zilliz/milvus2-sdk-node'
+import { eng, removeStopwords, zho } from 'stopword'
 
 import {
   approxCharsForTokens,
@@ -73,7 +79,8 @@ export const SEARCH_OUTPUT_FIELDS: readonly string[] = [
 
 /**
  * SearchRouteDispatch is one standalone route `search` this module
- * dispatches: dense (vector data) or sparse (raw query text data).
+ * dispatches: dense (vector data) or sparse (stop-word-stripped query
+ * text data, see sparseQueryText).
  */
 export interface SearchRouteDispatch {
   collection_name: string
@@ -248,6 +255,23 @@ export const DENSE_RANGE_MAX = 1.0
 export const SPARSE_SEARCH_RADIUS = 2.5
 
 /**
+ * SPARSE_QUERY_STOPWORDS is the stop-word list sparseQueryText removes
+ * from the BM25 route's query text: stopword's English `eng` (108) plus
+ * Chinese `zho` (78) lists (plan answer A2). One module-level constant so
+ * the plan Q2 follow-up (add domain terms if the A/B exposes them) is one
+ * edit here.
+ */
+const SPARSE_QUERY_STOPWORDS: readonly string[] = [...eng, ...zho]
+
+// SparseTokenRun tokenizes sparseQueryText's input: one Han codepoint per
+// match, otherwise a run of word characters ([\p{L}\p{N}_], Han excluded);
+// every other character separates. Han splits per-character because zho
+// lists only single-character function words and stopword ships no
+// segmenter (TASK-001 findings). Kana and Hangul count as word characters:
+// their scripts' lists are not in use, so those runs pass through whole.
+const SPARSE_TOKEN_RUN = /[\p{Script=Han}]|(?:(?![\p{Script=Han}])[\p{L}\p{N}_])+/gu
+
+/**
  * FUSED_SCORE_FLOOR is the default FUSED-score floor hybridSearch applies
  * when the request carries no minScore (TASK-009 rule, TASK-014 reach,
  * TASK-007 value). THE authoritative statement of the hybridSearch floor
@@ -336,6 +360,34 @@ export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
   }
 
   return clauses.length > 0 ? clauses.join(' and ') : undefined
+}
+
+/**
+ * SparseQueryText renders the query text the BM25 route receives: tokens
+ * split on non-word chars (SPARSE_TOKEN_RUN; Han per codepoint), the
+ * {@link SPARSE_QUERY_STOPWORDS} list applied via stopword's
+ * case-insensitive match (nothing re-cased here), survivors re-joined with
+ * single spaces. Its ONE application point is dispatchRoutes' sparse
+ * `data`, covering both hybridSearch and searchExactSections; the dense
+ * route keeps the FULL query (the callers embed before dispatch).
+ * Fail-open: an all-stop-word or symbols-only query returns the ORIGINAL
+ * text; an empty BM25 data string must never reach lite.
+ *
+ * Recorded choice (TASK-002, plan A2): CJK runs are split into single
+ * codepoints and re-joined with single spaces so the 78 single-character
+ * `zho` entries can fire. OPEN QUESTION for the TASK-005 A/B: whether
+ * those re-joined codepoints still match what the analyzer produced at
+ * index time (schema.ts enables the default analyzer, no jieba); if they
+ * provably cannot, keep CJK text UNSTRIPPED (fail-open) and document that
+ * `zho` only guards mixed-language noise.
+ *
+ * Exported (like RRF_RANKER_K) so scripts/eval replays production from
+ * the shipped module (TASK-004).
+ */
+export function sparseQueryText(query: string): string {
+  const tokens = query.match(SPARSE_TOKEN_RUN) ?? []
+  const stripped = removeStopwords(tokens, [...SPARSE_QUERY_STOPWORDS]).join(' ')
+  return stripped === '' ? query : stripped
 }
 
 /**
@@ -473,7 +525,10 @@ function fallbackFilterExpr(
 // hybridSearch cannot carry per-route radii: radius-tuning-findings §4).
 // The dense search carries its server-side radius/range_filter plus ef;
 // the BM25 search carries no server params and takes its floor
-// client-side in sparseSurvivors.
+// client-side in sparseSurvivors. The BM25 `data` is the strip's single
+// application point (sparseQueryText, TASK-002); queryText itself stays
+// untouched because the caller already embedded the FULL text for the
+// dense route.
 async function dispatchRoutes(
   deps: SearchDependencies,
   queryText: string,
@@ -505,7 +560,7 @@ async function dispatchRoutes(
     callMilvus('search', () => deps.client.search({
       ...shared,
       anns_field: MILVUS_FIELDS.sparseVector,
-      data: [queryText],
+      data: [sparseQueryText(queryText)],
       metric_type: MetricType.BM25,
       params: {},
     })),

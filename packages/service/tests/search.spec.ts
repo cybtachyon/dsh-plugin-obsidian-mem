@@ -201,9 +201,11 @@ describe('two-route search dispatch', () => {
     expect(typeof dense!.params.range_filter).toBe('number')
     expect(sparse!.anns_field).toBe(MILVUS_FIELDS.sparseVector)
     expect(sparse!.metric_type).toBe('BM25')
-    // The BM25 route carries the raw query text, not a vector, and no
-    // server params: its floor is the client-side -score cutoff.
-    expect(sparse!.data).toEqual(['how do i rate limit'])
+    // The BM25 route carries the stop-word-stripped query text, not a
+    // vector (sparseQueryText, TASK-002: 'how do i' stripped), and no
+    // server params: its floor is the client-side -score cutoff. The
+    // dense route above still embedded the FULL query.
+    expect(sparse!.data).toEqual(['rate limit'])
     expect(sparse!.params).toEqual({})
   })
 

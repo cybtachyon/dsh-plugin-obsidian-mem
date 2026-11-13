@@ -29,6 +29,7 @@ import {
   DREAM_SESSION_PREFIX,
   DREAM_STATE_FILE,
   DREAMS_FILE,
+  metadataDir,
   NOTE_TIMELINE_BYTES,
   RELEVANCY_BUMP_TARGET,
   RELEVANCY_FILE,
@@ -66,8 +67,9 @@ Ground rules:
   with the suffix {{ARCHIVE_HISTORY_SUFFIX}} at the vault root (reserved,
   never indexed).
 - After each step, append a dated section "## <YYYY-MM-DD> Step <N>: <step
-  name>" to DREAMS.md at the first shared vault root. The diary is a log:
-  never treat it as a memory source and never write memory notes into it.
+  name>" to DREAMS.md in the first shared vault's .obsidian-mem/metadata/
+  directory. The diary is a log: never treat it as a memory source and
+  never write memory notes into it.
 - Never change the frontmatter fields read_count or last_read_at; the
   plugin scores relevancy deterministically after this run.
 
@@ -518,18 +520,22 @@ export class DreamOrchestrator {
   }
 
   // Diary fallback (ext seedDreamsDiary): create-once only, so the agent's
-  // own appended sections are never touched.
+  // own appended sections are never touched. The diary sits in the vault's
+  // sidecar dir (PLAN-vault-layout); parents are created here because a
+  // pre-TASK-013 vault may not have `.obsidian-mem/metadata/` on disk yet.
   private seedDreamsDiary(id: string): void {
     const shared = this.deps.inventories().filter((inventory) => inventory.vault.mode === 'shared' && inventory.facts.exists)
     const first = shared[0]
     if (first === undefined) {
       return
     }
-    const diary = join(first.vault.path, DREAMS_FILE)
+    const sidecar = metadataDir(first.vault.path)
+    const diary = join(sidecar, DREAMS_FILE)
     if (this.deps.fs.exists(diary)) {
       return
     }
     const day = new Date().toISOString().slice(0, 10)
+    this.deps.fs.mkdirp(sidecar)
     this.deps.fs.writeFile(diary, [
       '# Dream Diary',
       '',

@@ -103,7 +103,7 @@ function note(
   name: string,
   over: { meta?: Partial<NoteMeta>; sizeBytes?: number } = {},
 ): AuditedNote {
-  const rel = `markdown/${name}.md`
+  const rel = `${name}.md`
   return {
     path: `${vaultPath}/${rel}`,
     vaultPath,
@@ -129,7 +129,7 @@ function inventory(vaultPath: string, mode: 'shared' | 'read-only', notes: Audit
     reservedMisplaced: [],
     walkTruncated: false,
     usageBytes: notes.reduce((sum, entry) => sum + entry.sizeBytes, 0),
-    state: { path: `${vaultPath}/metadata/state.json`, present: true, parseError: null, modelId: 'm', vectorDim: 384, fileCount: notes.length, expectedChunks: notes.length, fileKeys: notes.map((entry) => entry.rel) },
+    state: { path: `${vaultPath}/.obsidian-mem/metadata/state.json`, present: true, parseError: null, modelId: 'm', vectorDim: 384, fileCount: notes.length, expectedChunks: notes.length, fileKeys: notes.map((entry) => entry.rel) },
   }
 }
 
@@ -257,10 +257,10 @@ describe('plan: candidate ranking', () => {
     expect(plan.budget.overBudget).toBe(true)
     // least-read first, path tie-break.
     expect(plan.budget.globalNotePaths).toEqual([
-      `${READ_ONLY}/markdown/ro-never-read.md`,
-      `${SHARED}/markdown/never-read.md`,
-      `${SHARED}/markdown/huge-timeline.md`,
-      `${SHARED}/markdown/hot.md`,
+      `${READ_ONLY}/ro-never-read.md`,
+      `${SHARED}/never-read.md`,
+      `${SHARED}/huge-timeline.md`,
+      `${SHARED}/hot.md`,
     ])
     expect(plan.plan).toContain('read-only: raise the review with the user instead of editing')
   })
@@ -291,7 +291,7 @@ describe('plan: candidate ranking', () => {
   })
 
   it('clusters near-duplicates over faked vectors and leaves singletons out', async () => {
-    const target = (name: string): string => `${SHARED}/markdown/${name}.md`
+    const target = (name: string): string => `${SHARED}/${name}.md`
     const orchestrator = new DreamOrchestrator(deps({
       inventories: [inventory(SHARED, 'shared', [
         note(SHARED, 'a'),
@@ -337,10 +337,10 @@ describe('plan: candidate ranking', () => {
     }))
     const plan = await orchestrator.plan()
     expect(plan.plan).toBe([
-      '1. Split timeline /vault/shared/markdown/timeline.md: keep the conclusion in it and move the history into a /vault/shared/markdown/timeline_history.md note at the vault root (reserved, never indexed).',
-      '2. Compact global note /vault/shared/markdown/stale-global.md: it injects into every session; tighten it to a conclusion pointer.',
-      '3. Review (unread-since-last-dream, global-over-budget): /vault/shared/markdown/stale-global.md: verify it with memory_read; correct it or set archive=true when it no longer holds.',
-      '4. Global memory is over budget (1800 of 1500 tokens used). 1 live global notes inject; compact least-read first: /vault/shared/markdown/stale-global.md.',
+      '1. Split timeline /vault/shared/timeline.md: keep the conclusion in it and move the history into a /vault/shared/timeline_history.md note at the vault root (reserved, never indexed).',
+      '2. Compact global note /vault/shared/stale-global.md: it injects into every session; tighten it to a conclusion pointer.',
+      '3. Review (unread-since-last-dream, global-over-budget): /vault/shared/stale-global.md: verify it with memory_read; correct it or set archive=true when it no longer holds.',
+      '4. Global memory is over budget (1800 of 1500 tokens used). 1 live global notes inject; compact least-read first: /vault/shared/stale-global.md.',
       '5. Skipped check: near-duplicate analysis (no stored vectors available: the vector index is cold or the candidates are unindexed).',
     ].join('\n'))
   })
@@ -356,6 +356,10 @@ describe('prompt: seed once, render tunables on every load', () => {
     expect(first).toContain('1500')
     expect(first).toContain('0.92')
     expect(first).toContain('_history.md')
+    // The seeded protocol names the sidecar diary location, not a vault-root
+    // DREAMS.md (PLAN-vault-layout TASK-006).
+    expect(first).toContain('DREAMS.md in the first shared vault\'s .obsidian-mem/metadata/')
+    expect(first).not.toContain('at the first shared vault root')
     expect(first).not.toContain('{{')
     expect(fs.mutations).toEqual([`mkdirp ${DB}`, `writeFile ${DB}/dream-prompt.md`])
     // Second load: no re-seed, same render.
@@ -407,7 +411,7 @@ describe('run: single flight and the launch sequence', () => {
 
   it('launches session dream-<uuid>, followups the prompt plus plan, disposes, and stamps after scoring', async () => {
     const fs = stampedFs({
-      [`${DB}/state/relevancy.json`]: JSON.stringify({ [`${SHARED}/markdown/going-stale.md`]: 0.05 }),
+      [`${DB}/state/relevancy.json`]: JSON.stringify({ [`${SHARED}/going-stale.md`]: 0.05 }),
     })
     const inventories = [inventory(SHARED, 'shared', [
       note(SHARED, 'touched', { meta: { read_count: 2, last_read_at: '2026-11-01' } }),
@@ -434,13 +438,13 @@ describe('run: single flight and the launch sequence', () => {
     // never accessed and untracked so it stays out of the sidecar.
     const relevancy = JSON.parse(fs.files.get(`${DB}/state/relevancy.json`) ?? '{}') as Record<string, number>
     expect(relevancy).toEqual({
-      [`${SHARED}/markdown/touched.md`]: 1,
-      [`${SHARED}/markdown/going-stale.md`]: 0,
+      [`${SHARED}/touched.md`]: 1,
+      [`${SHARED}/going-stale.md`]: 0,
     })
     expect(summary.bumped).toBe(1)
     expect(summary.degraded).toBe(1)
     expect(summary.notes).toBe(3)
-    expect(summary.archiveCandidates).toEqual([`${SHARED}/markdown/going-stale.md`])
+    expect(summary.archiveCandidates).toEqual([`${SHARED}/going-stale.md`])
 
     // Order load-bearing: scoring read the PREVIOUS stamp; only then did
     // the stamp move to now.
@@ -478,15 +482,20 @@ describe('run: single flight and the launch sequence', () => {
     expect(orchestrator.busy).toBe(false)
   })
 
-  it('seeds the DREAMS.md diary once at the first shared vault and never overwrites it', async () => {
+  it('seeds the DREAMS.md diary once under the first shared vault metadata dir, creating parents', async () => {
     const fs = new MemFs()
     const inventories = [
       inventory(READ_ONLY, 'read-only', []),
       inventory(SHARED, 'shared', []),
     ]
     await new DreamOrchestrator(deps({ fs, inventories, gateway: fakeGateway().gateway })).startRun().done
-    const diary = fs.files.get(`${SHARED}/DREAMS.md`)
+    // New layout: the diary lives at <vault>/.obsidian-mem/metadata/DREAMS.md
+    // and the sidecar dir is created on demand (un-migrated vaults lack it).
+    expect(fs.mutations).toContain(`mkdirp ${SHARED}/.obsidian-mem/metadata`)
+    const diary = fs.files.get(`${SHARED}/.obsidian-mem/metadata/DREAMS.md`)
     expect(diary).toContain('Dream (run')
+    // Never a vault-root diary.
+    expect(fs.files.has(`${SHARED}/DREAMS.md`)).toBe(false)
     // A second run must not touch the diary (agent-written or seeded).
     const before = fs.mutations.length
     await new DreamOrchestrator(deps({ fs, inventories, gateway: fakeGateway().gateway })).startRun().done

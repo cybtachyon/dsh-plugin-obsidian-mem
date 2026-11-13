@@ -150,7 +150,7 @@ describe('memory_audit render', () => {
       budget: { budgetTokens: 1500, usedTokens: 0, measured: false, overBudget: false, globalNoteCount: 0, globalNotePaths: [] },
     }))
     const text = renderAudit(await executeAudit(service, {}))
-    expect(text).toContain('tracker not yet active this process (configured budget 1500 tokens)')
+    expect(text).toContain('no recall budget spent in this process yet (configured budget 1500 tokens)')
     expect(text).toContain('found no problems')
     expect(text).toContain('- none')
   })

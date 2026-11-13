@@ -191,6 +191,17 @@ describe('memory_write success paths', () => {
     expect(note.body).toContain('How to apply:')
   })
 
+  it('treats a directory target as a new note slugged INTO that directory', async () => {
+    // The documented new-note contract: path may be the markdown/ dir
+    // itself. The dir exists on disk yet must not trip read-before-write.
+    const value = await write({ path: join(sharedRoot, 'markdown') + '/' })
+    expect(value.kind).toBe('written')
+    if (value.kind !== 'written') return
+    expect(value.path).toBe(join(sharedRoot, 'markdown', 'deploys-friday-releases.md'))
+    expect(value.created).toBe(true)
+    expect(matchesOutput(createWriteTool(service), value)).toEqual([])
+  })
+
   it('collision-suffixes a new note whose slug is already taken', async () => {
     // The slug exists as a different note; the write must not clobber it.
     const takenPath = join(sharedRoot, 'markdown', 'deploys-friday-releases.md')

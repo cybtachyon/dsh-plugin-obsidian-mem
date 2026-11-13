@@ -13,7 +13,7 @@
  * @module dsh-plugin-obsidian-mem/tools/write
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import {
@@ -229,8 +229,11 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
 
   // Guard 3: read-before-write staleness. The on-disk re-hash is the whole
   // point: the registry proves a read happened, the hash proves the bytes
-  // under this edit are the bytes that read saw.
-  const exists = existsSync(target)
+  // under this edit are the bytes that read saw. A directory target is a
+  // NEW note (the documented contract: pass the markdown/ dir); only an
+  // existing FILE triggers the read-before-write ladder.
+  const targetStat = statSync(target, { throwIfNoEntry: false })
+  const exists = targetStat?.isFile() ?? false
   const record = service.readRecord(target)
   let existingMeta: NoteMeta | undefined
   if (exists && record === undefined) {
@@ -277,7 +280,9 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
 
   // New notes take their filename from the title (slug plus collision
   // ordinal); updates keep the exact read path so links into it hold.
-  const finalPath = exists ? target : join(dirname(target), titleToFilename(indexTitle, takenMarkdownNames(dirname(target))))
+  // A directory target slugs INTO that directory, not its parent.
+  const newNoteDir = targetStat?.isDirectory() ? target : dirname(target)
+  const finalPath = exists ? target : join(newNoteDir, titleToFilename(indexTitle, takenMarkdownNames(newNoteDir)))
 
   const result = await service.applyWrite(finalPath, meta, contents)
   return withNotice({

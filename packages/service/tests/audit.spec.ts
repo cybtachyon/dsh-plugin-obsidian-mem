@@ -304,7 +304,7 @@ describe('runStoreAudit: healthy store', () => {
   it('reports the budget echo as unmeasured while the tracker is inactive', async () => {
     const report = await run({ fs: seedHealthy() })
     const budget = findIssue(report, 'budget.tracker')
-    expect(budget?.detail).toContain('not yet active this process')
+    expect(budget?.detail).toContain('no recall budget spent in this process yet')
     expect(report.budget.measured).toBe(false)
     expect(report.budget.overBudget).toBe(false)
   })

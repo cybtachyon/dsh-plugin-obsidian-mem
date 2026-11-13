@@ -165,7 +165,7 @@ describe('memory_dream render', () => {
     })
     const text = renderDream(await executeDream(service, {}))
     expect(text).toContain('last dream: never')
-    expect(text).toContain('tracker not yet active')
+    expect(text).toContain('No recall budget spent in this process yet')
     expect(text).not.toContain('OVER BUDGET')
   })
 

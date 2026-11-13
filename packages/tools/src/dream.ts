@@ -259,7 +259,7 @@ export function renderDream(value: DreamValue): string {
   } else if (value.budget.measured) {
     lines.push('', `Budget headroom: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used.`)
   } else {
-    lines.push('', `Budget tracker not yet active this process (configured budget ${String(value.budget.budget_tokens)} tokens).`)
+    lines.push('', `No recall budget spent in this process yet (configured budget ${String(value.budget.budget_tokens)} tokens).`)
   }
   if (value.candidates.length > 0) {
     lines.push('', `Candidates (${String(value.candidates.length)}):`)

@@ -294,7 +294,7 @@ export function renderAudit(value: AuditValue): string {
   }
   const tracker = value.budget.measured
     ? `${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used`
-    : `tracker not yet active this process (configured budget ${String(value.budget.budget_tokens)} tokens)`
+    : `no recall budget spent in this process yet (configured budget ${String(value.budget.budget_tokens)} tokens)`
   lines.push('', `Global memory budget: ${tracker}; ${String(value.budget.global_note_count)} live global notes.`)
   if (value.budget.over_budget) {
     lines.push('OVER BUDGET: run memory_dream to process and compact all global memory markdown files, least-read first:',

@@ -1,5 +1,17 @@
 # TASK-009: Implement the default post-RRF fused floor
 
+- [x] Complete. `FUSED_SCORE_FLOOR = 1/(RRF_RANKER_K + 1)` = 1/61,
+  inclusive, floors the FUSED score in `hybridSearch` when
+  `request.minScore` is undefined; an explicit value (including 0)
+  fully overrides (commit 58d1755, spec goldens included). Harness
+  re-run of the TASK-005 point (`--mode split-rrf --dense-radius 0.78
+  --dense-range 1.0 --sparse-radius 2.5`): control P@k=0.206
+  forbRate=0.275 recall=0.682 (102 rows); with
+  `--min-score 0.0163934426`: P@k=0.273 forbRate=0.197 recall=0.636
+  (66 rows, -35% volume), matching the simulated 0.297/0.203/0.636
+  within noise. Artifact:
+  `docs/research/eval-split-d078-s25-k60-m0164.json`.
+
 Sweep already done (see PLAN-milvus-tuning.md "Offline comparison"):
 rrfK 10-60 indistinguishable (keep k=60); the win is a default floor on
 the fused score at 1/(k+1) inclusive, which keeps every both-route hit

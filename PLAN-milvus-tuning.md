@@ -46,7 +46,7 @@ All resolved; see Answers below.
 
 ### Phase C: Optional tuning (metrics-gated; run only on the questionnaire's decided scope)
 
-- [ ] [TASK-009-rrf-k-and-cutoff](docs/PLAN-milvus-tuning-TASK-009-rrf-k-and-cutoff.md)
+- [x] [TASK-009-rrf-k-and-cutoff](docs/PLAN-milvus-tuning-TASK-009-rrf-k-and-cutoff.md)
 - [ ] [TASK-010-weighted-ranker-eval](docs/PLAN-milvus-tuning-TASK-010-weighted-ranker-eval.md)
 - [ ] [TASK-011-bm25-index-params](docs/PLAN-milvus-tuning-TASK-011-bm25-index-params.md)
 - [ ] [TASK-012-cross-encoder-reranker](docs/PLAN-milvus-tuning-TASK-012-cross-encoder-reranker.md)

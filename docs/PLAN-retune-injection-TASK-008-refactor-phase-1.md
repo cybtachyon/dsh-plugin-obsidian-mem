@@ -18,7 +18,10 @@ matches the harness code; the CJK maximal-run rule's single home is the
 sparseQueryText docblock (TASK-018), do not relocate; the TASK-005 zh
 probe exists only as prose in the findings doc with its raw dump in /tmp
 (not committed), so lift it into a re-runnable read-only script under
-docs/research/probes/ and reference it from the findings doc.
+docs/research/probes/ and reference it from the findings doc; refresh the
+stale `--sparse-radius 2.5` sample commands in docs/research/radius-
+tuning-findings.md and scripts/eval/README.md to the shipped 5.0 (harmless
+examples today, misleading to a future reader).
 
 Definition of Done: risks resolved or each explicitly waived with a
 one-line reason recorded here; gates still green.

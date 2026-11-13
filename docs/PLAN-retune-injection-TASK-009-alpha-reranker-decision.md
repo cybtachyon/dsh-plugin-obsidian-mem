@@ -22,5 +22,12 @@ follow-on implementation task to this plan before Phase 3.
 Definition of Done: decision + rationale written in this file; plan
 updated with any follow-on task.
 
+Citation caveat (TASK-006): docs/research/cross-encoder-findings.md's
+committed artifact was computed when the harness imported
+SPARSE_SEARCH_RADIUS=2.5; the harness now follows the shipped 5.0, so a
+re-run replays a different page. Cite the committed artifact's REJECT
+verdict with that staleness flagged; do not present it as replaying
+today's production page.
+
 Depends on: TASK-005 (strip-ON numbers inform whether ranking order is
 the remaining problem).

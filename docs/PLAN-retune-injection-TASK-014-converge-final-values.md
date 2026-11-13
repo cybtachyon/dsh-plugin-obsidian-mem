@@ -20,6 +20,12 @@ values. Rules:
 Record: the final value of every tuning constant touched by this plan
 (before → after per constant) with its evidence line.
 
+Baselines to carry (from the offline phase): label-granularity recall
+ceiling at production parity is 14/22 (the fused floor trims one
+single-route rank-4 label row; TASK-006), SPARSE_SEARCH_RADIUS already
+decided to 5.0 by the TASK-006 sweep, FUSED_SCORE_FLOOR re-confirmed at
+1/(k+2). Live-loop ledgers must not chase the 14/22-capped note.
+
 Definition of Done: final values table written here and mirrored at the
 top of `docs/research/stopword-strip-findings.md`; confirming iteration
 ledger green (or documented best-observed stop).

@@ -4,6 +4,9 @@ SEQUENCING GUARD (added 2026-11-13): do NOT seed before TASK-005 and
 TASK-006 finish. The offline eval harnesses replay a LABELED query set
 against the same live collection these notes would index into; seeded
 rows are unlabeled and would contaminate P@k/forbidden-rate baselines.
+GUARD SATISFIED 2026-11-13 (TASK-006 committed). Corpus note: the
+collection sits at 205 rows (drifted from 206); re-verify the label
+families still resolve before trusting any post-seeding eval numbers.
 
 Use `memory_write` (never direct file writes) to seed the default vault
 `/home/derek/.dsh/obsidian-mem/` with the iteration's probe set. Record

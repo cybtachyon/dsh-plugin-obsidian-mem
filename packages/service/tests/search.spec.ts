@@ -18,11 +18,12 @@ import type { SearchDependencies } from '../src/search.ts'
  * standalone search dispatches (per-route params goldens: dense ef +
  * radius + range_filter, sparse empty; expr, candidate limit, Strong
  * consistency, G10 output_fields), the count(*) empty guard, the
- * client-side RRF fusion math, the sparse -score cutoff, the TASK-009
- * default fused floor (default filtering, explicit 0 disables, explicit
- * override), dedupe/token budgets/mode resolution, the exact-section
- * fallback with its TASK-014 fused floor (exact-file leg unfloored), and
- * the typed offline degradation.
+ * client-side RRF fusion math, the sparse -score cutoff, the default
+ * fused floor at 1/(k+2) (TASK-009 rule, TASK-007 value: default
+ * filtering, explicit 0 disables, explicit override), dedupe/token
+ * budgets/mode resolution, the exact-section fallback with its fused
+ * floor (exact-file leg unfloored, TASK-014), and the typed offline
+ * degradation.
  */
 
 interface Recorded {
@@ -271,8 +272,8 @@ describe('client RRF fusion', () => {
     })
 
     // minScore 0 disables the default fused floor: this pin is fusion
-    // math, and the rank-2 single-route scores are exactly what the
-    // default would drop.
+    // math, asserted at every score regardless of what the default cut
+    // would keep.
     const results = await hybridSearch(deps(client), { query: 'x', minScore: 0 })
 
     // Chunks 2 and 3 fuse to the same 1/62 (each route's rank 2), so the
@@ -293,8 +294,8 @@ describe('client RRF fusion', () => {
       sparseResults: [],
     })
 
-    // minScore 0: the rank 2 and 3 single-route scores are exactly what
-    // the TASK-009 default floor drops.
+    // minScore 0 keeps every rank visible for the math pin; the default
+    // floor keeps rank 2 and drops rank 3 (see the floor goldens).
     const results = await hybridSearch(deps(client), { query: 'x', minScore: 0 })
 
     expect(results.map((result) => result.chunk_id)).toEqual([10, 11, 12])
@@ -363,9 +364,9 @@ describe('sparse BM25 client cutoff on -score', () => {
   })
 })
 
-describe('default fused-score floor (TASK-009)', () => {
+describe('default fused-score floor (TASK-009 rule at 1/(k+2), TASK-007)', () => {
   // Fillers are single-route hits; ranks are positional, so a filler at
-  // rank >= 2 fuses below the floor and is dropped. Unique section
+  // rank >= 3 fuses below the floor and is dropped. Unique section
   // headers keep them out of the source_path + section_header dedupe.
   function fillerRows(from: number, count: number): Array<Record<string, unknown>> {
     return Array.from({ length: count }, (_unused, offset) => row({
@@ -374,10 +375,10 @@ describe('default fused-score floor (TASK-009)', () => {
     }))
   }
 
-  it('drops single-route rank>=2-only hits, keeps rank-1 and both-route hits', async () => {
+  it('keeps single-route rank-1 and rank-2-only hits plus both-route hits', async () => {
     // Fetched-window worst case: topK 20 with oversample 2 puts limit 40
     // on each route, so chunk 900 takes the window's last rank on BOTH
-    // routes and still clears the floor at 2/(60+40) = 0.02 > 1/61.
+    // routes and still clears the floor at 2/(60+40) = 0.02 > 1/62.
     const deep = { [MILVUS_FIELDS.chunkId]: 900, [MILVUS_FIELDS.sectionHeader]: 'Deep' }
     const { client } = stubMilvus({
       denseResults: [
@@ -394,11 +395,31 @@ describe('default fused-score floor (TASK-009)', () => {
 
     const results = await hybridSearch(deps(client), { query: 'x' })
 
-    // 101 and 201 are single-route rank-1 hits (score == floor, kept
-    // inclusively); fillers 102..139 and 202..239 all sit under it.
-    expect(results.map((result) => result.chunk_id)).toEqual([900, 101, 201])
+    // 101 and 201 are single-route rank-1 hits; 102 and 202 sit at
+    // exactly 1/62, the inclusive floor the TASK-007 value change set.
+    // Fillers 103..139 and 203..239 fuse to 1/63 or lower and drop.
+    expect(results.map((result) => result.chunk_id)).toEqual([900, 101, 201, 102, 202])
     expect(results[0]!.score).toBe(1 / 100 + 1 / 100)
     expect(results[1]!.score).toBe(1 / 61)
+    expect(results[3]!.score).toBe(1 / 62)
+  })
+
+  it('drops a single-route rank-3-only hit at 1/63', async () => {
+    const { client } = stubMilvus({
+      denseResults: [
+        row({ [MILVUS_FIELDS.chunkId]: 1 }),
+        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B' }),
+        row({ [MILVUS_FIELDS.chunkId]: 3, [MILVUS_FIELDS.sectionHeader]: 'C' }),
+      ],
+      sparseResults: [],
+    })
+
+    // The boundary pin for the looser floor: rank 2 survives at exactly
+    // 1/62, rank 3's 1/63 still drops.
+    const results = await hybridSearch(deps(client), { query: 'x' })
+
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 2])
+    expect(results[1]!.score).toBe(1 / 62)
   })
 
   it('lets an explicit minScore of 0 disable the default floor', async () => {
@@ -411,8 +432,8 @@ describe('default fused-score floor (TASK-009)', () => {
       sparseResults: [],
     })
 
-    // The same fixture without minScore returns only chunk 1: 1/62 and
-    // 1/63 sit under the default floor.
+    // The same fixture without minScore returns chunks 1 and 2: only
+    // 1/63 sits under the 1/62 default floor.
     const results = await hybridSearch(deps(client), { query: 'x', minScore: 0 })
 
     expect(results.map((result) => result.chunk_id)).toEqual([1, 2, 3])
@@ -428,13 +449,18 @@ describe('default fused-score floor (TASK-009)', () => {
       sparseResults: [],
     })
 
-    // Below the floor (1/61 ~ 0.016393): 0.0161 keeps chunk 2's 1/62
-    // (0.016129) that the default drops; 1/63 stays under both bounds.
-    const relaxed = await hybridSearch(deps(client), { query: 'x', minScore: 0.0161 })
-    expect(relaxed.map((result) => result.chunk_id)).toEqual([1, 2])
+    // Below the floor (1/62 ~ 0.016129): 0.0158 keeps chunk 3's 1/63
+    // (0.015873), which the default drops.
+    const relaxed = await hybridSearch(deps(client), { query: 'x', minScore: 0.0158 })
+    expect(relaxed.map((result) => result.chunk_id)).toEqual([1, 2, 3])
+
+    // Between the old 1/61 and the current 1/62 floor: 0.0162 cuts chunk
+    // 2's 1/62 (0.016129), which the default keeps at equality.
+    const tightened = await hybridSearch(deps(client), { query: 'x', minScore: 0.0162 })
+    expect(tightened.map((result) => result.chunk_id)).toEqual([1])
 
     // Above it: 0.0164 also cuts chunk 1's 1/61 (0.016393), which the
-    // default keeps at equality, leaving nothing.
+    // default keeps, leaving nothing.
     const raised = await hybridSearch(deps(client), { query: 'x', minScore: 0.0164 })
     expect(raised.map((result) => result.chunk_id)).toEqual([])
   })
@@ -485,7 +511,8 @@ describe('result shaping', () => {
     })
 
     // Fused scores: chunk 1 = 1/61 (0.016393), chunk 2 = 1/62 (0.016129).
-    // The floor cuts rank 2; raw route scores never reach the comparison.
+    // The explicit bound cuts rank 2; raw route scores never reach the
+    // comparison.
     const results = await hybridSearch(deps(client), { query: 'x', minScore: 0.0162 })
 
     expect(results.map((result) => result.chunk_id)).toEqual([1])
@@ -575,27 +602,30 @@ describe('searchExactSections', () => {
   // One page feeds both routes of a dispatch pair (stubSequenced), so a
   // score-0.85 row dies on the sparse -score cutoff and fuses as a
   // single-route dense hit at its positional rank: the production shape
-  // for sub-floor candidates.
+  // for sub-floor candidates. Chunk 4 at dense rank 4 is the drop case
+  // the TASK-007 floor leaves behind.
   const floorPage = [
     row({ [MILVUS_FIELDS.chunkId]: 1, [MILVUS_FIELDS.sectionHeader]: 'A' }),
     row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: 0.85 }),
     row({ [MILVUS_FIELDS.chunkId]: 3, [MILVUS_FIELDS.sectionHeader]: 'C' }),
+    row({ [MILVUS_FIELDS.chunkId]: 4, [MILVUS_FIELDS.sectionHeader]: 'D', score: 0.85 }),
   ]
 
-  it('floors the fallback page: drops single-route rank-2-only rows, keeps the rest (TASK-014)', async () => {
+  it('floors the fallback page: keeps rank-1 and rank-2-only rows, drops rank 4 (TASK-014)', async () => {
     const { client } = stubSequenced([[], floorPage])
 
     const results = await searchExactSections(deps(client), {
       filePath: 'src/widget.tsx',
       ext: '.tsx',
       snippet: 'widget lifecycle',
-      k: 3,
+      k: 4,
     })
 
-    // chunk 2 sits at dense rank 2 alone (1/62 < the 1/61 default floor).
-    // chunk 1 is both-route rank 1; chunk 3 is dense rank 3 + sparse
-    // rank 2, and every both-route hit clears the floor.
-    expect(results.map((result) => result.chunk_id)).toEqual([1, 3])
+    // chunk 2 sits at dense rank 2 alone: 1/62 is the inclusive default
+    // floor. chunk 1 is both-route rank 1; chunk 3 is dense rank 3 +
+    // sparse rank 2, and every both-route hit clears the floor. chunk
+    // 4's 1/64 is the drop the floor still makes.
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 3, 2])
     expect(results[0]!.score).toBe(1 / 61 + 1 / 61)
   })
 
@@ -606,12 +636,12 @@ describe('searchExactSections', () => {
       filePath: 'src/widget.tsx',
       ext: '.tsx',
       snippet: 'widget lifecycle',
-      k: 3,
+      k: 4,
       minScore: 0,
     })
 
-    // The same page under the default floor returns only chunks 1 and 3.
-    expect(results.map((result) => result.chunk_id)).toEqual([1, 3, 2])
+    // The same page under the default floor drops chunk 4 only.
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 3, 2, 4])
   })
 
   it('keeps the exact-file leg floor-free: a file being read is relevant by construction (TASK-014)', async () => {
@@ -623,6 +653,12 @@ describe('searchExactSections', () => {
         [MILVUS_FIELDS.sectionHeader]: 'B',
         score: 0.85,
       }),
+      row({
+        [MILVUS_FIELDS.chunkId]: 3,
+        [MILVUS_FIELDS.sourcePath]: 'src/app.tsx',
+        [MILVUS_FIELDS.sectionHeader]: 'C',
+        score: 0.85,
+      }),
     ]
     const { client, calls } = stubSequenced([exactPage])
 
@@ -632,9 +668,9 @@ describe('searchExactSections', () => {
       k: 3,
     })
 
-    // chunk 2's 1/62 would face the fallback floor; the exact page
-    // returns it unfloored, and its non-empty answer skips the fallback.
-    expect(results.map((result) => result.chunk_id)).toEqual([1, 2])
+    // chunk 3's 1/63 is below the fallback floor; the exact page returns
+    // it unfloored, and its non-empty answer skips the fallback.
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 2, 3])
     expect(searchDispatches(calls)).toHaveLength(2)
   })
 

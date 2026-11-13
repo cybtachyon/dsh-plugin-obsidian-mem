@@ -22,10 +22,10 @@
  * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
  * the exact formula lite's own fused scores show (radius-tuning-
  * findings §4); the score floor (request minScore, else the default
- * FUSED_SCORE_FLOOR = 1/(k+1) inclusive, TASK-009) applies to those
- * fused scores only: the default keeps single-route rank-1 hits and
- * drops rank >= 2-only hits, while every both-route hit inside the
- * fetched window clears it;
+ * FUSED_SCORE_FLOOR = 1/(k+2) inclusive, TASK-009 rule, TASK-007
+ * value) applies to those fused scores only: the default keeps
+ * single-route rank-1 and rank-2 hits plus every both-route hit
+ * inside the fetched window, and drops rank-3-only hits;
  * output_fields ALWAYS include the primary key chunk_id (G10) plus the
  * columns the result rows are built from; a Strong-consistency count(*)
  * guards the empty collection before BM25 dispatch.
@@ -90,13 +90,21 @@ const DENSE_RANGE_MAX = 1.0;
 const SPARSE_SEARCH_RADIUS = 2.5;
 // FusedScoreFloor is the default FUSED-score floor hybridSearch and
 // searchExactSections' fallback leg apply when the request carries no
-// minScore (TASK-009 rule, TASK-014 reach): a single-route hit
-// scores 1/(k + rank), so the inclusive floor keeps exactly its rank 1
-// and drops rank >= 2. Every both-route hit inside the fetched window
-// clears it: the worst case takes the window's last rank on both routes
-// (limit topK 20 * oversample 2 = 40) and fuses to 2/(60+40) = 0.02 >
-// 1/61. An explicit minScore (including 0) fully overrides the default.
-const FUSED_SCORE_FLOOR = 1 / (RRF_RANKER_K + 1);
+// minScore (TASK-009 rule, TASK-014 reach, TASK-007 value): a
+// single-route hit scores 1/(k + rank), so the inclusive floor at
+// 1/(k+2) keeps its rank 1 and rank 2 and drops rank >= 3. Every
+// both-route hit inside the fetched window clears it: the worst case
+// takes the window's last rank on both routes (limit topK 20 *
+// oversample 2 = 40) and fuses to 2/(60+40) = 0.02 > 1/62. An explicit
+// minScore (including 0) fully overrides the default.
+//
+// TASK-007 live-loop iteration 2 (machinae-game probe 2026-11-13)
+// floored a planted relevant note whose best shape was single-route
+// dense rank 2 (fused 1/62). With the planted notes added to the
+// labeled set, the offline floor sweep knee sits at 1/(k+2):
+// recall-of-labeled 0.625 -> 0.667 and forbidden rows 12 -> 16. One
+// step looser, 1/(k+3), adds zero recall and +8 forbidden rows.
+const FUSED_SCORE_FLOOR = 1 / (RRF_RANKER_K + 2);
 // Each route asks for this many times the caller's limit, so dedupe and the
 // minScore floor still leave a full page of results to return.
 const CANDIDATE_OVERSAMPLE = 2;

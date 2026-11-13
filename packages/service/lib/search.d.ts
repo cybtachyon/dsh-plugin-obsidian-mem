@@ -22,10 +22,10 @@
  * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
  * the exact formula lite's own fused scores show (radius-tuning-
  * findings §4); the score floor (request minScore, else the default
- * FUSED_SCORE_FLOOR = 1/(k+1) inclusive, TASK-009) applies to those
- * fused scores only: the default keeps single-route rank-1 hits and
- * drops rank >= 2-only hits, while every both-route hit inside the
- * fetched window clears it;
+ * FUSED_SCORE_FLOOR = 1/(k+2) inclusive, TASK-009 rule, TASK-007
+ * value) applies to those fused scores only: the default keeps
+ * single-route rank-1 and rank-2 hits plus every both-route hit
+ * inside the fetched window, and drops rank-3-only hits;
  * output_fields ALWAYS include the primary key chunk_id (G10) plus the
  * columns the result rows are built from; a Strong-consistency count(*)
  * guards the empty collection before BM25 dispatch.
@@ -132,7 +132,7 @@ export interface SearchRequest {
     topK?: number;
     /**
      * Floor on the RRF-fused score (NOT a BM25 threshold, G7). Omitted:
-     * the default 1 / (RRF_RANKER_K + 1) floor applies, inclusive. An
+     * the default 1 / (RRF_RANKER_K + 2) floor applies, inclusive. An
      * explicitly passed value, including 0 (disables the cut), fully
      * overrides the default.
      */
@@ -161,7 +161,7 @@ export interface ExactSectionRequest {
     sectionTokens?: number;
     /**
      * Floor on the RRF-fused score of the fallback leg only (NOT a BM25
-     * threshold, G7). Omitted: the default 1 / (RRF_RANKER_K + 1) floor
+     * threshold, G7). Omitted: the default 1 / (RRF_RANKER_K + 2) floor
      * applies, inclusive. An explicitly passed value, including 0
      * (disables the cut), fully overrides the default. The exact-file leg
      * is never floored (TASK-014).

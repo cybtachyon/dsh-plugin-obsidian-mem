@@ -67,6 +67,7 @@ decoy memories, machinae-game subagents reporting every recall they see.
  - [x] [TASK-003-strip-route-unit-tests](docs/PLAN-retune-injection-TASK-003-strip-route-unit-tests.md)
  - [x] [TASK-004-eval-harness-parity](docs/PLAN-retune-injection-TASK-004-eval-harness-parity.md)
  - [x] [TASK-005-offline-ab-eval](docs/PLAN-retune-injection-TASK-005-offline-ab-eval.md)
+ - [ ] [TASK-018-han-run-unstripped-fix](docs/PLAN-retune-injection-TASK-018-han-run-unstripped-fix.md)
  - [ ] [TASK-006-sparse-floor-resweep](docs/PLAN-retune-injection-TASK-006-sparse-floor-resweep.md)
  - [ ] [TASK-007-green-gates](docs/PLAN-retune-injection-TASK-007-green-gates.md)
  - [ ] [TASK-008-refactor-phase-1](docs/PLAN-retune-injection-TASK-008-refactor-phase-1.md)
@@ -91,9 +92,11 @@ decoy memories, machinae-game subagents reporting every recall they see.
 
 ## Dependencies
 
-- 001 → 002 → 003 → 004 → 005 → 006 → 007 → 008.
+- 001 → 002 → 003 → 004 → 005 → 018 → 006 → 007 → 008 (018 inserted
+  2026-11-13 from the TASK-005 zh-probe verdict: Han runs unstripped).
 - 009, 010: after 005 (need the stripped-run numbers); both feed 013.
-- 011: independent (memory tools only); feeds 013.
+- 011: after 006 (seeding guard: unlabeled seeded rows would contaminate
+  the offline P@k/forbidden baselines); feeds 013.
 - 012: after 007 (ship-ready lib) and needs the user to restart DSH.
 - 013: needs 011, 012, and the 009/010 decisions; may loop 011–013.
 - 014: after 013 converges; feeds 015, 016, 017.

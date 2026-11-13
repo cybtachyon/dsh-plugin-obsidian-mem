@@ -27,7 +27,9 @@ working tree clean.
    small pure-helper spec covering its accept and reject paths.
    Waved by the parent (recorded, not to fix here): a DreamingSection
    render-level spec; host-side `summary` double-prefix on failed runs
-   (the card helper already prefers `error`).
+   (the card helper already prefers `error`); the `truncate(promptPath,
+   56)` display-cap literal in `dreaming.tsx` (predates this plan,
+   flagged by TASK-005).
 5. `prek run --files <every path touched by TASK-001..005 plus the step-4
    fixes>`.
 6. `git status --short` empty; commit any emitted artifacts per the repo's

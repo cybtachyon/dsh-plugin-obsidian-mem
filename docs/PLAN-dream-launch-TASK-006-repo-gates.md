@@ -22,11 +22,19 @@ working tree clean.
    `exactOptionalPropertyTypes`; give it the explicit property. (Only this
    one fixture; the rest of the ~82 test-tree error groups stay out of
    scope.)
-5. `prek run --files <every path touched by TASK-001..005>`.
-5. `git status --short` empty; commit any emitted artifacts per the repo's
+   Same pattern, from TASK-004: `validateScheduleForm` is exported from
+   `packages/client/src/sections/dreaming.tsx` with no unit test; add a
+   small pure-helper spec covering its accept and reject paths.
+   Waved by the parent (recorded, not to fix here): a DreamingSection
+   render-level spec; host-side `summary` double-prefix on failed runs
+   (the card helper already prefers `error`).
+5. `prek run --files <every path touched by TASK-001..005 plus the step-4
+   fixes>`.
+6. `git status --short` empty; commit any emitted artifacts per the repo's
    tracked-`lib` convention.
 
 ## Definition of Done
 
-- All four commands exit 0; tree clean; if a gate forced code changes, they
-  land in a `test:`/`fix:` commit before this task closes.
+- All gate commands exit 0; the step-1 import check and the step-4 fixes
+  are in; tree clean; gate-forced code changes land in a `test:`/`fix:`
+  commit before this task closes.

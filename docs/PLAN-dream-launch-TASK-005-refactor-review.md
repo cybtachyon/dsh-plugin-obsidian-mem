@@ -12,6 +12,16 @@ Then address and resolve each risk.
 
 ## Notes for this plan's territory
 
+- TASK-003 carry-overs to adjudicate (parent rulings):
+  - `Session.ownEvents()` is `@deprecated` in the installed
+    `@deepseek-ai/dsh-session@0.2.1-alpha.3` types. The check works on the
+    live host today; if a same-scope read exists that is not deprecated,
+    adopt it, otherwise add a one-line comment naming the deprecation and
+    the removal risk. Decide, don't leave it unrecorded.
+  - Failing a run on `reason.kind === 'error'` only is the plan's
+    Deterministic ruling; `aborted`/`interrupted` variants cannot arise
+    here because nothing cancels a dream agent. Confirm no new call site
+    introduces a cancel path; if one exists, widen the failing set.
 - The precedence rule (override > config > host) must stay in exactly one
   resolver (TASK-001); the blocked message and the resolver must read the
   same resolved pair.

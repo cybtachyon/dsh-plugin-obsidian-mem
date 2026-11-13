@@ -38,7 +38,7 @@ All resolved; see Answers below.
 
 ### Phase B: Required tuning
 
-- [ ] [TASK-004-implement-radii](docs/PLAN-milvus-tuning-TASK-004-implement-radii.md)
+- [x] [TASK-004-implement-radii](docs/PLAN-milvus-tuning-TASK-004-implement-radii.md)
 - [ ] [TASK-005-offline-metric-compare](docs/PLAN-milvus-tuning-TASK-005-offline-metric-compare.md)
 - [ ] [TASK-006-live-restart-recall-test](docs/PLAN-milvus-tuning-TASK-006-live-restart-recall-test.md)
 - [ ] [TASK-007-iterate-tuning](docs/PLAN-milvus-tuning-TASK-007-iterate-tuning.md)
@@ -70,7 +70,7 @@ All resolved; see Answers below.
 ## Answers (from questionnaire)
 
 - A1: Keep the radius values as module constants in `search.ts` (defaults
-  for dispatchHybrid's route params).
+  for the route `search` params, as TASK-004 shipped them).
 - A2: NO scratch instances/collections. Probe range semantics with
   read-only searches directly against the live production collection.
 - A3: Yes. Tagged test memories allowed in the shared default vault;

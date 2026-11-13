@@ -136,5 +136,53 @@ remains the hypothesis for the residual ~0.20 forbidden rate.
 
 ## Live test-loop log
 
-Populated by TASK-006/TASK-007 iterations: restart, test-note ids, per-
-subagent recalled-source list, verdict per value set.
+### Iteration 1 (2026-11-13 00:41 restart; dense 0.78 / sparse 2.5 / fused floor 1/(k+1))
+
+Planted notes: POS
+machinae-game/machinae-game-bitecs-query-registration-for-sim-tests.md,
+machinae-game/machinae-game-three-js-instanced-render-batching.md;
+NEG unity-dots-entity-query-chunk-iteration.md,
+react-three-fiber-gallery-viewer-memoization.md.
+Budget enabler active (globalMemoryTokens=50000; the probe received
+injections, so it worked). Probe subagent 0ccf7c59 (machinae-game
+ECS/render task).
+
+Observed (through injection 15): turn-start page = GLOBAL (pinned) +
+dsh-session-transcript-probe + lib-is-tracked + typescript-verify-
+before-done; read-intercept bleed x5 (guestwise seatmap x2, theme-
+playwright, throwaway-tsconfig, pnpm-dir-hijack, ts-installed-types,
+vitest-lazy-cjs); think-intercept bleed x3 (drupal entity-form,
+declarative-TS, hf-cli) - think intercepts fired on STOPWORD-ONLY term
+lists ("and, the, should, not, after").
+POS recalled: 0/2. NEG recalled: 0/2 (excluded by the same mechanism
+that excluded POS-2).
+
+Root-cause replay (full production-shape simulation of the probe's
+actual turn-start query, top-12 per route):
+- Dense route: POS notes rank 1-2 at 0.8999/0.8932 (the 0.78 radius is
+  irrelevant to them); guestwise/lywa/drupal noise ranks 4-12 at
+  0.836-0.876 - all survivors; the radius cuts nothing here.
+- Sparse route: 12/12 cross-project noise at relevance 41-75; the 2.5
+  floor is one to two orders of magnitude below the noise floor on
+  this vocabulary-heavy query.
+- Fused page: dual-route AGREEMENT ranks cross-project noise
+  (guestwise/featureflags at dense-5 + sparse-7 = 0.0303) ABOVE the
+  relevant single-route POS note (dense rank 1 = 0.01639); the fused
+  floor then DROPS the relevant POS-2 (dense rank 2 single-route,
+  0.01613 < 1/61) together with the NEG notes. The floor's
+  rank-1-or-both-routes rule assumes both-route implies relevant;
+  manifest-vocabulary contamination (turn-start query = user text +
+  workspace manifest tokens like .ts/.json/typescript/vitest) breaks
+  that assumption.
+
+Verdict versus convergence rules: planted NEG 0/2 (pass), planted POS
+0/2 (FALSE-NEGATIVE FAILURE - must loosen or arbitrate differently),
+cross-project bleed persists in all three channels. Iteration-2
+candidates queued: (a) cross-encoder rerank (TASK-012 running) as the
+relevance arbiter, applied BEFORE the fused floor decides so the floor
+never pre-empts the reranker's view; (b) evaluate the manifest-text
+half of the turn-start query (packages/events/src/turnStart.ts) as the
+vocabulary-contamination source (harness queries never carried it, so
+offline under-measured production noise); (c) think-intercept
+stopword-only term lists look like a query-construction defect to
+file separately.

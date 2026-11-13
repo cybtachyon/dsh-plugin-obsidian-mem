@@ -1,5 +1,9 @@
 # TASK-002: Offline eval harness
 
+- [x] Complete. Harness: `scripts/eval/recall-eval.mjs` (query/label set:
+  `scripts/eval/queries-labels.mjs`; knob + label docs:
+  `scripts/eval/README.md`).
+
 Build a standalone measurement harness that replays realistic queries
 against the LIVE production milvus-lite server, read-only.
 

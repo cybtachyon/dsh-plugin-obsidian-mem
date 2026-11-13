@@ -815,6 +815,19 @@ describe('status, placeholders, and not-implemented seams', () => {
     expect(harness().service.globalMemoryIndex().budgetTokens).toBe(GLOBAL_MEMORY_TOKENS)
   })
 
+  it('setSessionRegistry wires the events-owned registry (TASK-040 seam)', () => {
+    const h = harness()
+    expect(h.service.sessionRegistry).toBeNull()
+    const registry = { totalRecallTokensUsed: () => 42 }
+    h.service.setSessionRegistry(registry)
+    expect(h.service.sessionRegistry).toBe(registry)
+    // The placeholder index still reports zero use: TASK-045 owns reading
+    // the wired registry; the seam only makes it reachable.
+    expect(h.service.globalMemoryIndex().usedTokens).toBe(0)
+    h.service.setSessionRegistry(null)
+    expect(h.service.sessionRegistry).toBeNull()
+  })
+
   it('dream() defaults to the deterministic plan and seeds the prompt once', async () => {
     const h = harness()
     const result = await h.service.dream()

@@ -1,5 +1,7 @@
 # TASK-040 Session tracking (once-per-session injection)
 
+Status: done
+
 Depends: TASK-030. `packages/events/src/sessions.ts`.
 
 ## Scope
@@ -24,3 +26,19 @@ Depends: TASK-030. `packages/events/src/sessions.ts`.
 
 Unit tests: once-per-session incl. restart persistence via temp stateDir, changed-note
 re-eligibility, subagent separation; commit.
+
+## Status notes
+
+- Subagent detection: the durable `SessionHeader.origin === 'subagent'` marker or a
+  positive `delegationDepth` (verified against the @deepseek-ai/dsh-session types);
+  keying never depends on it (every session is its own key already).
+- Seam choice: the events package owns and constructs the registry; the service gained
+  the additive `setSessionRegistry(view | null)` + `sessionRegistry` getter with a
+  minimal structural `SessionRegistryView` (`totalRecallTokensUsed()`), so the package
+  dependency stays events -> service. TASK-045 reads the wired registry in
+  `globalMemoryIndex()`.
+- Changed-note re-eligibility uses the indexed `updated_at` carried by search results
+  as the content fingerprint (a rewrite re-indexes and moves it); the raw `contentHash`
+  never crosses the search boundary.
+- Teardown: `agent/disposed` is observable, so live records die there (plus the plugin
+  fiber effect); no WeakMap needed. The persisted ledger always survives disposal.

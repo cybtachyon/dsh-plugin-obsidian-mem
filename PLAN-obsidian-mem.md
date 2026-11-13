@@ -88,7 +88,7 @@ task file lists explicit cross-phase prerequisites.
 
 ### Phase 5: Lifecycle events (packages/events)
 
-- [ ] [TASK-040-session-tracking](docs/PLAN-obsidian-mem-TASK-040-session-tracking.md)
+- [x] [TASK-040-session-tracking](docs/PLAN-obsidian-mem-TASK-040-session-tracking.md)
 - [ ] [TASK-041-turn-start-recall](docs/PLAN-obsidian-mem-TASK-041-turn-start-recall.md)
 - [ ] [TASK-042-read-intercept](docs/PLAN-obsidian-mem-TASK-042-read-intercept.md)
 - [ ] [TASK-043-think-intercept](docs/PLAN-obsidian-mem-TASK-043-think-intercept.md)

@@ -1,0 +1,451 @@
+/**
+ * SessionRegistry: per-session memory-injection bookkeeping (TASK-040).
+ * Keyed by the agent's session id (`agent.id`, a SessionId): the same agent
+ * keeps one key across every turn, and a subagent runs under its own
+ * session id, so subagents are separate sessions by construction. The
+ * subagent signal (verified against the @deepseek-ai/dsh-session
+ * SessionHeader types) is `header.origin === 'subagent'` or a positive
+ * `header.delegationDepth`; it is recorded for `isSubagent()` only, never
+ * used for keying.
+ *
+ * The load-bearing rule: one memory source is injected at most ONCE per
+ * session, even across resumed days, until the source's content fingerprint
+ * changes after injection (a note rewritten by dreaming or the user gets
+ * re-indexed and its indexed `updated_at` moves, which is the fingerprint
+ * search results carry). Live records die with `disposeSession` on
+ * `agent/disposed`; the persisted ledger at
+ * `<dbPath>/state/sessions.json` survives restarts (LRU-capped, TTL-bounded)
+ * so a session resumed next week still honors the rule.
+ * @module dsh-plugin-obsidian-mem/events/sessions
+ */
+
+import { dirname } from 'node:path'
+import type { ServiceFs } from '../../service/lib/index.js'
+import { nodeServiceFs } from '../../service/lib/index.js'
+
+/** File name for the persisted per-session ledger under the plugin state dir. */
+export const SESSIONS_FILE_NAME = 'sessions.json'
+
+/** Ledger sessions older than this (last touch) are dropped at persist time. */
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+/** At most this many sessions persist; the least-recently-touched go first. */
+export const SESSIONS_LRU_MAX = 200
+
+/** Two Read-intercept injections for one session must sit this far apart. */
+export const READ_INJECTION_THROTTLE_MS = 15_000
+
+/** Read-intercept injections per session, a cap independent of the Think budget. */
+export const READ_INJECTION_CAP_PER_SESSION = 6
+
+/** What one injected source remembers: when, and the content it was injected for. */
+export interface InjectedSourceRecord {
+  at: number
+  /** Content fingerprint at injection (the result's indexed updated_at). */
+  fingerprint?: string
+}
+
+/** The live per-session bookkeeping record. */
+export interface SessionRecord {
+  readonly sessionId: string
+  /** sourceKey -> what was injected; the once-per-session rule's state. */
+  readonly injectedSources: Map<string, InjectedSourceRecord>
+  /** Turn-start recall has fired (per process; re-evaluated on resume). */
+  turnStartDone: boolean
+  /** Last pre-step turn number observed; drives per-turn resets. */
+  lastTurn: number
+  /** Think-intercept injections used in the current turn (TASK-043 consumes). */
+  thinkShots: number
+  /** Approx tokens the turn-start recall injected this session (TASK-045). */
+  turnRecallTokensUsed: number
+  /** Read-intercept injections this session (cap enforcement). */
+  readInjections: number
+  /** Epoch ms of the last Read-intercept injection (throttle input). */
+  lastReadInjectionAt: number
+  /** Directories a Read-intercept injection already covered this session. */
+  readonly coveredDirs: Set<string>
+  /** Files already observed by the Read intercept in the current turn. */
+  readonly readPathsThisTurn: Set<string>
+  subagent: boolean
+  readonly createdAt: number
+  updatedAt: number
+}
+
+/** Constructor options; only `file` and `thinkShotsPerTurn` are required. */
+export interface SessionRegistryOptions {
+  /** Absolute path of the persisted ledger (`<stateDir>/sessions.json`). */
+  file: string
+  /** Per-turn Think-intercept cap, from the mounted service config. */
+  thinkShotsPerTurn: number
+  /** Disk seam; production passes the service's nodeServiceFs. */
+  fs?: ServiceFs
+  /** Clock seam for throttle/TTL tests. */
+  now?: () => number
+  /** Persisted-session LRU cap; default {@link SESSIONS_LRU_MAX}. */
+  maxSessions?: number
+  /** Persisted-session TTL; default {@link SESSION_TTL_MS}. */
+  ttlMs?: number
+  /** Persist debounce; 0 persists synchronously on every mutation. */
+  debounceMs?: number
+  /** Sink for ledger warnings; absent stays silent. */
+  log?: (message: string) => void
+}
+
+// The persisted file shape. Live-only fields (turnStartDone, counters) are
+// never persisted: a resumed process re-runs turn-start recall, and the
+// once-per-session rule is enforced by `injected` alone.
+interface PersistedSession {
+  injected: Record<string, InjectedSourceRecord>
+  subagent: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+interface SessionsFile {
+  version: 1
+  sessions: Record<string, PersistedSession>
+}
+
+/**
+ * SessionRegistry owns the once-per-session injection rule, the per-turn
+ * Think budget counters, and the Read-intercept throttle state, with the
+ * injected-sources ledger persisted (atomically, debounced) so resumed
+ * sessions across restarts keep honoring it.
+ */
+export class SessionRegistry {
+  private readonly file: string
+  private readonly thinkShotsPerTurn: number
+  private readonly fs: ServiceFs
+  private readonly now: () => number
+  private readonly maxSessions: number
+  private readonly ttlMs: number
+  private readonly debounceMs: number
+  private readonly log: (message: string) => void
+
+  /** Live records, keyed by session id; disposed sessions leave. */
+  private readonly sessions = new Map<string, SessionRecord>()
+  /** Persisted mirror; authoritative for what the next write serializes. */
+  private readonly store = new Map<string, PersistedSession>()
+  private loaded = false
+  private closed = false
+  private timer: ReturnType<typeof setTimeout> | null = null
+
+  constructor(options: SessionRegistryOptions) {
+    this.file = options.file
+    this.thinkShotsPerTurn = options.thinkShotsPerTurn
+    this.fs = options.fs ?? nodeServiceFs
+    this.now = options.now ?? (() => Date.now())
+    this.maxSessions = options.maxSessions ?? SESSIONS_LRU_MAX
+    this.ttlMs = options.ttlMs ?? SESSION_TTL_MS
+    this.debounceMs = options.debounceMs ?? 1_000
+    this.log = options.log ?? (() => {})
+  }
+
+  /**
+   * Ensure returns the live record, hydrating it from the persisted ledger
+   * on first sight (a resumed session keeps its injected-sources history).
+   */
+  ensure(sessionId: string, info: { subagent?: boolean } = {}): SessionRecord {
+    this.ensureLoaded()
+    let record = this.sessions.get(sessionId)
+    if (record === undefined) {
+      const persisted = this.store.get(sessionId)
+      record = {
+        sessionId,
+        injectedSources: new Map(
+          Object.entries(persisted?.injected ?? {})
+            .filter(([, value]) => typeof value?.at === 'number')
+            .map(([key, value]) => [key, {
+              at: value.at,
+              ...(typeof value.fingerprint === 'string' ? { fingerprint: value.fingerprint } : {}),
+            }]),
+        ),
+        turnStartDone: false,
+        lastTurn: 0,
+        thinkShots: 0,
+        turnRecallTokensUsed: 0,
+        readInjections: 0,
+        lastReadInjectionAt: 0,
+        coveredDirs: new Set(),
+        readPathsThisTurn: new Set(),
+        subagent: persisted?.subagent ?? false,
+        createdAt: persisted?.createdAt ?? this.now(),
+        updatedAt: persisted?.updatedAt ?? this.now(),
+      }
+      this.sessions.set(sessionId, record)
+    }
+    if (info.subagent === true && !record.subagent) {
+      record.subagent = true
+      this.touch(record)
+    }
+    return record
+  }
+
+  /** IsSubagent answers whether the session was created as a subagent child. */
+  isSubagent(sessionId: string): boolean {
+    return this.ensure(sessionId).subagent
+  }
+
+  /**
+   * ShouldInject answers the once-per-session rule: a source the session
+   * never saw is eligible; one injected with the same (or unknown) content
+   * fingerprint is not; one whose fingerprint changed since injection is
+   * eligible again (the note was rewritten and re-indexed).
+   */
+  shouldInject(sessionId: string, sourceKey: string, fingerprint?: string): boolean {
+    const stored = this.ensure(sessionId).injectedSources.get(sourceKey)
+    if (stored === undefined) {
+      return true
+    }
+    return fingerprint !== undefined
+      && stored.fingerprint !== undefined
+      && stored.fingerprint !== fingerprint
+  }
+
+  /** MarkInjected records the source (and its content fingerprint) and persists. */
+  markInjected(sessionId: string, sourceKey: string, fingerprint?: string): void {
+    const record = this.ensure(sessionId)
+    record.injectedSources.set(sourceKey, {
+      at: this.now(),
+      ...(fingerprint === undefined ? {} : { fingerprint }),
+    })
+    this.touch(record)
+    this.schedulePersist()
+  }
+
+  /** InjectedSources snapshots the session's ledger keys (test/audit view). */
+  injectedSources(sessionId: string): Map<string, InjectedSourceRecord> {
+    return new Map(this.ensure(sessionId).injectedSources)
+  }
+
+  /** IsTurnStartDone answers whether turn-start recall already fired. */
+  isTurnStartDone(sessionId: string): boolean {
+    return this.ensure(sessionId).turnStartDone
+  }
+
+  /** MarkTurnStartDone claims the once-per-session recall slot. */
+  markTurnStartDone(sessionId: string): void {
+    const record = this.ensure(sessionId)
+    record.turnStartDone = true
+    this.touch(record)
+  }
+
+  /**
+   * NoteTurn folds one observed pre-step turn into the record: a new turn
+   * number resets the per-turn state (Think shots, per-turn Read dedupe).
+   */
+  noteTurn(sessionId: string, turn: number): void {
+    const record = this.ensure(sessionId)
+    if (turn === record.lastTurn) {
+      return
+    }
+    record.lastTurn = turn
+    record.thinkShots = 0
+    record.readPathsThisTurn.clear()
+    this.touch(record)
+  }
+
+  /** ThinkBudgetLeft answers the per-turn Think-intercept cap (TASK-043). */
+  thinkBudgetLeft(sessionId: string): number {
+    return Math.max(0, this.thinkShotsPerTurn - this.ensure(sessionId).thinkShots)
+  }
+
+  /** ConsumeThinkShot spends one Think shot; false when the turn's cap is spent. */
+  consumeThinkShot(sessionId: string): boolean {
+    const record = this.ensure(sessionId)
+    if (record.thinkShots >= this.thinkShotsPerTurn) {
+      return false
+    }
+    record.thinkShots += 1
+    this.touch(record)
+    return true
+  }
+
+  /** AddRecallTokens accumulates injected tokens for TASK-045's global budget. */
+  addRecallTokens(sessionId: string, tokens: number): void {
+    const record = this.ensure(sessionId)
+    record.turnRecallTokensUsed += Math.max(0, Math.trunc(tokens))
+    this.touch(record)
+  }
+
+  /** RecallTokensUsed answers what turn-start recall injected this session. */
+  recallTokensUsed(sessionId: string): number {
+    return this.ensure(sessionId).turnRecallTokensUsed
+  }
+
+  /** TotalRecallTokensUsed sums every session (the SessionRegistryView slice). */
+  totalRecallTokensUsed(): number {
+    this.ensureLoaded()
+    let total = 0
+    for (const record of this.sessions.values()) {
+      total += record.turnRecallTokensUsed
+    }
+    return total
+  }
+
+  /** ReadThrottleActive is true while the last Read injection is < 15 s old. */
+  readThrottleActive(sessionId: string): boolean {
+    const record = this.ensure(sessionId)
+    return record.lastReadInjectionAt > 0
+      && this.now() - record.lastReadInjectionAt < READ_INJECTION_THROTTLE_MS
+  }
+
+  /** ReadCapLeft answers the session's Read-intercept injection cap. */
+  readCapLeft(sessionId: string): boolean {
+    return this.ensure(sessionId).readInjections < READ_INJECTION_CAP_PER_SESSION
+  }
+
+  /** ReadDirCovered answers whether an injection already covered this dir. */
+  readDirCovered(sessionId: string, dir: string): boolean {
+    return this.ensure(sessionId).coveredDirs.has(dir)
+  }
+
+  /** ReadPathSeen records one file path for the turn and reports the repeat. */
+  readPathSeen(sessionId: string, path: string): boolean {
+    const record = this.ensure(sessionId)
+    if (record.readPathsThisTurn.has(path)) {
+      return true
+    }
+    record.readPathsThisTurn.add(path)
+    return false
+  }
+
+  /** NoteReadInjection spends one Read-intercept slot and records its dir. */
+  noteReadInjection(sessionId: string, dir: string): void {
+    const record = this.ensure(sessionId)
+    record.readInjections += 1
+    record.lastReadInjectionAt = this.now()
+    record.coveredDirs.add(dir)
+    this.touch(record)
+  }
+
+  /** DisposeSession drops the live record on agent teardown; the persisted
+   * ledger entry stays, so a later resume of the same session id still
+   * honors the once-per-session rule. */
+  disposeSession(sessionId: string): void {
+    this.sessions.delete(sessionId)
+  }
+
+  /** Flush writes the ledger now, canceling any pending debounce. */
+  flush(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.persistNow()
+  }
+
+  /** Close flushes the ledger and stops scheduling writes. */
+  close(): void {
+    this.flush()
+    this.closed = true
+  }
+
+  // Ledger file read once per process; unreadable or corrupt content is
+  // logged and treated as empty (self-healing, never a dead plugin).
+  private ensureLoaded(): void {
+    if (this.loaded) {
+      return
+    }
+    this.loaded = true
+    const raw = this.readFileSafe()
+    if (raw === null) {
+      return
+    }
+    try {
+      const parsed = JSON.parse(raw) as Partial<SessionsFile>
+      const sessions = parsed.sessions
+      if (typeof sessions !== 'object' || sessions === null) {
+        return
+      }
+      const cutoff = this.now() - this.ttlMs
+      for (const [sessionId, entry] of Object.entries(sessions)) {
+        if (typeof entry?.updatedAt !== 'number' || entry.updatedAt < cutoff) {
+          continue
+        }
+        this.store.set(sessionId, {
+          injected: typeof entry.injected === 'object' && entry.injected !== null ? entry.injected : {},
+          subagent: entry.subagent === true,
+          createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : entry.updatedAt,
+          updatedAt: entry.updatedAt,
+        })
+      }
+    } catch (error: unknown) {
+      this.log(`sessions.json unreadable (${this.file}): ${String(error)}; starting empty`)
+      this.store.clear()
+    }
+  }
+
+  private readFileSafe(): string | null {
+    try {
+      return this.fs.readFile(this.file)
+    } catch (error: unknown) {
+      this.log(`sessions.json read failed (${this.file}): ${String(error)}`)
+      return null
+    }
+  }
+
+  private touch(record: SessionRecord): void {
+    record.updatedAt = this.now()
+    this.store.set(record.sessionId, {
+      injected: Object.fromEntries(record.injectedSources),
+      subagent: record.subagent,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    })
+  }
+
+  private schedulePersist(): void {
+    if (this.closed || this.debounceMs < 0) {
+      return
+    }
+    if (this.debounceMs === 0) {
+      this.persistNow()
+      return
+    }
+    if (this.timer !== null) {
+      clearTimeout(this.timer)
+    }
+    this.timer = setTimeout(() => {
+      this.timer = null
+      this.persistNow()
+    }, this.debounceMs)
+    // The debounced write must never hold the process open.
+    this.timer.unref?.()
+  }
+
+  // Atomic tmp+rename (the service's vaults.json pattern): a crash mid-write
+  // leaves the previous ledger intact. TTL then LRU prune run at write time
+  // so the file stays bounded no matter how many sessions touched it.
+  private persistNow(): void {
+    const cutoff = this.now() - this.ttlMs
+    for (const [sessionId, entry] of this.store) {
+      if (entry.updatedAt < cutoff) {
+        this.store.delete(sessionId)
+        this.sessions.delete(sessionId)
+      }
+    }
+    if (this.store.size > this.maxSessions) {
+      const byAge = [...this.store.entries()].sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+      for (const [sessionId] of byAge.slice(this.maxSessions)) {
+        this.store.delete(sessionId)
+        this.sessions.delete(sessionId)
+      }
+    }
+    if (this.store.size === 0 && !this.fs.exists(this.file)) {
+      return
+    }
+    const file: SessionsFile = {
+      version: 1,
+      sessions: Object.fromEntries(this.store),
+    }
+    try {
+      this.fs.mkdirp(dirname(this.file))
+      const tmp = `${this.file}.obsidian-mem.tmp`
+      this.fs.writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`)
+      this.fs.rename(tmp, this.file)
+    } catch (error: unknown) {
+      this.log(`sessions.json write failed (${this.file}): ${String(error)}`)
+    }
+  }
+}

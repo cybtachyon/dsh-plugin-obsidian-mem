@@ -152,6 +152,18 @@ export interface GlobalMemoryIndex {
   remainingTokens: number
 }
 
+/**
+ * SessionRegistryView is the minimal read slice the service needs of the
+ * per-session memory registry (TASK-040 seam). The events package owns and
+ * constructs the registry instance; the service only holds the wired
+ * reference, so the package dependency stays events → service, never back.
+ * TASK-045 reads recall usage through it inside globalMemoryIndex.
+ */
+export interface SessionRegistryView {
+  /** Sums the recall tokens injected across every session the registry knows. */
+  totalRecallTokensUsed(): number
+}
+
 /** The seam's status answer; sync so the card can poll without provisioning. */
 export interface ObsidianMemStatus {
   state: 'inactive' | 'provisioning' | 'ready' | 'degraded'
@@ -313,6 +325,7 @@ export class ObsidianMemService extends Service {
   }
 
   private registry: VaultRegistryView | null = null
+  private sessionRegistryValue: SessionRegistryView | null = null
   private readonly readRegistry = new Map<string, ReadRegistryEntry>()
   private access: { promise: Promise<string | undefined> } | null = null
   private phase: ObsidianMemStatus['state'] = 'inactive'
@@ -700,12 +713,29 @@ export class ObsidianMemService extends Service {
   /**
    * GlobalMemoryIndex is the global per-session recall-budget shape
    * (TASK-045): the placeholder reports the configured budget with zero
-   * usage; TASK-045 owns the real accounting.
+   * usage; TASK-045 owns the real accounting, reading the wired
+   * {@link ObsidianMemService.sessionRegistry} for per-session use.
    * TODO-045: replace the empty implementation with the session budget index.
    */
   globalMemoryIndex(): GlobalMemoryIndex {
     const budgetTokens = this.config.budgets.globalMemoryTokens
     return { budgetTokens, usedTokens: 0, remainingTokens: budgetTokens }
+  }
+
+  /**
+   * SetSessionRegistry wires the events-owned SessionRegistry (TASK-040
+   * seam change): the events package constructs and owns the registry, the
+   * service just holds the reference so TASK-045's global budget accounting
+   * can read session usage without importing events. Passing null unwires
+   * (the events row unloading).
+   */
+  setSessionRegistry(registry: SessionRegistryView | null): void {
+    this.sessionRegistryValue = registry
+  }
+
+  /** SessionRegistry is the events-wired registry, or null before it mounts. */
+  get sessionRegistry(): SessionRegistryView | null {
+    return this.sessionRegistryValue
   }
 
   /**

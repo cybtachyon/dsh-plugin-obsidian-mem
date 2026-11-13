@@ -20,7 +20,9 @@ Depends: TASK-040, TASK-014, TASK-045 (globalMemoryIndex). `packages/events/src/
      budgets.globalMemoryTokens (title+description index of global-scope notes; content
      only when tiny).
   5. inject via `agent.inject()` (per-agent context channel; verify name via inspection)
-     each item wrapped in `<recalled_memory source="...">`; mark injected.
+     each item wrapped in `<recalled_memory source="...">` using the shared core
+     wrapRecalled helper with its defang rule (literal closing tag in content
+     rewritten); mark injected.
   6. append guidance line: "Use memory_search for the file types, coding languages, or
      frameworks you discover in this workspace: <manifest ext/frameworks list>."
 - Failure containment: any error → log + skip, never block the step.

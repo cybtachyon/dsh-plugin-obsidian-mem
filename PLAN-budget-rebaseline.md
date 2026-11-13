@@ -71,7 +71,25 @@ sentences, and those are the sentences the dreaming agent reads from
 - Do not touch the service `audit.ts` / events `budget.ts` wording;
   TASK-002 landed it.
 
-### TASK-004 gates
+### TASK-004 service-side budget sentences alignment
+
+TASK-003 flagged the same sentence family still naming no window:
+
+- `packages/service/src/dream.ts` (~898/900/903): the plan-text
+  sentences "Global memory is over budget (N of M tokens used)..." and
+  "Global budget headroom: N of M tokens used, K live global notes.";
+  the tools plan-fixture already assumes the windowed wording.
+- `packages/service/src/audit.ts` (~861): the `budget.tracker` INFO
+  "no recall budget spent in this process yet; configured budget is M
+  tokens" paired with the rebaselined `budget.over` line; its pin in
+  `packages/service/tests/audit.spec.ts` (~308) moves with it.
+- `packages/service/src/service.ts` (~849): the doc comment
+  "(nothing in this process has injected anything yet)" describing
+  `measured=false`; reword to the window idiom.
+- Phrase matches TASK-002/003 exactly. Update every spec pin that quotes
+  these sentences.
+
+### TASK-005 gates
 
 `pnpm build`, `pnpm test`, coverage bar, `pnpm lint`,
 `prek run --files`; tracked emit committed; tree clean.

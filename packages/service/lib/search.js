@@ -70,44 +70,62 @@ const EXT_FRAMEWORK_HINTS = {
     '.vue': ['vue'],
     '.svelte': ['svelte'],
 };
-// The verified fusion and search-knob values from findings §4.2 and
-// radius-tuning-findings §4: RRF fuses the two routes by rank only (so
-// negative BM25 scores never leak into a result, G7), and ef is the
-// HNSW candidate width per dense route.
-const RRF_RANKER_K = 60;
-const DENSE_SEARCH_EF = 64;
-// Server-side COSINE range cutoff on the standalone dense search:
-// survivors satisfy `radius < score <= range_filter`, radius EXCLUSIVE
-// (radius-tuning-findings §2), so DENSE_SEARCH_RADIUS keeps only scores
-// strictly above 0.78 and DENSE_RANGE_MAX is the metric ceiling.
-const DENSE_SEARCH_RADIUS = 0.78;
-const DENSE_RANGE_MAX = 1.0;
-// Client-side BM25 floor (radius-tuning-findings §3): lite 3.2.2 returns
-// NEGATED relevance scores best-first, so a positive server-side radius
-// would be an upper bound, not a floor. A hit survives when
-// `-score >= SPARSE_SEARCH_RADIUS`; raising it raises required
-// relevancy and has no ceiling.
-const SPARSE_SEARCH_RADIUS = 2.5;
-// FusedScoreFloor is the default FUSED-score floor hybridSearch and
-// searchExactSections' fallback leg apply when the request carries no
-// minScore (TASK-009 rule, TASK-014 reach, TASK-007 value): a
-// single-route hit scores 1/(k + rank), so the inclusive floor at
-// 1/(k+2) keeps its rank 1 and rank 2 and drops rank >= 3. Every
-// both-route hit inside the fetched window clears it: the worst case
-// takes the window's last rank on both routes (limit topK 20 *
-// oversample 2 = 40) and fuses to 2/(60+40) = 0.02 > 1/62. An explicit
-// minScore (including 0) fully overrides the default.
-//
-// TASK-007 live-loop iteration 2 (machinae-game probe 2026-11-13)
-// floored a planted relevant note whose best shape was single-route
-// dense rank 2 (fused 1/62). With the planted notes added to the
-// labeled set, the offline floor sweep knee sits at 1/(k+2):
-// recall-of-labeled 0.625 -> 0.667 and forbidden rows 12 -> 16. One
-// step looser, 1/(k+3), adds zero recall and +8 forbidden rows.
-const FUSED_SCORE_FLOOR = 1 / (RRF_RANKER_K + 2);
-// Each route asks for this many times the caller's limit, so dedupe and the
-// minScore floor still leave a full page of results to return.
-const CANDIDATE_OVERSAMPLE = 2;
+/**
+ * RRF_RANKER_K and DENSE_SEARCH_EF are the verified fusion and
+ * search-knob values from findings §4.2 and radius-tuning-findings
+ * §4: RRF fuses the two routes by rank only (so negative BM25 scores
+ * never leak into a result, G7), and ef is the HNSW candidate width
+ * per dense route. Exported (like SEARCH_OUTPUT_FIELDS) so the
+ * scripts/eval harnesses replay the production page from the shipped
+ * module instead of restating these values.
+ */
+export const RRF_RANKER_K = 60;
+export const DENSE_SEARCH_EF = 64;
+/**
+ * DENSE_SEARCH_RADIUS is the server-side COSINE range cutoff on the
+ * standalone dense search: survivors satisfy
+ * `radius < score <= range_filter`, radius EXCLUSIVE
+ * (radius-tuning-findings §2), so it keeps only scores strictly above
+ * 0.78; DENSE_RANGE_MAX is the metric ceiling.
+ */
+export const DENSE_SEARCH_RADIUS = 0.78;
+export const DENSE_RANGE_MAX = 1.0;
+/**
+ * SPARSE_SEARCH_RADIUS is the client-side BM25 floor
+ * (radius-tuning-findings §3): lite 3.2.2 returns NEGATED relevance
+ * scores best-first, so a positive server-side radius would be an
+ * upper bound, not a floor. A hit survives when
+ * `-score >= SPARSE_SEARCH_RADIUS`; raising it raises required
+ * relevancy and has no ceiling.
+ */
+export const SPARSE_SEARCH_RADIUS = 2.5;
+/**
+ * FUSED_SCORE_FLOOR is the default FUSED-score floor hybridSearch and
+ * searchExactSections' fallback leg apply when the request carries no
+ * minScore (TASK-009 rule, TASK-014 reach, TASK-007 value). THE
+ * authoritative statement of the floor rule: other docs here
+ * cross-reference this constant by name. A single-route hit scores
+ * 1/(k + rank), so the inclusive floor at 1/(k+2) keeps its rank 1 and
+ * rank 2 and drops rank >= 3. Every both-route hit inside the fetched
+ * window clears it: the worst case takes the window's last rank on
+ * both routes (limit topK 20 * oversample 2 = 40) and fuses to
+ * 2/(60+40) = 0.02 > 1/62. An explicit minScore (including 0) fully
+ * overrides the default.
+ *
+ * TASK-007 live-loop iteration 2 (machinae-game probe 2026-11-13)
+ * floored a planted relevant note whose best shape was single-route
+ * dense rank 2 (fused 1/62). With the planted notes added to the
+ * labeled set, the offline floor sweep knee sits at 1/(k+2):
+ * recall-of-labeled 0.625 -> 0.667 and forbidden rows 12 -> 16. One
+ * step looser, 1/(k+3), adds zero recall and +8 forbidden rows.
+ */
+export const FUSED_SCORE_FLOOR = 1 / (RRF_RANKER_K + 2);
+/**
+ * CANDIDATE_OVERSAMPLE: each route asks for this many times the
+ * caller's limit, so dedupe and the minScore floor still leave a full
+ * page of results to return.
+ */
+export const CANDIDATE_OVERSAMPLE = 2;
 /**
  * BuildFilterExpr renders FilterCriteria into a Milvus scalar expression
  * in fixed clause order (scope, trigger_extensions, trigger_frameworks,

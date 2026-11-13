@@ -74,10 +74,15 @@ const { MilvusClient, RRFRanker, MetricType } = require('@zilliz/milvus2-sdk-nod
 
 // Production pieces imported, never retyped: the embedder (model id,
 // query: prefix, cache layout via core constants), the exact search
-// projection + status gate from service/lib, and the shared names from
-// core/lib.
+// projection, tuning constants + status gate from service/lib, and the
+// shared names from core/lib.
 const { createEmbedder } = await import('../../packages/service/lib/embedder.js')
-const { SEARCH_OUTPUT_FIELDS } = await import('../../packages/service/lib/search.js')
+const {
+  SEARCH_OUTPUT_FIELDS,
+  RRF_RANKER_K,
+  DENSE_SEARCH_EF,
+  CANDIDATE_OVERSAMPLE,
+} = await import('../../packages/service/lib/search.js')
 const { assertOk } = await import('../../packages/service/lib/milvus/ok.js')
 const {
   MILVUS_COLLECTION,
@@ -90,12 +95,10 @@ const { EVAL_QUERIES, matchesLabel } = await import('./queries-labels.mjs')
 const PORT_FILE = process.env.MEMLITE_JSON
   ?? '/home/derek/.dsh/obsidian-mem-db/.memlite.json'
 const REQUEST_TIMEOUT_MS = 60_000
-// Production knobs (packages/service/src/search.ts): RRF_RANKER_K = 60,
-// DENSE_SEARCH_EF = 64, CANDIDATE_OVERSAMPLE = 2. Not exported from lib,
-// so the defaults are stated here with this citation; the CLI overrides them.
-const RANKER_K_DEFAULT = 60
-const DENSE_SEARCH_EF = 64
-const OVERSAMPLE_DEFAULT = 2
+// The imported search.ts constants (RRF_RANKER_K, DENSE_SEARCH_EF,
+// CANDIDATE_OVERSAMPLE) seed the CLI defaults and ef is never a knob, so
+// harness defaults track production without restating its values; the
+// CLI still overrides rrf-k and oversample per run.
 const MODES = ['legacy-hybrid', 'split-rrf']
 
 const USAGE = `recall-eval.mjs — offline recall metrics against the live production collection (read-only)
@@ -107,10 +110,10 @@ Usage:
   --dense-radius N     dense COSINE radius; EXCLUSIVE lower bound (split-rrf only)
   --dense-range  N     dense range_filter; INCLUSIVE upper bound (split-rrf only)
   --sparse-radius N    client-side BM25 floor: keep hits with -score >= N (split-rrf only)
-  --rrf-k N            RRF fusion k (default ${RANKER_K_DEFAULT}); RRFRanker(k) in legacy-hybrid
+  --rrf-k N            RRF fusion k (default ${RRF_RANKER_K}, imported from search.ts); RRFRanker(k) in legacy-hybrid
   --min-score N        floor on FUSED scores before the top-k cut (default: none)
   --top-k N            page size (default ${SEARCH_DEFAULT_TOP_K})
-  --oversample N       each route fetches topK * N candidates (default ${OVERSAMPLE_DEFAULT})
+  --oversample N       each route fetches topK * N candidates (default ${CANDIDATE_OVERSAMPLE}, imported from search.ts)
   --label NAME         results file stem (default: the mode) -> scripts/eval/results/NAME.json
   --out PATH           explicit artifact path (overrides --label placement)
   --help               this text
@@ -122,10 +125,10 @@ function parseArgs(argv) {
     denseRadius: undefined,
     denseRange: undefined,
     sparseRadius: undefined,
-    rrfK: RANKER_K_DEFAULT,
+    rrfK: RRF_RANKER_K,
     minScore: undefined,
     topK: SEARCH_DEFAULT_TOP_K,
-    oversample: OVERSAMPLE_DEFAULT,
+    oversample: CANDIDATE_OVERSAMPLE,
     label: null,
     out: null,
   }

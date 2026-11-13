@@ -7,13 +7,14 @@
  * PLAN-milvus-tuning-TASK-012-cross-encoder-reranker.md).
  *
  * The page under reranking is reproduced exactly from recall-eval's
- * split-rrf with production's committed constants (packages/service/src/
- * search.ts: radius 0.78 exclusive, range_filter 1.0, ef 64, client-side
- * BM25 floor -score >= 2.5, client RRF(60), fused floor 1/(60+1), topK 6,
- * oversample 2). What survives that page is the reranker's input; nothing
- * refills it. Cutoffs are applied on the sigmoid probability and, separately,
- * the page is re-sorted by it; cutoff metrics are order-independent, so the
- * sweep table is the re-sort's table too.
+ * split-rrf with production's own tuning constants, imported from
+ * packages/service/lib/search.ts's emitted module (radius exclusive
+ * lower bound, range_filter, ef, client-side BM25 floor, client RRF,
+ * the shipped FUSED_SCORE_FLOOR, topK, oversample). What survives that
+ * page is the reranker's input; nothing refills it. Cutoffs are applied
+ * on the sigmoid probability and, separately, the page is re-sorted by
+ * it; cutoff metrics are order-independent, so the sweep table is the
+ * re-sort's table too.
  *
  * WHY the pipeline's own score is bypassed: TextClassificationPipeline
  * (installed @huggingface/transformers 4.3.2, src/pipelines/
@@ -58,11 +59,21 @@ const require = createRequire(import.meta.url)
 const { MilvusClient, MetricType } = require('@zilliz/milvus2-sdk-node')
 
 // Production pieces imported, never retyped (same seams as recall-eval):
-// the embedder (model id, query: prefix, cache layout via core constants),
-// the exact search projection + status gate from service/lib, and the
-// shared names + modelCacheDir from core/lib.
+// the embedder (model id, query: prefix, cache layout via core
+// constants), the exact search projection + production tuning constants
+// + status gate from service/lib, and the shared names + modelCacheDir
+// from core/lib.
 const { createEmbedder } = await import('../../packages/service/lib/embedder.js')
-const { SEARCH_OUTPUT_FIELDS } = await import('../../packages/service/lib/search.js')
+const {
+  SEARCH_OUTPUT_FIELDS,
+  RRF_RANKER_K,
+  DENSE_SEARCH_EF,
+  DENSE_SEARCH_RADIUS,
+  DENSE_RANGE_MAX,
+  SPARSE_SEARCH_RADIUS,
+  FUSED_SCORE_FLOOR,
+  CANDIDATE_OVERSAMPLE,
+} = await import('../../packages/service/lib/search.js')
 const { assertOk } = await import('../../packages/service/lib/milvus/ok.js')
 const {
   MILVUS_COLLECTION,
@@ -77,16 +88,11 @@ const PORT_FILE = process.env.MEMLITE_JSON
   ?? '/home/derek/.dsh/obsidian-mem-db/.memlite.json'
 const REQUEST_TIMEOUT_MS = 60_000
 
-// Production knobs copied from packages/service/src/search.ts (they are
-// module-private there; recall-eval.mjs carries the same citation). The
-// page under reranking IS production, so these do not vary by CLI.
-const RANKER_K = 60 // RRF_RANKER_K
-const DENSE_SEARCH_EF = 64 // DENSE_SEARCH_EF
-const DENSE_SEARCH_RADIUS = 0.78 // DENSE_SEARCH_RADIUS (exclusive lower bound)
-const DENSE_RANGE_MAX = 1.0 // DENSE_RANGE_MAX
-const SPARSE_SEARCH_RADIUS = 2.5 // SPARSE_SEARCH_RADIUS (client-side -score floor)
-const FUSED_SCORE_FLOOR = 1 / (RANKER_K + 1) // FUSED_SCORE_FLOOR (TASK-009)
-const CANDIDATE_OVERSAMPLE = 2 // CANDIDATE_OVERSAMPLE
+// The page under reranking IS production, so every knob rides the
+// constants search.ts exports (imported above; recall-eval.mjs carries
+// the same seam) and nothing varies by CLI. WHY: this harness used to
+// restate them and its fused floor drifted behind TASK-007; the import
+// keeps the shipped values authoritative.
 const TOP_K = SEARCH_DEFAULT_TOP_K
 
 // The reranker under evaluation. dtype q8 matches production's embedder
@@ -112,10 +118,12 @@ Usage:
   --out PATH           explicit artifact path (overrides --label placement)
   --help               this text
 
-The candidate page is fixed at production constants (search.ts): dense COSINE
-radius 0.78 range_filter 1.0 ef 64 + BM25 with client floor 2.5, client RRF(60),
-fused floor 1/61, topK ${TOP_K}, oversample ${CANDIDATE_OVERSAMPLE}. No knobs change it;
-this harness only decides what the reranker would do to that page.
+The candidate page is fixed at the constants search.ts exports (imported,
+never restated): dense COSINE radius ${DENSE_SEARCH_RADIUS} (exclusive) range_filter
+${DENSE_RANGE_MAX} ef ${DENSE_SEARCH_EF} + BM25 with client floor ${SPARSE_SEARCH_RADIUS}, client
+RRF(${RRF_RANKER_K}), fused floor ${FUSED_SCORE_FLOOR}, topK ${TOP_K},
+oversample ${CANDIDATE_OVERSAMPLE}. No knobs change it; this harness only decides what
+the reranker would do to that page.
 `
 
 function parseArgs(argv) {
@@ -183,12 +191,12 @@ function standaloneHits(response) {
 }
 
 // productionPage implements the CURRENT production dispatch exactly (the
-// split-rrf recall-eval mode with search.ts constants, plus the fused-floor
-// + top-k cut search.ts applies after fusion): standalone dense with the
-// radius band, standalone sparse, client-side BM25 floor, client-side
-// RRF(k=60) fusion (fused += 1/(k+rank), rank from 1), fused-desc then
-// chunk_id-asc sort, fused floor 1/61, slice to topK. That sliced page is
-// the reranker's input; nothing refills a cut row.
+// split-rrf recall-eval mode with the imported search.ts constants, plus
+// the fused-floor + top-k cut search.ts applies after fusion): standalone
+// dense with the radius band, standalone sparse, client-side BM25 floor,
+// client-side RRF(RRF_RANKER_K) fusion (fused += 1/(k+rank), rank from 1),
+// fused-desc then chunk_id-asc sort, FUSED_SCORE_FLOOR cut, slice to topK.
+// That sliced page is the reranker's input; nothing refills a cut row.
 async function productionPage(client, embedder, query) {
   const dense = await embedder.embedQuery(query)
   const candidateLimit = TOP_K * CANDIDATE_OVERSAMPLE
@@ -224,7 +232,7 @@ async function productionPage(client, embedder, query) {
   const contribute = (hits) => {
     hits.forEach((hit, index) => {
       const entry = fused.get(hit.chunk_id) ?? { row: hit, fused: 0 }
-      entry.fused += 1 / (RANKER_K + index + 1)
+      entry.fused += 1 / (RRF_RANKER_K + index + 1)
       fused.set(hit.chunk_id, entry)
     })
   }
@@ -667,7 +675,7 @@ async function main() {
       production: {
         topK: TOP_K,
         oversample: CANDIDATE_OVERSAMPLE,
-        rrfK: RANKER_K,
+        rrfK: RRF_RANKER_K,
         denseEf: DENSE_SEARCH_EF,
         denseRadius: DENSE_SEARCH_RADIUS,
         denseRange: DENSE_RANGE_MAX,

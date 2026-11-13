@@ -65,8 +65,10 @@ FUSED scores only, both modes — never raw BM25 (G7).
 | `--label` | the mode | both | artifact stem → `scripts/eval/results/NAME.json` |
 | `--out` | — | both | explicit artifact path (overrides the `--label` placement) |
 
-Defaults for `--rrf-k`/`--oversample`/ef mirror the production constants
-in `search.ts` (`RRF_RANKER_K=60`, `CANDIDATE_OVERSAMPLE=2`, `ef=64`).
+Defaults for `--rrf-k`/`--oversample`/ef ARE the production constants:
+`recall-eval.mjs` imports `RRF_RANKER_K`, `CANDIDATE_OVERSAMPLE`, and
+`DENSE_SEARCH_EF` from `packages/service/lib/search.js`, so harness
+defaults track `search.ts` without restating its values.
 
 ## Usage
 
@@ -143,9 +145,10 @@ embedded once per run.
 ## Cross-encoder rerank study (TASK-012)
 
 `cross-encoder-rerank.mjs` replays the same query set through the CURRENT
-production page (its own copy of the split-rrf page computation pinned at
-the `search.ts` constants: radius 0.78, range 1.0, ef 64, sparse floor 2.5,
-RRF 60, fused floor 1/61, topK 6), scores every surviving row with
+production page (its own split-rrf page computation driving the constants
+`search.ts` exports, imported from `packages/service/lib/search.js`:
+radius, range, ef, sparse floor, RRF k, `FUSED_SCORE_FLOOR`, topK,
+oversample), scores every surviving row with
 `Xenova/bge-reranker-base` via `sigmoid(raw logit)`, and reports the
 cutoff sweep, the per-cutoff flipped-row ledger, per-class probability
 distributions, and latency. It answers only "what would a post-fusion

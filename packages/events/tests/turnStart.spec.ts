@@ -366,12 +366,15 @@ describe('guidanceLine', () => {
   })
 })
 
-// TASK-045: while the summed recall injections (registry.totalRecallTokensUsed,
-// the same number the service echoes through globalMemoryIndex) sit past
-// budgets.globalMemoryTokens, turn-start swaps the recall sections for the
-// memory_dream compaction pointer.
+// TASK-045 + TASK-002 (PLAN-budget-reminder Q-SUPPRESSION: suppression kept):
+// while the summed recall injections (registry.totalRecallTokensUsed, the
+// same number the service echoes through globalMemoryIndex) sit past
+// budgets.globalMemoryTokens, turn-start recall is fully suppressed: no
+// recall, no pinned global file, no guidance, and since the reminder moved
+// to the turn-end steer (TASK-003), no budget notice either. The flip is
+// strictly-over: usage exactly at the cap still gets fresh recall.
 describe('global memory budget switch', () => {
-  it('injects the compaction pointer instead of recall sections when over budget', async () => {
+  it('injects nothing but the absence of a budget notice when over budget', async () => {
     const { agent, memory, preStep, registry, scans } = turnStartHarness({
       searchResults: [factA, factB],
       globalMemoryTokens: 100,
@@ -383,16 +386,16 @@ describe('global memory budget switch', () => {
     await settled()
     expect(memory.searchRequests).toHaveLength(0)
     expect(scans).toHaveLength(0) // the manifest scan never runs either
+    // The compaction pointer is gone (TASK-002): an over-budget flow with
+    // no pending provision notice injects nothing at all, so the old
+    // pointer snapshot is replaced by the absence of any budget wording.
     const texts = agent.injected.map((message) => message.content[0]!.text)
-    expect(texts).toHaveLength(1)
-    expect(texts[0]).toContain('global memory recall budget is spent')
-    expect(texts[0]).toContain('memory_dream')
-    expect(texts[0]).toContain('101 of 100')
-    // TASK-002 wording: the pointer names the window the number covers.
-    expect(texts[0]).toContain('tokens injected since the last successful dream or host restart')
+    expect(texts).toHaveLength(0)
+    expect(texts.filter((text) => text.includes('budget'))).toHaveLength(0)
     expect(recalledBlocks(agent)).toHaveLength(0)
-    // The pointer itself is accounted; the total keeps the truth straight.
-    expect(registry.totalRecallTokensUsed()).toBeGreaterThan(101)
+    // The suppressed flow injects nothing, so it accounts nothing: the
+    // total is still exactly what the prior session spent.
+    expect(registry.totalRecallTokensUsed()).toBe(101)
   })
 
   it('flips exactly at the cap: usage == budget still gets fresh recall', async () => {
@@ -407,10 +410,11 @@ describe('global memory budget switch', () => {
     await over.preStep(1, 1)
     await settled()
     expect(recalledBlocks(over.agent)).toHaveLength(0)
-    expect(over.agent.injected).toHaveLength(1)
+    // cap + 1 flips the whole flow to suppression: zero injections.
+    expect(over.agent.injected).toHaveLength(0)
   })
 
-  it('the one-time notice still precedes the pointer', async () => {
+  it('the one-time notice is still delivered while over budget, alone', async () => {
     const { agent, preStep, registry } = turnStartHarness({
       searchResults: [factA],
       globalMemoryTokens: 10,
@@ -419,11 +423,15 @@ describe('global memory budget switch', () => {
     await preStep(1, 1)
     await settled()
     const texts = agent.injected.map((message) => message.content[0]!.text)
-    expect(texts[0]).toBe(DEFAULT_NOTICE)
-    expect(texts[1]).toContain('memory_dream')
+    // TASK-046 carry-over: the budget skip must not swallow the pending
+    // provision notice; it is the only injection the flow makes.
+    expect(texts).toEqual([DEFAULT_NOTICE])
+    expect(texts.filter((text) => text.includes('budget'))).toHaveLength(0)
+    // The delivered notice's tokens still reach the global accounting.
+    expect(registry.totalRecallTokensUsed()).toBeGreaterThan(11)
   })
 
-  it('the over-budget pointer returns before the global files are even fetched', async () => {
+  it('an over-budget session fetches no recall and injects nothing', async () => {
     const { agent, memory, preStep, registry } = turnStartHarness({
       searchResults: [factA],
       globalSources: [globalAnchor],
@@ -433,10 +441,11 @@ describe('global memory budget switch', () => {
     registry.addRecallTokens('agent-0', 101)
     await preStep(1, 1)
     await settled()
+    // The suppression gate returns before the pinned global files are
+    // fetched and before the search recall.
     expect(memory.globalMemorySourcesCalls).toBe(0)
-    const texts = agent.injected.map((message) => message.content[0]!.text)
-    expect(texts).toHaveLength(1)
-    expect(texts[0]).toContain('memory_dream')
+    expect(memory.searchRequests).toHaveLength(0)
+    expect(agent.injected).toHaveLength(0)
   })
 })
 

@@ -23,6 +23,10 @@
     chunk-id hashing
   - Deterministic wake_keywords / trigger_extensions / trigger_frameworks
     extraction (heuristic; the optional LLM pass lives in service)
+  - The one global memory budget rule: the strictly-over
+    `isOverGlobalBudget` gate plus the shared remedy fragments
+    (`MANUAL_COMPACTION_RECIPE`, `MANUAL_COMPACTION_APPROVAL`,
+    `DREAM_RUN_SUGGESTION`) every over-budget surface composes verbatim
 - **service** is the `ctx.obsidianMem` Cordis service:
   - `ensureMemoryAccess()`: the idempotent lazy-provisioning seam. The first
     tool call or lifecycle hook that touches memory provisions the default

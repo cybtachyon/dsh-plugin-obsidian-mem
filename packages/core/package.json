@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-obsidian-mem-core",
   "version": "0.0.1",
-  "description": "Pure, framework-free domain model for the dsh Obsidian Mem plugin: VaultConfig, MemoryNote frontmatter, Markdown chunking, chunk-id hashing, wake-keyword extraction, and the constants/intents shared by the service, tools, and lifecycle hooks",
+  "description": "Pure, framework-free domain model for the dsh Obsidian Mem plugin: VaultConfig, MemoryNote frontmatter, Markdown chunking, chunk-id hashing, wake-keyword extraction, the one global-memory-budget rule and its shared remedy fragments, and the constants/intents shared by the service, tools, and lifecycle hooks",
   "keywords": [
     "dsh",
     "dsh-plugin",

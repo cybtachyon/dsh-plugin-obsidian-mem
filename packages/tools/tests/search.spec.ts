@@ -160,6 +160,14 @@ describe('memory_search rendering', () => {
     expect(text).toContain('2. /vaults/ro/markdown/legacy.md')
   })
 
+  it('omits the header separator when a note has no section header', async () => {
+    const headerless = [{ ...sectionRows()[0]!, section_header: '' }]
+    const value = await search(makeService(headerless), { query: 'deploy' })
+    const text = renderTool(value)
+    expect(text).toContain('1. /vaults/shared/markdown/deploys.md\n')
+    expect(text).not.toContain('deploys.md #')
+  })
+
   it('answers the empty result with guidance', async () => {
     const value = await search(makeService([]), { query: 'nothing matches' })
     const text = renderTool(value)

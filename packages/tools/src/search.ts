@@ -187,7 +187,7 @@ export function renderSearch(value: SearchValue): string {
     return `${notice}No memory sections matched "${value.query}". Broaden the wording or drop the scope/ext filters; if nothing nearby exists, the fact is worth saving with memory_write.`
   }
   const blocks = value.sections.map((section, index) => [
-    `${index + 1}. ${section.path} # ${section.section_header}`,
+    `${index + 1}. ${section.path}${section.section_header === '' ? '' : ` # ${section.section_header}`}`,
     `   (score ${section.score.toFixed(4)}, scope ${section.scope || 'unset'}, vault ${section.vault} [${section.vault_mode}])`,
     indent(section.snippet),
     ...(section.snippet_truncated ? ['   [section snippet truncated]'] : []),

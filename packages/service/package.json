@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-obsidian-mem-service",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Service Definition for the dsh Obsidian Mem capability seam (ctx.obsidianMem): the vault registry, embedder, Milvus-Lite lifecycle, indexer manager, hybrid search, and the audit/dream compaction engine behind the memory_* tools",
   "keywords": [
     "dsh",

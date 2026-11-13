@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-obsidian-mem-tools",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Model-facing tools for the dsh Obsidian Mem plugin: memory_read, memory_search, memory_write, memory_dream, and memory_audit, plus the system-prompt section that tells the agent when to reach for them",
   "keywords": [
     "dsh",

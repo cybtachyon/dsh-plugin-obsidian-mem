@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-obsidian-mem",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "DeepSeek Harness plugin that turns Markdown vaults (Obsidian-style) into shared agent memory: vector recall over Milvus-Lite, human-editable memory notes, and the five memory_read/search/write/dream/audit tools with lifecycle-hooked automatic recall. Installable bundle that mounts the obsidianMem service, host routes, tools, and lifecycle events as one profile layer.",
   "keywords": [
     "dsh",
@@ -22,6 +22,17 @@
   "packageManager": "pnpm@12.18.0",
   "engines": {
     "node": "^22.19 || >=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cybtachyon/dsh-plugin-obsidian-mem"
+  },
+  "homepage": "https://github.com/cybtachyon/dsh-plugin-obsidian-mem#readme",
+  "bugs": {
+    "url": "https://github.com/cybtachyon/dsh-plugin-obsidian-mem/issues"
   },
   "dsh": {
     "bundle": {

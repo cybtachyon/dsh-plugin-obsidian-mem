@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-obsidian-mem-events",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Lifecycle hooks for the dsh Obsidian Mem plugin: turn-start recall injection, Read/Think-stream intercepts, and the turn-end save/audit reminder, all gated by a per-session memory budget",
   "keywords": [
     "dsh",

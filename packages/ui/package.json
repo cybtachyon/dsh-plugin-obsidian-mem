@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-obsidian-mem-ui",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Host HTTP routes for the dsh Obsidian Mem plugin: the /obsidian-mem/* API the Web GUI settings card calls to manage vaults, trigger indexing, and read audit/dream state",
   "keywords": [
     "dsh",

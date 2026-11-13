@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-obsidian-mem-bundle",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Installable meta-package for the dsh Obsidian Mem plugin: no source, just the cordis.patch.yml that wires the service, ui, tools, and events into one profile layer",
   "keywords": [
     "dsh",

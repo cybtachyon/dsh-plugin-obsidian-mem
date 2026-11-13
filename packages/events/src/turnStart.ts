@@ -33,13 +33,14 @@ import { firstUserText } from './host.js'
 import { type SessionRegistry } from './sessions.js'
 import {
   collectFreshSources,
+  deliverProvisionNotice,
   type FreshSource,
   fireAndForget,
   injectNotice,
-  injectProvisionNotice,
   logSearchFailure,
   markSourceInjected,
   messageIdFactory,
+  retainProvisionNotice,
   runGuarded,
   sessionWorkspaceCwd,
 } from './toolkit.js'
@@ -128,9 +129,11 @@ async function runTurnStartRecall(
   let injectedTokens = 0
 
   // Step 0: lazy provisioning; the trigger call answers the one-time
-  // default-vault notice, which reads first, exactly once.
-  const notice = await memory.ensureMemoryAccess()
-  injectedTokens += injectProvisionNotice(deps.agent, newId, notice)
+  // default-vault notice, which reads first, exactly once. The notice sits
+  // in the registry's pending slot until a flow injects it (TASK-046
+  // carry-over: a skip here must not swallow it).
+  retainProvisionNotice(registry, await memory.ensureMemoryAccess())
+  injectedTokens += deliverProvisionNotice(deps.agent, newId, registry)
 
   // TASK-045: the global memory budget. While the summed recall injections
   // across this process's sessions sit past `budgets.globalMemoryTokens`,

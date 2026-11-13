@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { VaultEntry } from '../../service/lib/index.js'
+import { IndexOfflineError } from '../../service/lib/search.js'
 import type { AssistantStreamFrameMirror, HookLogger } from '../src/host.ts'
 import { mountLifecycle } from '../src/index.ts'
 import { installThinkIntercept, extractCompletedThinkBlocks, THINK_QUERY_MAX_CHARS } from '../src/thinkIntercept.ts'
@@ -62,6 +63,7 @@ interface Harness {
 function harness(options: {
   budgets?: Partial<FakeMemoryService['config']['budgets']>
   searchResults?: ReturnType<typeof memoryResult>[]
+  searchError?: Error
   notice?: string
 } = {}): Harness {
   const tmp = tempDbPath()
@@ -69,6 +71,7 @@ function harness(options: {
     dbPath: tmp.dir,
     ...(options.budgets === undefined ? {} : { budgets: options.budgets }),
     ...(options.searchResults === undefined ? {} : { searchResults: options.searchResults }),
+    ...(options.searchError === undefined ? {} : { searchError: options.searchError }),
     ...(options.notice === undefined ? {} : { notice: options.notice }),
   })
   const ctx = fakeEventsCtx(memory)
@@ -228,6 +231,33 @@ describe('think-stream recall', () => {
       'Default vault created at /v/default',
       expect.stringContaining('terms: debug'),
     ])
+  })
+
+  it('an offline skip keeps the notice pending; a later injection delivers it once', async () => {
+    const h = harness({
+      searchError: new IndexOfflineError('memory index is offline'),
+      notice: 'Default vault created at /v/default',
+    })
+    stream(h.agent, streamStart('a1', 1), textDelta('<think>why does the build fail</think>', 'a1'))
+    await h.settle()
+    expect(h.agent.injected).toHaveLength(0)
+    // The index comes back: the pending slot kept the notice through the
+    // offline skip, and this injection is the one place it reads.
+    h.memory.search = async (request) => {
+      h.memory.searchRequests.push(request)
+      return [topic]
+    }
+    stream(h.agent, streamStart('a2', 2), textDelta('<think>why the rebuild fails</think>', 'a2'))
+    await h.settle()
+    expect(h.agent.injected.map((message) => message.content[0]?.text)).toEqual([
+      'Default vault created at /v/default',
+      expect.stringContaining('terms: why'),
+    ])
+    expect(
+      h.agent.injected.filter((message) =>
+        message.content.some((block) => block.text?.includes('Default vault created')),
+      ),
+    ).toHaveLength(1)
   })
 })
 

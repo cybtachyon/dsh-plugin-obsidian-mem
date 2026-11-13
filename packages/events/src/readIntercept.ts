@@ -37,13 +37,14 @@ import { boundSummary } from './host.js'
 import type { SessionRegistry } from './sessions.js'
 import {
   collectFreshSources,
+  deliverProvisionNotice,
   fireAndForget,
   injectNotice,
-  injectProvisionNotice,
   logSearchFailure,
   makeWarnOnce,
   markSourceInjected,
   messageIdFactory,
+  retainProvisionNotice,
   runGuarded,
   sessionWorkspaceCwd,
   type WarnOnce,
@@ -159,8 +160,10 @@ async function runExactRecall(
   const { memory, registry } = deps
   const budgets = memory.config.budgets
   // Lazy provisioning first: a pending one-time default-vault notice is
-  // prepended to the injection (Decision log).
-  const notice = await memory.ensureMemoryAccess()
+  // prepended to the injection (Decision log). It rides the registry's
+  // pending slot from here to the first flow that actually injects, so the
+  // skips below (offline search, nothing fresh) never swallow it.
+  retainProvisionNotice(registry, await memory.ensureMemoryAccess())
   let results: MemorySearchResult[]
   try {
     results = await memory.searchExactSections({
@@ -180,7 +183,7 @@ async function runExactRecall(
   }
 
   const newId = messageIdFactory(deps)
-  let injectedTokens = injectProvisionNotice(agent, newId, notice)
+  let injectedTokens = deliverProvisionNotice(agent, newId, registry)
   // One envelope: the locality note names the file being read, then the
   // wrapped sections that speak to it.
   const locality = `Obsidian Mem: memory sections related to your read of ${absPath}.`

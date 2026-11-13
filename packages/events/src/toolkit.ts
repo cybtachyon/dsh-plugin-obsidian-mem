@@ -162,14 +162,33 @@ export function injectNotice(
 export const PROVISION_NOTICE_SUMMARY = 'obsidian-mem: default memory vault provisioned'
 
 /**
- * InjectProvisionNotice prepends the one-time provisioning notice when
- * ensureMemoryAccess answered one; answers its token cost (0 without).
+ * RetainProvisionNotice stores the notice the flow's ensureMemoryAccess
+ * answered in the registry's pending slot (no-op without one), so a later
+ * injection skip in this flow (offline index, nothing fresh, spent Think
+ * shot) cannot lose it. Every flow calls this right after ensureMemoryAccess
+ * and delivers through deliverProvisionNotice at its first real injection.
  */
-export function injectProvisionNotice(
+export function retainProvisionNotice(
+  registry: SessionRegistry,
+  notice: string | undefined,
+): void {
+  if (notice !== undefined) {
+    registry.holdProvisionNotice(notice)
+  }
+}
+
+/**
+ * DeliverProvisionNotice injects the registry's pending default-vault notice,
+ * when one waits, as the flow's first message and answers its token cost (0
+ * when nothing was pending). Taking clears the slot, so the notice ships
+ * exactly once across the turn-start, Read, and Think flows.
+ */
+export function deliverProvisionNotice(
   agent: LiveAgent,
   newId: () => string,
-  notice: string | undefined,
+  registry: SessionRegistry,
 ): number {
+  const notice = registry.takeProvisionNotice()
   return notice === undefined ? 0 : injectNotice(agent, newId(), PROVISION_NOTICE_SUMMARY, [notice])
 }
 

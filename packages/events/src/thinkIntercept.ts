@@ -53,13 +53,14 @@ import { boundSummary } from './host.js'
 import { isWakeTerm, type SessionRegistry } from './sessions.js'
 import {
   collectFreshSources,
+  deliverProvisionNotice,
   fireAndForget,
   injectNotice,
-  injectProvisionNotice,
   logSearchFailure,
   makeWarnOnce,
   markSourceInjected,
   messageIdFactory,
+  retainProvisionNotice,
   runGuarded,
   type WarnOnce,
 } from './toolkit.js'
@@ -271,8 +272,10 @@ async function runThinkRecall(
 ): Promise<void> {
   const { memory, registry } = deps
   // Lazy provisioning first: a pending one-time default-vault notice is
-  // prepended to the injection (the pattern TASK-041/042 established).
-  const notice = await memory.ensureMemoryAccess()
+  // prepended to the injection (the pattern TASK-041/042 established). It
+  // waits in the registry's pending slot through the offline-search, no-fresh,
+  // and spent-shot returns below, so none of them swallows it.
+  retainProvisionNotice(registry, await memory.ensureMemoryAccess())
   let results: MemorySearchResult[]
   try {
     results = await memory.search({
@@ -296,7 +299,7 @@ async function runThinkRecall(
   }
 
   const newId = messageIdFactory(deps)
-  let injectedTokens = injectProvisionNotice(deps.agent, newId, notice)
+  let injectedTokens = deliverProvisionNotice(deps.agent, newId, registry)
   const header = `Obsidian Mem: memories matched by your thinking, terms: ${matched.join(', ')}.`
   injectedTokens += injectNotice(
     deps.agent,

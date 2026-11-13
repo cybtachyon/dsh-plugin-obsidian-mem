@@ -98,6 +98,13 @@ const sectionA = memoryResult({
   updated_at: 1_700_000_000_555,
 })
 
+const sectionB = memoryResult({
+  chunk_id: 2,
+  source_path: 'markdown/vite.md',
+  chunk_text: 'builds go through vite here',
+  updated_at: 1_700_000_000_999,
+})
+
 describe('tools/result filter matrix', () => {
   it('ignores other tools, memory_read included (a different name, never read)', async () => {
     const { memory, read } = readHarness({ exactResults: [sectionA] })
@@ -236,6 +243,38 @@ describe('request wiring and injected envelope', () => {
     read()
     await settled()
     expect(agent.injected).toHaveLength(0)
+  })
+
+  it('an offline skip keeps the notice pending; the next injection delivers it once', async () => {
+    const { agent, advance, memory, read } = readHarness({
+      exactError: new IndexOfflineError('memory index is offline'),
+    })
+    read({ arguments: { file_path: '/work/project/src/A.tsx' } })
+    await settled()
+    expect(agent.injected).toHaveLength(0)
+    // The index comes back; the notice rode the registry's pending slot
+    // through the offline skip and now reads exactly once.
+    let answer = [sectionA]
+    memory.searchExactSections = async (request) => {
+      memory.exactRequests.push(request)
+      return answer
+    }
+    read({ arguments: { file_path: '/work/project/docs/B.md' } })
+    await settled()
+    expect(agent.injected.map((message) => message.content[0]!.text)).toEqual([
+      expect.stringContaining('default memory vault'),
+      expect.stringContaining('your read of /work/project/docs/B.md'),
+    ])
+    // Exactly once: a later successful injection adds recall, never a repeat.
+    answer = [sectionB]
+    advance(THROTTLE_MS + 1)
+    read({ arguments: { file_path: '/work/tree2/C.md' } })
+    await settled()
+    const noticeMessages = agent.injected.filter((message) =>
+      message.content.some((block) => block.text !== undefined && block.text.includes('default memory vault')),
+    )
+    expect(noticeMessages).toHaveLength(1)
+    expect(agent.injected).toHaveLength(3)
   })
 
   it('fires again after the window from a different directory', async () => {

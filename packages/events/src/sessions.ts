@@ -197,6 +197,15 @@ export class SessionRegistry {
 
   /** Live records, keyed by session id; disposed sessions leave. */
   private readonly sessions = new Map<string, SessionRecord>()
+  /**
+   * The one-time default-vault notice waiting for its first successful
+   * injection (TASK-046 carry-over). A recall flow that fetched the notice
+   * from the service and then skipped its injection (offline index, nothing
+   * fresh, spent Think shot) retains it here instead of losing it; the next
+   * flow that injects anything takes it. Live-only: never persisted, the
+   * service re-answers the notice to its own callers after a restart.
+   */
+  private pendingProvisionNotice: string | null = null
   /** Persisted mirror; authoritative for what the next write serializes. */
   private readonly store = new Map<string, PersistedSession>()
   private loaded = false
@@ -386,6 +395,27 @@ export class SessionRegistry {
       total += record.turnRecallTokensUsed
     }
     return total
+  }
+
+  /**
+   * HoldProvisionNotice retains the one-time default-vault notice a recall
+   * flow fetched but did not yet deliver, so no injection skip can lose it.
+   * A later hold replaces the earlier one (the service answers the notice to
+   * one caller per process, so at most one is ever in flight).
+   */
+  holdProvisionNotice(notice: string): void {
+    this.pendingProvisionNotice = notice
+  }
+
+  /**
+   * TakeProvisionNotice answers the retained notice and clears the slot, so
+   * the delivery is exactly-once across the three recall flows; undefined
+   * when nothing waits.
+   */
+  takeProvisionNotice(): string | undefined {
+    const notice = this.pendingProvisionNotice
+    this.pendingProvisionNotice = null
+    return notice ?? undefined
   }
 
   /** ReadThrottleActive is true while the last Read injection is < 15 s old. */

@@ -16,4 +16,11 @@ writeLedger.ts, index.ts, thinkIntercept.ts, toolkit.ts per the Q2 answer)
 and their specs. Commit each resolution separately from any feature work,
 src+lib same commit, gates green.
 
+Carry-over from TASK-001: `packages/events/tests/sessions.spec.ts`
+pre-existing test "drops TTL-expired sessions and caps the file at the LRU
+bound" never exercises LRU (the TTL prune removes the expired session
+before the LRU check, leaving the store exactly at the cap). Tidy the
+name/assertion mismatch or re-tune the fixture so LRU eviction actually
+runs; TASK-001's new test already covers real LRU eviction.
+
 Depends on: TASK-001..TASK-006.

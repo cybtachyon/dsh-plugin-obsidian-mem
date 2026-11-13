@@ -10,7 +10,13 @@ working tree clean.
    (85/85/78/85) must clear; add coverage where TASK-001/003 branches
    demand it.
 3. `pnpm lint` (`eslint .`).
-4. `prek run --files <every path touched by TASK-001..005>`.
+4. Carry-over nit from TASK-001 (pre-existing, verified at old HEAD): in
+   `packages/service/tests/dream.spec.ts` `deps()`, the `globalIndex`
+   fixture literal omits required `GlobalMemoryIndex.overBudget` under
+   `exactOptionalPropertyTypes`; give it the explicit property. (Only this
+   one fixture; the rest of the ~82 test-tree error groups stay out of
+   scope.)
+5. `prek run --files <every path touched by TASK-001..005>`.
 5. `git status --short` empty; commit any emitted artifacts per the repo's
    tracked-`lib` convention.
 

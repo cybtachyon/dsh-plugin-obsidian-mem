@@ -30,9 +30,12 @@ through the reflection gateway, mirroring the existing
 - Wiring-level: with the fake ctx answering `agentDefaultModel` with
   `{ currentSelection: () => ({ provider: 'p', model: 'm' }) }`, a dream run
   launch sees those values in `create`'s `agentOptions`.
-- With the fake ctx lacking the service, the run falls back per TASK-001
-  precedence (config/override) and, absent those, surfaces the blocked
-  reason rather than launching.
+- With the fake ctx lacking the service, the run is blocked with the
+  provider/model reason and nothing launches: per the plan's Decisions the
+  provider is host-only, so a config/override model alone cannot rescue the
+  pair at the gate (parent ruling on TASK-001 note 2; literal TASK-001
+  spec). Replace the temporary `defaultAgentOptions: () => undefined`
+  stub in `dreamEngine()` as part of this task.
 
 ## Definition of Done
 

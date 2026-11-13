@@ -35,6 +35,13 @@ This is the `export function apply(ctx, config)` + `export const Config` row.
   `globalMemoryIndex()` (TASK-045 shape), `sessionRegistry` handle (TASK-040).
 - Everything defensive: a failed milvus start degrades (status reports), never crashes the
   harness; log via ctx logger.
+- Wiring discipline (ext §2.1/§2.2): static `inject: []` where a row must load inertly in
+  profiles missing a service; every optional seam via scoped `ctx.inject([seam,'tools']…)`
+  (Cordis `inject` entries are hard waits — the `{required,optional}` object form resolves
+  literally and hangs the row, ext issue #8); OPTIONAL host capabilities via reflection
+  gateways `ctx.get('agents')`, `ctx.get('schedule')` → absence degrades to a clean
+  `unavailable`/`blocked` answer, never a dead row. Construction touches no disk; side
+  effects only behind the lazy `ensureMemoryAccess`/enable gate (ext §2.12 discipline).
 
 ## DoD
 

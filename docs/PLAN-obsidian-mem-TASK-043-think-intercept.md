@@ -4,8 +4,12 @@ Depends: TASK-040, TASK-024. `packages/events/src/thinkIntercept.ts`.
 
 ## Scope
 
-- Listener: `agent/assistant-stream` (Scoped<Agent>, {agent, frame}) accumulating per-agent
-  stream text; detect COMPLETED `<think>...</think>` blocks only (closed-tag regex over
+- Listener: `agent/assistant-stream` (Scoped<Agent>, {agent, frame}) registered ON
+  `agent.ctx` from an `agent/created` handler (agent-scoped events do NOT fire on
+  plugin-ctx listeners — dsh-ltm lesson; wrap in agent.ctx.effect + keep disposer keyed by
+  agent in the plugin's own effect). Accumulate per-agent stream text; detect COMPLETED
+  `<think>...</think>` blocks only (no prior art exists for think-stream interception;
+  this is net-new) (closed-tag regex over
   accumulated text; also handle the harness's native thinking frame type if
   AssistantStreamFrame exposes reasoning content — verify shape via inspection; if the
   native channel exists, treat its close as a completed block too).

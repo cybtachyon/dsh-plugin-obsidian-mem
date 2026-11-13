@@ -1,0 +1,42 @@
+# The dsh-plugin-obsidian-mem bundle patch: mounts the whole shared-markdown-
+# vault memory capability as ONE layer over an existing dsh profile.
+#
+# Row order carries no load semantics — activation is service-availability
+# driven — so the seam may appear before or after the consumers that fill it.
+# The user's own profile patch layer can address any row below by `id` to
+# retune it (last write per row wins).
+
+- insert:
+    # Client carrier: mounts the bare package name so the client-module scan
+    # keys the `dsh.client` declaration on it and loads dsh/client.js (the
+    # browser "Obsidian Mem" card) into the boot graph. The scan only maps a
+    # bare package-root entry to its `dsh.client` field, never a subpath, so
+    # this row is what makes the client half reachable. The host module is a
+    # no-op; the capability lives in the four subpath rows below.
+    - id: obsidian-mem
+      name: 'dsh-plugin-obsidian-mem'
+
+    # Service Definition: publishes ctx.obsidianMem, the vault registry, the
+    # embedder, the Milvus-Lite lifecycle, the indexer manager, hybrid search,
+    # and the audit/dream compaction engine. Activation is side-effect free;
+    # ensureMemoryAccess() provisions lazily on first memory use.
+    - id: obsidian-mem-service
+      name: 'dsh-plugin-obsidian-mem/service'
+
+    # Web UI: the host routes (/obsidian-mem/*) behind the settings card:
+    # vault registry CRUD, index state, and audit/dream state.
+    - id: obsidian-mem-ui
+      name: 'dsh-plugin-obsidian-mem/ui'
+
+    # Consumer: the five model-facing memory_* tools (read, search, write,
+    # dream, audit) and their system-prompt section. Injects `obsidianMem`.
+    - id: obsidian-mem-tools
+      name: 'dsh-plugin-obsidian-mem/tools'
+      inject: ['obsidianMem']
+
+    # Lifecycle: turn-start recall injection, the Read and Think-stream
+    # intercepts, the turn-end save/audit reminder, and the recall budget.
+    # Injects `obsidianMem`.
+    - id: obsidian-mem-events
+      name: 'dsh-plugin-obsidian-mem/events'
+      inject: ['obsidianMem']

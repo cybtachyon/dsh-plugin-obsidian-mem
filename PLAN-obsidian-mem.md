@@ -52,7 +52,7 @@ task file lists explicit cross-phase prerequisites.
 
 - [x] [TASK-001-pnpm-workspace-scaffold](docs/PLAN-obsidian-mem-TASK-001-pnpm-workspace-scaffold.md)
 - [x] [TASK-002-branding-docs](docs/PLAN-obsidian-mem-TASK-002-branding-docs.md)
-- [ ] [TASK-003-cordis-patch-carrier](docs/PLAN-obsidian-mem-TASK-003-cordis-patch-carrier.md)
+- [x] [TASK-003-cordis-patch-carrier](docs/PLAN-obsidian-mem-TASK-003-cordis-patch-carrier.md)
 - [ ] [TASK-004-scaffold-green-build](docs/PLAN-obsidian-mem-TASK-004-scaffold-green-build.md)
 
 ### Phase 2: Core domain (packages/core)

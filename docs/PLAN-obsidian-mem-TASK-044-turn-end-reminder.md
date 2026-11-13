@@ -7,12 +7,19 @@ engramory-ext used to wake agents (followup vs inject).
 
 ## Scope
 
-- Detect turn end on the durable session event; skip subagent sessions (Task-040
-  `isSubagent`).
-- Deliver the reminder to the agent using `agent.followup()` (wakes the agent to act) —
-  confirm followup exists on the Agent API via inspection; if absent in this build, fall
-  back to inject + document the limitation. One reminder per turn end, max one per
-  turn number per session.
+- CANONICAL (engramory-ext §2.5, docs/research/engramory-and-ext-findings.md): listen on
+  `agent/turn-stopping` (agent bus, serial; NOT session/event) and deliver via
+  `agent.steer(createUserMessage({content, source:{kind:'plugin:obsidian-mem',
+  form:'notice'}}))`. A listener that steers keeps the turn open once; a per-turn
+  `reminderFired` flag in a `WeakMap<Agent, state>` (dies with the agent, no disposal
+  listener) makes it once-per-turn so the turn can never loop open. Declare the message
+  `kind` via a `MessageSourceMap` module augmentation (Session v4 retired the generic
+  'plugin' kind).
+- Skip conditions: subagent sessions (Task-040 `isSubagent`); trivial turns (greeting list
+  or subject ≤ 24 chars unless it matches /[/\\`]/, the WORK_MARKER rule); turns that
+  already called any memory_* tool (observe via `tools/result`). Ext rejected
+  `tools/post-execute` additionalContexts: a tool-less turn is exactly when the reminder
+  matters.
 - Reminder body: the VERBATIM block from the project spec (see PLAN task body below) with
   `/absolute/path/to/first/shared/vault/.INTENTS.md` replaced by the real path.
 

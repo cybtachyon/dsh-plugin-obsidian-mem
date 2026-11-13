@@ -1,5 +1,7 @@
 # TASK-003 Cordis patch rows and client carrier
 
+Status: done
+
 Depends: TASK-001.
 
 ## Scope

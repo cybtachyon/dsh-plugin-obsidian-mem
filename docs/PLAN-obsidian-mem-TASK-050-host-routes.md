@@ -4,6 +4,14 @@ Depends: TASK-030. `packages/ui/src/routes.ts` (+ ops). Pattern: local-infer
 `packages/ui/src/route.ts` (`scope.webServer.register(route)` on scoped inject of the web
 server service — verify service name via cordis inspection `Service listService`).
 
+## Route canon (ext §2.12)
+
+- ONE route record per path owns all methods: the webServer keys by (kind, path) and
+  THROWS on duplicates (ext killed its whole route scope at boot doing three
+  registrations of one path). Register inside `ctx.effect` with per-route disposers.
+- Body ceiling 64 KiB (413), 415 on non-JSON, 405 + Allow, `cache-control: no-store` on
+  every response; trust fence via `connection.requestRejection(req)` when reachable.
+
 ## Scope
 
 Routes (JSON, no secrets echoed):

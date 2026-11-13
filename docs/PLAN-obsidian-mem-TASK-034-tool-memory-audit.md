@@ -23,6 +23,13 @@ as the canonical reference before implementing.
   memory markdown files, and lists their absolute paths (sorted least-read first).
 - Dreaming schedules summary from config (per Q4 audit↔dream link).
 - Compaction analysis shared with memory_dream (single source of truth in service.audit()).
+- Safety posture (engramory doctor + ext audit canon, findings §1.7/§2.7): audit WRITES
+  NOTHING (no read-stat update, no commits; stat-only listing); optional params
+  `view: 'full'|'topStale'|'oldestUnread'` + `limit` (default 50 rows; rollups cover the
+  whole store); bounded reads (stat size BEFORE parse; notes > 4 MiB flagged, not read;
+  over-budget report is size-only); any store text echoed into the report is quoted and
+  truncated so a hostile note cannot flood or instruct the reader; severity split
+  ISSUE vs INFO.
 
 ## DoD
 

@@ -1,9 +1,18 @@
 # TASK-031 Tool: memory_read
 
-Depends: TASK-030. `packages/tools/src/read.ts`. Register via the ToolRuntime definition
-shape verified in dsh-longterm-memory/src/host/dsh/tools.ts (name, description, parameters
-JSON Schema, output{schema, render}, execute(args, exec)) — re-verify current API with
-`cordis_inspect_query` Service provider before wiring.
+Depends: TASK-030. `packages/tools/src/read.ts`.
+
+## Registration canon (shared by TASK-031..035; ext §2.3)
+
+- `scope.tools.register({ name, description, parameters, output: { schema, render },
+  timeoutMs, execute, presentCall })` through the tools seam via SCOPED
+  `ctx.inject([seam,'tools'], cb)`. Expected failures are VALUES in a closed `oneOf`
+  output keyed on `kind` (never throw); range validation lives in execute (DSH schema
+  subset is narrow). `presentCall` → `{card:'generic', kind:'read'|'execute', title,
+  rawInput}`. Timeouts: fast tools 10_000 ms; memory_dream run 300_000 ms.
+- Verify the exact API with `cordis_inspect_query` Service provider before wiring; do not
+  import `@deepseek-ai/dsh-tools`'s defineTool as a static dependency (may not resolve in
+  a third-party plugin's module scope).
 
 ## Scope
 

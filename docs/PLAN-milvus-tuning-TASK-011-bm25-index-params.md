@@ -26,3 +26,20 @@ Scope:
 Definition of Done: candidate sweep evidence in the plan file; adopted/rejected
 verdict; if adopted, schema change + lib + goldens committed, production
 re-indexed with user consent, live recall test green after restart.
+
+## CLOSED: REJECTED offline (2026-11-13, no re-index, no user consent needed)
+
+The task's precondition never became true: keyword-ranking quality was
+not the residual problem. The iteration-1 replay showed the sparse
+route's failure is shared cross-project vocabulary (probe query sparse
+top-12 was 12/12 cross-project notes at relevance 41-75; relevant
+notes absent entirely), and the separability study showed sparse
+relevance distributions overlap by class (medians 16.2 / 11.0 / 11.4).
+k1/b control term-frequency saturation and length normalization; they
+cannot distinguish "shares the words pnpm/vitest/config" from
+genuinely relevant, so no plausible pair lifts the missing relevant
+rows into the window without lifting the co-vocabulary noise too. The
+cost is a destructive production re-index. Superseded for this class
+by the query-hygiene fix (TASK-015 adopted: user-text-only turn-start
+queries remove the manifest vocabulary that fed the shared-word
+matching).

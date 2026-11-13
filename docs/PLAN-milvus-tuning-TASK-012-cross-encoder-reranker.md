@@ -27,3 +27,22 @@ Scope:
 Definition of Done: latency + precision table in the plan file;
 adopted/rejected verdict; if adopted, full gates + live test; the
 calibrated cutoff constant documented where users tune it.
+
+## CLOSED: REJECTED for production (2026-11-13, adopted by nobody)
+
+Prototype + full sweep live in scripts/eval/cross-encoder-rerank.mjs
+and docs/research/cross-encoder-findings.md (commit 41dacb0).
+Verdict per the A4 gate ("substantial positive impact"): reject.
+The zero-labeled-relevant-loss optimum is sigmoid p >= 0.0028
+(forbRate 0.206 -> 0.133, 6 of 13 forbidden rows survive); killing
+them needs p >= 0.07 at recall 0.636 -> 0.409. The re-sort is a no-op
+(best-relevant index 1.286 before and after). Cost paid on every
+recall in every channel: ~0.5 s CPU/query warm + 283 MB model cache.
+And a cutoff past 0.003 would kill the exact live-loop planted-POS
+pattern (typescript-simulation-style.md scores p 0.0029 on its
+machinae query: a zero-shot multilingual reranker rates a
+design-relevance note near zero). Reopen conditions: a fine-tuned
+reranker, or the residual forbidden class surviving the TASK-015
+query-hygiene fix. Integration trap noted for any future attempt:
+transformers.js 4.3.2 softmaxes single-logit models to a constant 1.0;
+production code must sigmoid the raw logit itself.

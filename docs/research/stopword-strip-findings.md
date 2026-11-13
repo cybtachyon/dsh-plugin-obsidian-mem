@@ -313,3 +313,123 @@ accident; none of it drove any per-query regression here.
    moves). The strip neither adds nor removes a pollution FAMILY at
    production knobs; family-level forbidden-rate reduction stays the
    fused-floor / TASK-006 knob territory, not a stopword-list question.
+
+# Sparse floor re-sweep (TASK-006)
+
+Prerequisites applied: (1) `scripts/eval/queries-labels.mjs` re-labeled
+in commit 6c2ae75 (four planted tuning-test entries dropped; both
+machinae queries back to pre-plant ground truth; `relevantLabels` now
+22, the achievable maximum this doc previously could only quote as
+15/22); (2) the sweep ran on post-TASK-018 shipped code (a763d6b
+Han-maximal-run `sparseQueryText`; the lib the harness imports is that
+commit's, all 17 eval queries Latin so 018 changes none of their strip
+output).
+
+Stack: LIVE read-only collection (`milvus_lite-3.2.2`, **205 rows** at
+run time 2026-11-13; the §"Aggregates" pair above ran at 206, and the
+2.5 point's unfloored replay in §"Fused-floor re-check" reproduces the
+strip-ON aggregate 102/20/30, so the 1-row drift never entered the
+candidate window). Fixed knobs, production parity: strip-ON, dense
+radius 0.78 / range 1.0, ef 64, client RRF(60), topK 6, oversample 2,
+and this time `--min-score 0.016129` = the shipped `FUSED_SCORE_FLOOR`
+1/(k+2) (comparability note 4 above: the A/B pair ran floorless, so
+pages here can run SHORT of 6 rows, which is exactly what production
+returns). Lever: `--sparse-radius` grid 2.5 (incumbent), 4.0, 4.5, 5.0,
+5.5. Artifacts (committed): `docs/research/eval-split-strip-on-d078-`
+`s{25,40,45,50,55}-k60-m016129.json`. Reproduce one point with:
+
+```
+node scripts/eval/recall-eval.mjs --mode split-rrf \
+  --dense-radius 0.78 --dense-range 1.0 --sparse-radius 5.0 \
+  --rrf-k 60 --min-score 0.016129 --top-k 6 --oversample 2 \
+  --out docs/research/eval-split-strip-on-d078-s50-k60-m016129.json
+```
+
+Micro aggregates (17 queries; trims = fetched-window candidates the
+floor removes, window total 193, 16/17 queries at the full 12-hit cap):
+
+| radius | trims | returned | R | A | F | . | P@k | forb-rate | recall |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 2.5 | 0 (INERT) | 79 | 19 | 25 | 21 | 14 | 0.241 | 0.266 | 14/22 = 0.636 |
+| 4.0 | 8 | 78 | 19 | 25 | 20 | 14 | 0.244 | 0.256 | 14/22 = 0.636 |
+| 4.5 | 10 | 77 | 19 | 24 | 20 | 14 | 0.247 | 0.260 | 14/22 = 0.636 |
+| 5.0 | 19 | 76 | 19 | 24 | 19 | 14 | 0.250 | 0.250 | 14/22 = 0.636 |
+| 5.5 | 23 | 76 | 19 | 24 | 19 | 14 | 0.250 | 0.250 | 14/22 = 0.636 |
+
+Only three pages move across the whole grid: `milvus-irrelevant-context`
+reorders with the identical class multiset (AAARA -> AARAA at 4.0);
+`typecheck-test-trees` goes RAAFF(5) -> RAAF(4) (trims one F at 4.0) ->
+RAF(3) (trims one A at 4.5); `layout-sidecar-model-cache` goes RFFF(4)
+-> RFF(3) (trims one F at 5.0). Every trimmed page row is F except the
+one typecheck A; R stays 19 and the missed-relevant-label set is
+IDENTICAL at all five points (layout-sidecar 1, machinae-save-restore 1,
+lywa-synonym 2, guestwise-ci 2, guestwise-ticket 2).
+
+**Decision: SPARSE_SEARCH_RADIUS 2.5 -> 5.0** (with a dated evidence
+note on the constant in `packages/service/src/search.ts`; eval-harness
+defaults and the cross-encoder harness follow the constant by import).
+5.0 is the knee: it is ENGAGED (trims 19 of 193 window candidates, the
+value TASK-005's "Knob follow-ups" 2 predicted), forbidden rows fall
+21 -> 19 (forbidden-rate 0.266 -> 0.250) and P@k rises 0.241 -> 0.250,
+while label-granularity recall does not move at 14/22. 5.5 trims
+further (23/193) with zero page movement: shipping 5.5 would buy
+nothing and only deepens the trim margin against future drift. 4.0/4.5
+engage but recover only 1 of the 2 forbidden rows. The
+"inert-but-harmless" option TASK-006 named is therefore NOT taken: an
+ENGAGED value that improves forbidden-rate at zero recall cost exists,
+so the inert 2.5 is retired.
+
+Absolute recall note (14/22 vs the A/B's 15/22 achievable): the fused
+floor this sweep adds for production parity trims one relevant row that
+the floorless A/B pages kept. §"Fused-floor re-check" below names it and
+its shape; it is NOT the sparse floor's doing (14/22 at 2.5 already).
+
+# Fused-floor re-check (TASK-006)
+
+Method (the TASK-007-era replay): recompute each committed artifact's
+page CLIENT-SIDE from its `routeCandidates` with the harness's fusion
+(`fused += 1/(k+rank)`, rank from 1, merged by `chunk_id`, sorted fused
+desc then chunk_id asc, topK 6), then floor the FUSED scores at
+none, 1/61..1/66. Row metadata (source_path, section_header) for EVERY
+candidate chunk_id comes from read-only `query` batches against the live
+collection, so floors looser than a run's own `--min-score` still
+classify every candidate (0 unknown rows). Replayed on the two sweep
+points that bracket the shipped change: s25 (incumbent sparse floor) and
+s50 (new sparse floor). Micro aggregates:
+
+| floor | s25 ret | R | F | P@k | forb | recall | s50 ret | R | F | P@k | forb | recall |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| none | 102 | 20 | 30 | 0.196 | 0.294 | 15/22 = 0.682 | 102 | 20 | 30 | 0.196 | 0.294 | 15/22 = 0.682 |
+| 1/61 | 65 | 18 | 13 | 0.277 | 0.200 | 14/22 = 0.636 | 61 | 18 | 11 | 0.295 | 0.180 | 14/22 = 0.636 |
+| 1/62 | 79 | 19 | 21 | 0.241 | 0.266 | 14/22 = 0.636 | 76 | 19 | 19 | 0.250 | 0.250 | 14/22 = 0.636 |
+| 1/63 | 93 | 19 | 27 | 0.204 | 0.290 | 14/22 = 0.636 | 92 | 19 | 26 | 0.207 | 0.283 | 14/22 = 0.636 |
+| 1/64 | 100 | 20 | 29 | 0.200 | 0.290 | 15/22 = 0.682 | 100 | 20 | 29 | 0.200 | 0.290 | 15/22 = 0.682 |
+| 1/65 | 101 | 20 | 29 | 0.198 | 0.287 | 15/22 = 0.682 | 101 | 20 | 29 | 0.198 | 0.287 | 15/22 = 0.682 |
+| 1/66 | 102 | 20 | 30 | 0.196 | 0.294 | 15/22 = 0.682 | 102 | 20 | 30 | 0.196 | 0.294 | 15/22 = 0.682 |
+
+(The agreement floor 2/(k+1), the separate `READ_FALLBACK_AGREEMENT_FLOOR`
+for the Read fallback leg, keeps 7 rows on s25 and 6 on s50 at 6/22 and
+5/22 recall; out of scope for the hybridSearch default, consistent with
+that constant's own note.)
+
+Verdict: **FUSED_SCORE_FLOOR 1/(k+2) re-confirmed, unchanged** (dated
+re-check line added to the constant's note):
+
+- Looser: 1/63 adds ZERO label hits and +6 (s25) / +7 (s50) forbidden
+  rows, the same direction TASK-007 measured. The one label a looser
+  floor could recover is `guestwise/ddev-playwright-pnpm.md` on
+  `guestwise-ci-playwright`, which only reaches the page as a
+  single-route BM25 rank-4 row (fused 1/64): it needs 1/(k+4), not a
+  one-step loosening, and 1/64 already re-admits 8-10 forbidden rows.
+  No 1/(k+2)-adjacent value reaches it; that label is the fused floor's
+  accepted cost, and it is the row behind this sweep's 15 -> 14
+  absolute recall shift against the floorless A/B.
+- Tighter: 1/61 keeps recall at 14/22 on today's pages and cuts 8
+  forbidden rows, and the only relevant ROW it loses is a duplicate
+  chunk of an already-recalled note (`milvus-lite-verified-bootstrap-`
+  `...` second chunk, single-route dense rank 2, fused exactly 1/62);
+  the label survives through that note's both-route rank-1 chunk. That
+  is an artifact of THIS corpus: the TASK-007 live-loop probe caught a
+  relevant note whose only shape WAS single-route rank 2, and 1/(k+1)
+  re-floors that shape in a way the offline replay cannot see. Keeping
+  1/(k+2) stands.

@@ -241,9 +241,10 @@ function validateVaultEntries(entries, unknownKeys, issues) {
  * exactly like core resolveVaults treats card-side vaults.json entries, per
  * the layout contract ("Blank/omitted defaults to GLOBAL.md"); a previously
  * blank-rejecting schema would fork that rule in two places. Structural
- * forms stay rejected here: a non-string, a leading `/`, or a `..` segment.
- * Invalid rows report at ['vaults', index, 'globalFile'] and return null so
- * the caller drops the entry.
+ * forms stay rejected here, through {@link globalFileShapeIssue}: a
+ * non-string, a leading `/`, or a `..` segment. Invalid rows report at
+ * ['vaults', index, 'globalFile'] and return null so the caller drops the
+ * entry.
  */
 function validateGlobalFile(given, index, issues) {
     const path = ['vaults', index, 'globalFile'];
@@ -252,15 +253,26 @@ function validateGlobalFile(given, index, issues) {
         return null;
     }
     const value = resolveGlobalFile(given);
-    if (value.startsWith('/')) {
-        issues.push({ message: 'vault globalFile must be vault-root-relative, not absolute', path });
-        return null;
-    }
-    if (value.split('/').includes('..')) {
-        issues.push({ message: 'vault globalFile must not contain a ".." segment', path });
+    const shape = globalFileShapeIssue(value);
+    if (shape !== null) {
+        issues.push({ message: `vault globalFile ${shape}`, path });
         return null;
     }
     return value;
+}
+/**
+ * GlobalFileShapeIssue returns the validation phrase for why a resolved
+ * (already defaulted) globalFile is not a vault-root-relative path, or null
+ * when it is fine. The row-config schema and the service's addVault share it
+ * so the structural rule (no leading `/`, no `..` segment) has one
+ * definition; the blank default itself lives in core resolveGlobalFile.
+ */
+export function globalFileShapeIssue(resolved) {
+    if (resolved.startsWith('/'))
+        return 'must be vault-root-relative, not absolute';
+    if (resolved.split('/').includes('..'))
+        return 'must not contain a ".." segment';
+    return null;
 }
 function validateSchedules(given, issues) {
     if (given === undefined)

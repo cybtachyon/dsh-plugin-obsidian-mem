@@ -94,7 +94,7 @@ Ordered list; every task is defined in its own file.
  - [x] [Refactor: Phase 1 review](docs/PLAN-VAULT-LAYOUT-TASK-R1-refactor-phase-1.md)
 
 ### Phase 2 — Service runtime
- - [ ] [TASK-004-service-provisioning-registry](docs/PLAN-VAULT-LAYOUT-TASK-004-service-provisioning-registry.md)
+ - [x] [TASK-004-service-provisioning-registry](docs/PLAN-VAULT-LAYOUT-TASK-004-service-provisioning-registry.md)
  - [ ] [TASK-005-indexer-vault-root-walk](docs/PLAN-VAULT-LAYOUT-TASK-005-indexer-vault-root-walk.md)
  - [ ] [TASK-006-dream-diary-location](docs/PLAN-VAULT-LAYOUT-TASK-006-dream-diary-location.md)
  - [ ] [TASK-007-audit-inventory-layout](docs/PLAN-VAULT-LAYOUT-TASK-007-audit-inventory-layout.md)

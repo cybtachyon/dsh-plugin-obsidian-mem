@@ -139,6 +139,8 @@ export interface ObsidianMemDreamStatus {
 export interface VaultAddRequest {
     path: string;
     mode?: string;
+    /** Vault-root-relative global memory file; blank or omitted takes the layout default. */
+    globalFile?: string;
 }
 /**
  * ServiceFs is the seam the service itself touches disk through; tests
@@ -254,8 +256,10 @@ export declare class ObsidianMemService extends Service {
      * AddVault registers a card-side vault: `shared` paths are created
      * (root + `.obsidian-mem/metadata/`), `read-only` paths must already
      * exist, duplicates are refused with the current registration named, and
-     * settings-managed paths cannot be shadowed. New card vaults persist to
-     * <stateDir>/vaults.json atomically.
+     * settings-managed paths cannot be shadowed. `globalFile` is resolved
+     * through core resolveGlobalFile (blank or omitted → the layout default)
+     * and refused when it is absolute or climbs with `..`. New card vaults
+     * persist to <stateDir>/vaults.json atomically.
      */
     addVault(request: VaultAddRequest): VaultEntry;
     /**

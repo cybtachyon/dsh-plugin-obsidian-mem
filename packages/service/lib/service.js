@@ -27,10 +27,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync
 import { homedir as osHomedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { classifyPath, contentHash, firstSharedVault, formatLocalDate,
-// TASK-004: placeholder until the card/config globalFile wiring lands.
-GLOBAL_MEMORY_FILE_DEFAULT, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, } from '../../core/lib/index.js';
-import { expandHomePath, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
+import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, } from '../../core/lib/index.js';
+import { expandHomePath, globalFileShapeIssue, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js';
 import { DreamOrchestrator } from './dream.js';
 import { createEmbedder } from './embedder.js';
@@ -181,20 +179,27 @@ export class ObsidianMemService extends Service {
      * AddVault registers a card-side vault: `shared` paths are created
      * (root + `.obsidian-mem/metadata/`), `read-only` paths must already
      * exist, duplicates are refused with the current registration named, and
-     * settings-managed paths cannot be shadowed. New card vaults persist to
-     * <stateDir>/vaults.json atomically.
+     * settings-managed paths cannot be shadowed. `globalFile` is resolved
+     * through core resolveGlobalFile (blank or omitted → the layout default)
+     * and refused when it is absolute or climbs with `..`. New card vaults
+     * persist to <stateDir>/vaults.json atomically.
      */
     addVault(request) {
         const mode = request.mode ?? 'shared';
         if (!isVaultMode(mode)) {
             throw new Error(`obsidian-mem addVault: mode must be one of shared | read-only, got "${mode}"`);
         }
+        const globalFile = resolveGlobalFile(request.globalFile);
+        const globalFileIssue = globalFileShapeIssue(globalFile);
+        if (globalFileIssue !== null) {
+            throw new Error(`obsidian-mem addVault: globalFile ${globalFileIssue}, got "${request.globalFile ?? ''}"`);
+        }
         const rawPath = expandHomePath(request.path, this.homedir());
         const registry = this.loadRegistry();
         if (mode === 'shared') {
+            // The vault root IS the note root: provisioning creates root +
+            // .obsidian-mem/metadata only, never a markdown/ dir.
             this.fs.mkdirp(rawPath);
-            // TASK-004: no markdown/ dir anymore; the vault root is the note root,
-            // provisioning creates root + .obsidian-mem/metadata only.
             this.fs.mkdirp(metadataDir(rawPath));
         }
         else if (!this.fs.exists(rawPath)) {
@@ -209,9 +214,8 @@ export class ObsidianMemService extends Service {
         const entry = {
             path: canonical,
             mode,
+            globalFile,
             source: 'card',
-            // TASK-004: addVault gains the globalFile knob; default until then.
-            globalFile: GLOBAL_MEMORY_FILE_DEFAULT,
         };
         registry.vaults.push(entry);
         this.persistVaultsFile();
@@ -351,8 +355,6 @@ export class ObsidianMemService extends Service {
             && isReservedNonIndexed(fileName)) {
             throw new Error(`obsidian-mem write: ${target} is a reserved non-indexed vault file`);
         }
-        // TASK-004: the insideNotes rename is the classifyPath field swap; the
-        // guard shape is unchanged.
         if (!classified.insideNotes) {
             throw new Error(`obsidian-mem write: ${target} is outside the indexed note tree of vault ${classified.vault.path}`);
         }
@@ -758,6 +760,8 @@ export class ObsidianMemService extends Service {
     }
     // Card vaults from <stateDir>/vaults.json; a corrupt file is logged and
     // treated as empty (self-healing persistence), never a dead plugin.
+    // Entries missing globalFile (files written before TASK-004) reach core
+    // resolveVaults without the key and default through resolveGlobalFile.
     readVaultsFile() {
         const raw = this.fs.readFile(this.vaultsFilePath());
         if (raw === null)
@@ -765,7 +769,15 @@ export class ObsidianMemService extends Service {
         try {
             const parsed = JSON.parse(raw);
             return Array.isArray(parsed.vaults)
-                ? parsed.vaults.filter((v) => (typeof v?.path === 'string' && typeof v?.mode === 'string'))
+                ? parsed.vaults
+                    .filter((v) => (typeof v?.path === 'string' && typeof v?.mode === 'string'))
+                    .map((v) => ({
+                    path: v.path,
+                    mode: v.mode,
+                    // A non-string globalFile (hand-edited junk) is dropped so the
+                    // core default, not the junk, wins.
+                    ...(typeof v.globalFile === 'string' ? { globalFile: v.globalFile } : {}),
+                }))
                 : [];
         }
         catch (error) {
@@ -779,7 +791,13 @@ export class ObsidianMemService extends Service {
             version: 1,
             vaults: registry.vaults
                 .filter((entry) => entry.source === 'card')
-                .map((entry) => ({ path: entry.path, mode: entry.mode })),
+                .map((entry) => ({
+                path: entry.path,
+                mode: entry.mode,
+                // The file stores the resolved value, so every rewrite makes old
+                // files self-describing; loading still tolerates a missing key.
+                globalFile: entry.globalFile,
+            })),
         };
         this.fs.mkdirp(this.stateDirPath());
         this.writeAtomic(this.vaultsFilePath(), `${JSON.stringify(record, null, 2)}\n`);
@@ -790,9 +808,10 @@ export class ObsidianMemService extends Service {
         this.fs.rename(tmp, path);
     }
     // <dbPath>/state mirrors core's stateDir(homedir) = dbDir/state for the
-    // default dbPath, and follows a custom dbPath otherwise.
+    // default dbPath, and follows a custom dbPath otherwise; dbStateDir keeps
+    // the segment with core's layout definition.
     stateDirPath() {
-        return join(this.config.milvus.dbPath, 'state');
+        return dbStateDir(this.config.milvus.dbPath);
     }
     vaultsFilePath() {
         return join(this.stateDirPath(), VAULTS_FILE_NAME);

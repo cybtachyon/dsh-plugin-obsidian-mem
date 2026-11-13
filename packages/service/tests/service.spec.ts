@@ -568,7 +568,10 @@ describe('vault registry and vaults.json', () => {
     expect(h.fs.dirs.has('/data/notes')).toBe(true)
     expect(h.fs.dirs.has(metadataDir('/data/notes'))).toBe(true)
     const persisted = JSON.parse(h.fs.content(VAULTS_JSON) ?? 'null')
-    expect(persisted).toEqual({ version: 1, vaults: [{ path: '/data/notes', mode: 'shared' }] })
+    expect(persisted).toEqual({
+      version: 1,
+      vaults: [{ path: '/data/notes', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT }],
+    })
     // Atomic: tmp write + rename, never a direct write of the final path.
     const fileMutations = h.fs.mutations.filter((m) => m.includes('vaults.json'))
     expect(fileMutations.some((m) => m.startsWith('writeFile') && m.includes('.tmp'))).toBe(true)
@@ -588,6 +591,89 @@ describe('vault registry and vaults.json', () => {
       .toThrow(/already registered as mode read-only by the Obsidian Mem settings card/)
     expect(() => h.service.addVault({ path: '/card', mode: 'bogus' }))
       .toThrow(/mode must be one of shared \| read-only/)
+  })
+
+  it('addVault resolves globalFile: omitted, blank, and whitespace take the default', () => {
+    const h = harness()
+    expect(h.service.addVault({ path: '/a' }).globalFile).toBe(GLOBAL_MEMORY_FILE_DEFAULT)
+    expect(h.service.addVault({ path: '/b', globalFile: '' }).globalFile).toBe(GLOBAL_MEMORY_FILE_DEFAULT)
+    expect(h.service.addVault({ path: '/c', globalFile: '   ' }).globalFile).toBe(GLOBAL_MEMORY_FILE_DEFAULT)
+    // An explicit value is trimmed and stored verbatim as the vault-root-relative path.
+    expect(h.service.addVault({ path: '/d', globalFile: ' memory/GLOBAL.md ' }).globalFile)
+      .toBe('memory/GLOBAL.md')
+    const persisted = JSON.parse(h.fs.content(VAULTS_JSON) ?? 'null')
+    expect(persisted.vaults.map((v: { globalFile: string }) => v.globalFile)).toEqual([
+      GLOBAL_MEMORY_FILE_DEFAULT,
+      GLOBAL_MEMORY_FILE_DEFAULT,
+      GLOBAL_MEMORY_FILE_DEFAULT,
+      'memory/GLOBAL.md',
+    ])
+  })
+
+  it('addVault refuses absolute and parent-climbing globalFile before touching disk', () => {
+    const h = harness()
+    expect(() => h.service.addVault({ path: '/x', globalFile: '/GLOBAL.md' }))
+      .toThrow(/globalFile must be vault-root-relative, not absolute/)
+    expect(() => h.service.addVault({ path: '/y', globalFile: 'notes/../../GLOBAL.md' }))
+      .toThrow(/globalFile must not contain a "\.\." segment/)
+    // The refusal lands before provisioning: nothing was created, nothing registered.
+    expect(h.fs.mutations).toEqual([])
+    expect(h.service.listVaults()).toEqual([])
+  })
+
+  it('vaults.json round-trips globalFile and defaults entries stored without the key', () => {
+    const h = harness({
+      seedDirs: ['/card-a', '/card-b'],
+      seedFiles: {
+        [VAULTS_JSON]: JSON.stringify({ version: 1, vaults: [
+          { path: '/card-a', mode: 'read-only', globalFile: 'NOTES/GLOBAL.md' },
+          { path: '/card-b', mode: 'read-only' },
+        ] }),
+      },
+    })
+    // A pre-TASK-004 entry (no key) loads as the layout default.
+    expect(h.service.listVaults().map((v) => [v.path, v.globalFile])).toEqual([
+      ['/card-a', 'NOTES/GLOBAL.md'],
+      ['/card-b', GLOBAL_MEMORY_FILE_DEFAULT],
+    ])
+    // Any rewrite persists the resolved value for every card entry.
+    h.service.addVault({ path: '/card-c' })
+    expect(JSON.parse(h.fs.content(VAULTS_JSON) ?? 'null')).toEqual({
+      version: 1,
+      vaults: [
+        { path: '/card-a', mode: 'read-only', globalFile: 'NOTES/GLOBAL.md' },
+        { path: '/card-b', mode: 'read-only', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+        { path: '/card-c', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+      ],
+    })
+  })
+
+  it('vaults.json loading drops a non-string globalFile so the core default wins', () => {
+    const h = harness({
+      seedDirs: ['/card-junk'],
+      seedFiles: {
+        [VAULTS_JSON]: JSON.stringify({ version: 1, vaults: [
+          { path: '/card-junk', mode: 'read-only', globalFile: 42 },
+        ] }),
+      },
+    })
+    expect(h.service.listVaults().map((v) => v.globalFile)).toEqual([GLOBAL_MEMORY_FILE_DEFAULT])
+  })
+
+  it('settings-row vaults keep their configured globalFile through registry, status, and card payloads', () => {
+    const h = harness({
+      config: { vaults: [
+        { path: '/settings-vault', mode: 'shared', globalFile: 'CORE/GLOBAL.md' },
+        { path: '/plain-vault', mode: 'shared' },
+      ] },
+      seedDirs: ['/settings-vault', '/plain-vault'],
+    })
+    expect(h.service.listVaults()).toEqual([
+      { path: '/settings-vault', mode: 'shared', globalFile: 'CORE/GLOBAL.md', source: 'settings' },
+      { path: '/plain-vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT, source: 'settings' },
+    ])
+    // status() echoes the same entries, so the card rows read globalFile for free.
+    expect(h.service.status().vaults).toEqual(h.service.listVaults())
   })
 
   it('removeVault protects settings and default vaults and drops card state', async () => {

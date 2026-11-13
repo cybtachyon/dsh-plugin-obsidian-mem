@@ -144,6 +144,14 @@ export type ObsidianMemConfigValidation = {
 /** ObsidianMemConfigSchema validates a mounted row config and defaults it whole. */
 export declare const ObsidianMemConfigSchema: ConfigSchema;
 /**
+ * GlobalFileShapeIssue returns the validation phrase for why a resolved
+ * (already defaulted) globalFile is not a vault-root-relative path, or null
+ * when it is fine. The row-config schema and the service's addVault share it
+ * so the structural rule (no leading `/`, no `..` segment) has one
+ * definition; the blank default itself lives in core resolveGlobalFile.
+ */
+export declare function globalFileShapeIssue(resolved: string): string | null;
+/**
  * ResolveServiceConfig expands `~`, absolutizes every vault path against the
  * home, and fills the dbPath default from core dbDir. It is the only place
  * $HOME enters the config (mirrors core's homedir-argument discipline).

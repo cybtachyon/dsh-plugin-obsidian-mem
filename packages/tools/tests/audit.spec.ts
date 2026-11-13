@@ -23,7 +23,7 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
     issues: [
       { id: 'vault.writable', severity: 'ISSUE', detail: 'shared vault "/v" is not writable', remediation: 'make the directory writable or switch to read-only' },
       { id: 'index.live', severity: 'INFO', detail: 'milvus at 127.0.0.1:19530', remediation: 'none' },
-      { id: 'budget.over', severity: 'ISSUE', detail: 'global memory injection is over budget: 2000 of 1500 tokens used', remediation: 'run memory_dream to process and compact all global memory markdown files, least-read first' },
+      { id: 'budget.over', severity: 'ISSUE', detail: 'global memory injection is over budget: 2000 of 1500 tokens used, injected since the last successful dream or host restart', remediation: 'run memory_dream to process and compact all global memory markdown files, least-read first' },
     ],
     stats: {
       vaultCount: 1,
@@ -151,7 +151,7 @@ describe('memory_audit render', () => {
       budget: { budgetTokens: 1500, usedTokens: 0, measured: false, overBudget: false, globalNoteCount: 0, globalNotePaths: [], compactableGlobalNotePaths: [] },
     }))
     const text = renderAudit(await executeAudit(service, {}))
-    expect(text).toContain('no recall budget spent in this process yet (configured budget 1500 tokens)')
+    expect(text).toContain('no recall budget spent since the last successful dream or host restart (configured budget 1500 tokens)')
     expect(text).toContain('found no problems')
     expect(text).toContain('- none')
   })

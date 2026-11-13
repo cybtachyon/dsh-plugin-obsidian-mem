@@ -204,19 +204,19 @@ export function renderDream(value) {
     ];
     if (value.budget.over_budget) {
         if (value.budget.protected_only) {
-            lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used; compaction cannot help: every live global note is a protected vault global file; tighten these files by hand:`);
+            lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart; compaction cannot help: every live global note is a protected vault global file; tighten these files by hand:`);
             lines.push(...value.budget.global_note_paths.map((path) => `- ${path}`));
         }
         else {
-            lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used; ${String(value.budget.global_note_count)} live global notes inject, compactable least-read first:`);
+            lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart; ${String(value.budget.global_note_count)} live global notes inject, compactable least-read first:`);
             lines.push(...value.budget.compactable_global_note_paths.map((path) => `- ${path}`));
         }
     }
     else if (value.budget.measured) {
-        lines.push('', `Budget headroom: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used.`);
+        lines.push('', `Budget headroom: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart.`);
     }
     else {
-        lines.push('', `No recall budget spent in this process yet (configured budget ${String(value.budget.budget_tokens)} tokens).`);
+        lines.push('', `No recall budget spent since the last successful dream or host restart (configured budget ${String(value.budget.budget_tokens)} tokens).`);
     }
     if (value.candidates.length > 0) {
         lines.push('', `Candidates (${String(value.candidates.length)}):`);

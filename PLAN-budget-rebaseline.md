@@ -52,7 +52,7 @@ throttle state unchanged; no persist call triggered by the reset alone.
   call it; service-level: over-budget fake registry reports recovered
   totals after a successful run.
 
-### TASK-003 tools budget wording sweep
+### TASK-003 tools budget wording sweep [x]
 
 The tools renderers print the same single number with their own
 sentences, and those are the sentences the dreaming agent reads from

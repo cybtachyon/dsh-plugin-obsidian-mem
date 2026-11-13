@@ -21,7 +21,7 @@ function planFixture(over: Partial<DreamPlan> = {}): DreamPlan {
     generatedAt: 1730000000000,
     lastDreamAt: 1729000000000,
     prompt: '# dreaming protocol\nbudget 1500\n',
-    plan: '1. Compact global note /v/a.md.\n2. Global budget headroom: 1800 of 1500 tokens used.',
+    plan: '1. Compact global note /v/a.md.\n2. Global budget headroom: 1800 of 1500 tokens used, injected since the last successful dream or host restart.',
     candidates: [
       {
         path: '/v/a.md',
@@ -146,7 +146,7 @@ describe('memory_dream render', () => {
     expect(text).toContain('last dream: 2024-10-15')
     expect(text).toContain('2 stale or never-read')
     expect(text).toContain('1. Compact global note /v/a.md.')
-    expect(text).toContain('OVER BUDGET: 1800 of 1500 tokens used')
+    expect(text).toContain('OVER BUDGET: 1800 of 1500 tokens used, injected since the last successful dream or host restart')
     expect(text).toContain('- /v/a.md [shared] (never-read, global-over-budget; never read)')
     expect(text).toContain('omitted here')
   })
@@ -166,7 +166,7 @@ describe('memory_dream render', () => {
     })
     const text = renderDream(await executeDream(service, {}))
     expect(text).toContain('last dream: never')
-    expect(text).toContain('No recall budget spent in this process yet')
+    expect(text).toContain('No recall budget spent since the last successful dream or host restart')
     expect(text).not.toContain('OVER BUDGET')
   })
 
@@ -189,7 +189,7 @@ describe('memory_dream render', () => {
       },
     })
     const text = renderDream(await executeDream(service, {}))
-    expect(text).toContain('OVER BUDGET: 1800 of 1500 tokens used; compaction cannot help')
+    expect(text).toContain('OVER BUDGET: 1800 of 1500 tokens used, injected since the last successful dream or host restart; compaction cannot help')
     expect(text).toContain('- /v/GLOBAL.md')
     expect(text).not.toContain('compactable least-read first')
   })

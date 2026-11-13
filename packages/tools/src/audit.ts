@@ -293,8 +293,8 @@ export function renderAudit(value: AuditValue): string {
     lines.push('- none')
   }
   const tracker = value.budget.measured
-    ? `${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used`
-    : `no recall budget spent in this process yet (configured budget ${String(value.budget.budget_tokens)} tokens)`
+    ? `${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart`
+    : `no recall budget spent since the last successful dream or host restart (configured budget ${String(value.budget.budget_tokens)} tokens)`
   lines.push('', `Global memory budget: ${tracker}; ${String(value.budget.global_note_count)} live global notes.`)
   if (value.budget.over_budget) {
     if (value.budget.protected_only) {

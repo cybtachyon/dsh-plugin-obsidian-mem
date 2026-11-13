@@ -88,6 +88,20 @@ node scripts/prefetch-model.mjs
 Build, test, and lint with pnpm; see [AGENTS.md](AGENTS.md) for the
 architecture and the verification commands.
 
+`pnpm test` is fully offline: a second integration tier
+(`packages/service/tests/integration/*.live.test.ts`) is collected only with
+`RUN_LIVE=1 pnpm test`. The live tier spawns a real uvx-managed milvus-lite
+(first run downloads the pinned wheel set and can take several minutes;
+afterwards the cache is warm), loads the real `Xenova/multilingual-e5-small`
+model from the local cache, and drives the full provisioning → indexing →
+hybrid search → write-through → purge pipeline. Per-test timeouts are a
+generous 180 s to absorb cold caches. Everything it writes lands in
+temporary directories; only the model cache is reused. Run it with:
+
+```
+RUN_LIVE=1 pnpm test
+```
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

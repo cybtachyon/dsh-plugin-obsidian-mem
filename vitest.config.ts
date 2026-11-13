@@ -4,9 +4,20 @@ import { defineConfig } from 'vitest/config'
 // bare self-references: this repo has no `paths` map and cross-package imports
 // go through relative lib paths, so Vite needs no aliasing layer here (unlike
 // dsh-plugin-local-infer, whose tests resolve bare subpath specifiers).
+
+// TASK-061 live tier: `*.live.test.ts` under tests/integration/ spawn real
+// uvx milvus-lite children and load the real transformers.js model, so
+// plain `pnpm test` does not even COLLECT them (the documented skip; see
+// README Development). `RUN_LIVE=1 pnpm test` adds the tier. Inside each
+// live file a describeLive env gate mirrors this for direct
+// `vitest run <file>` invocations.
+const runLive = process.env.RUN_LIVE === '1'
+
 export default defineConfig({
   test: {
-    include: ['packages/*/tests/**/*.spec.ts'],
+    include: runLive
+      ? ['packages/*/tests/**/*.spec.ts', 'packages/*/tests/integration/**/*.live.test.ts']
+      : ['packages/*/tests/**/*.spec.ts'],
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],

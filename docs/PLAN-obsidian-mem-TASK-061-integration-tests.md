@@ -1,5 +1,11 @@
 # TASK-061 Integration tests (live tier, opt-in)
 
+Status: done (2026-11-12: `RUN_LIVE=1 pnpm test` green on this machine;
+live tier 11 tests / 6.4 s total with warm caches; default `pnpm test`
+does not collect `*.live.test.ts` at all. Exposes and fixes one real
+shipped bug: ARRAY_CONTAINSAny rejected by the lite 3.2.2 parser
+(search.ts switched to ARRAY_CONTAINS_ANY; see findings correction).)
+
 Depends: TASK-060. `tests/integration/*.live.test.ts` — vitest excludes `*.live.*` unless
 `RUN_LIVE=1`.
 

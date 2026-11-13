@@ -1,3 +1,5 @@
 [tools]
+act = "0.2.89"
+jactionlint = "2.3.0"
 pnpm = "12.18.0"
 prek = "0.5.10"

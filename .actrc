@@ -1,0 +1,7 @@
+# Reuse the locally present image; never pull.
+--pull=false
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+# Host-built node_modules/ and coverage/ stay out of the container copy
+# through act's default --use-gitignore, so the container installs its own.
+# The tracked packages/*/lib emit is copied in and rewritten by the ci.yml
+# build step (tsc -b --force) inside the container.

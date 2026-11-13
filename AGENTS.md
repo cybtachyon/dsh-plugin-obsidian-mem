@@ -215,6 +215,24 @@ Fetch these docs to answer questions about their covered topic.
   service teardown branches) that keep the global floors from rising further.
 - Lint the whole repo with `pnpm lint` (runs `eslint .`). This is the
   repo-wide lint gate; do not run `npx eslint` on a subset.
+- Lint the GitHub Actions workflows with `jactionlint` run from the repo root
+  (mise.toml pins 2.3.0; a bare invocation checks `.github/workflows`, and
+  the installed prek `jactionlint` hook re-runs it on any commit that stages
+  a workflow file).
+- Run the CI workflow locally under `act` (mise.toml pins act 0.2.89;
+  `.actrc` maps `ubuntu-latest` to the local
+  `catthehacker/ubuntu:act-latest` image with `--pull=false`; host-built
+  `node_modules/` and `coverage/` stay out of the container copy because
+  act skips gitignored paths by default, so the container installs and
+  builds its own):
+
+  ```
+  act --env-file .env --secret-file .secrets -W .github/workflows/ci.yml push
+  ```
+
+  `.env` and `.secrets` are local-only and gitignored. `act` runs
+  `ci.yml` only: never point it at `publish.yml`, which ends in a real
+  `npm publish`.
 - Run `prek run --files <paths>` before committing (verify pre-commit hooks).
   The installed prek takes `--files`, not `--filename`.
 - A prek `commit-msg` hook (`scripts/check_commit_msg_attribution.py`)

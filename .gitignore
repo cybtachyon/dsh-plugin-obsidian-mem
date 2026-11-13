@@ -18,3 +18,7 @@ coverage/
 
 # Logs
 *.log
+
+# Local act inputs (--env-file / --secret-file); never commit them
+.env
+.secrets

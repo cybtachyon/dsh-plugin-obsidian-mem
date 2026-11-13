@@ -16,6 +16,13 @@ describe('obsidian-mem core package', () => {
     expect(core.MILVUS_COLLECTION).toBe('obsidian_mem')
   })
 
+  it('re-exports the vaults and note modules from the package root', () => {
+    expect(core.resolveVaults).toBeTypeOf('function')
+    expect(core.classifyPath).toBeTypeOf('function')
+    expect(core.parseNote).toBeTypeOf('function')
+    expect(core.titleToFilename).toBeTypeOf('function')
+  })
+
   it('carries no cordis plugin shape', () => {
     expect(core).not.toHaveProperty('inject')
     expect(core).not.toHaveProperty('apply')

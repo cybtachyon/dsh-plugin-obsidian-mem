@@ -60,7 +60,7 @@ task file lists explicit cross-phase prerequisites.
 
 - [x] [TASK-010-constants-intents](docs/PLAN-obsidian-mem-TASK-010-constants-intents.md)
 - [x] [TASK-011-vault-config](docs/PLAN-obsidian-mem-TASK-011-vault-config.md)
-- [ ] [TASK-012-memory-note-format](docs/PLAN-obsidian-mem-TASK-012-memory-note-format.md)
+- [x] [TASK-012-memory-note-format](docs/PLAN-obsidian-mem-TASK-012-memory-note-format.md)
 - [ ] [TASK-013-markdown-chunker](docs/PLAN-obsidian-mem-TASK-013-markdown-chunker.md)
 - [ ] [TASK-014-workspace-manifest](docs/PLAN-obsidian-mem-TASK-014-workspace-manifest.md)
 - [ ] [TASK-015-chunk-id-hashing](docs/PLAN-obsidian-mem-TASK-015-chunk-id-hashing.md)

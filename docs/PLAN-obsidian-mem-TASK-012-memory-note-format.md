@@ -1,5 +1,7 @@
 # TASK-012 Memory note format (frontmatter)
 
+Status: done
+
 Depends: TASK-010. `packages/core/src/note.ts`. gray-matter allowed.
 
 ## Scope

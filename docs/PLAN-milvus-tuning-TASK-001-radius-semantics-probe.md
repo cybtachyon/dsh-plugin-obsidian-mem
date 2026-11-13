@@ -1,5 +1,8 @@
 # TASK-001: Radius semantics probe
 
+- [x] Complete. Findings: `docs/research/radius-tuning-findings.md`;
+  runnable probe: `docs/research/probes/radius-probe.mjs`.
+
 Verify range-search parameter semantics on the exact stack (milvus-lite
 3.2.2, @zilliz/milvus2-sdk-node 3.0.6) before any production code change.
 

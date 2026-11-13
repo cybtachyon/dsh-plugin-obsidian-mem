@@ -32,7 +32,7 @@ All resolved; see Answers below.
 
 ### Phase A: Research and baseline
 
-- [ ] [TASK-001-radius-semantics-probe](docs/PLAN-milvus-tuning-TASK-001-radius-semantics-probe.md)
+- [x] [TASK-001-radius-semantics-probe](docs/PLAN-milvus-tuning-TASK-001-radius-semantics-probe.md)
 - [ ] [TASK-002-eval-harness](docs/PLAN-milvus-tuning-TASK-002-eval-harness.md)
 - [ ] [TASK-003-baseline-metrics](docs/PLAN-milvus-tuning-TASK-003-baseline-metrics.md)
 

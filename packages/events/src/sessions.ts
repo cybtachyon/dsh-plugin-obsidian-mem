@@ -120,7 +120,11 @@ export interface SessionRecord {
   memoryToolUsedThisTurn: boolean
   /** Think-intercept injections used in the current turn (TASK-043 consumes). */
   thinkShots: number
-  /** Approx tokens the turn-start recall injected this session (TASK-045). */
+  /**
+   * Approx tokens the turn-start recall has injected this session since
+   * {@link SessionRegistry.resetRecallUsage} last zeroed it (TASK-045):
+   * "tokens injected since the last successful compaction or process start".
+   */
   turnRecallTokensUsed: number
   /** Read-intercept injections this session (cap enforcement). */
   readInjections: number
@@ -395,6 +399,20 @@ export class SessionRegistry {
       total += record.turnRecallTokensUsed
     }
     return total
+  }
+
+  /**
+   * ResetRecallUsage zeroes turnRecallTokensUsed on every live record: a
+   * successful dream compaction rebaselines the global budget, so the
+   * counter means "tokens injected since the last successful compaction or
+   * process start". Touches nothing else (dedupe ledger, throttle state,
+   * per-turn counters); the counters are live-only and never persisted, so
+   * the reset alone triggers no ledger write.
+   */
+  resetRecallUsage(): void {
+    for (const record of this.sessions.values()) {
+      record.turnRecallTokensUsed = 0
+    }
   }
 
   /**

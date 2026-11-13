@@ -26,7 +26,7 @@ is unreachable within a process and the gate locks recall until restart.
 
 ## Tasks
 
-### TASK-001 registry reset
+### TASK-001 registry reset [x]
 
 `packages/events/src/sessions.ts`: add `resetRecallUsage(): void` to
 SessionRegistry — set `turnRecallTokensUsed` to 0 on every live record;

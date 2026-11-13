@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import type { ServiceFs } from '../../service/lib/index.js'
+import { nodeServiceFs } from '../../service/lib/index.js'
 import {
   READ_INJECTION_CAP_PER_SESSION,
   READ_INJECTION_THROTTLE_MS,
@@ -13,7 +15,9 @@ import {
  * SessionRegistry specs (TASK-040): the once-per-session injection rule
  * (including restart persistence and changed-note re-eligibility), subagent
  * separation, the Think budget reset on a new turn, the Read-intercept
- * throttle/cap/dir-coverage state, and the LRU/TTL-bounded atomic ledger.
+ * throttle/cap/dir-coverage state, the recall token accounting, the
+ * post-compaction recall rebaseline (TASK-001), and the LRU/TTL-bounded
+ * atomic ledger.
  */
 
 const cleanups: Array<() => void> = []
@@ -54,6 +58,28 @@ function makeRegistry(
     debounceMs: 0,
     log: options.log,
   })
+}
+
+/**
+ * A ServiceFs that delegates to the node seam and tallies writeFile calls
+ * (every persistNow writes exactly one tmp file), for persist-silence specs.
+ */
+function countingFs(): ServiceFs & { writes: number } {
+  const spy: ServiceFs & { writes: number } = {
+    writes: 0,
+    exists: (path) => nodeServiceFs.exists(path),
+    realpath: (path) => nodeServiceFs.realpath(path),
+    mkdirp: (path) => nodeServiceFs.mkdirp(path),
+    readFile: (path) => nodeServiceFs.readFile(path),
+    writeFile: (path, contents) => {
+      spy.writes += 1
+      nodeServiceFs.writeFile(path, contents)
+    },
+    rename: (from, to) => nodeServiceFs.rename(from, to),
+    unlink: (path) => nodeServiceFs.unlink(path),
+    stat: (path) => nodeServiceFs.stat(path),
+  }
+  return spy
 }
 
 describe('once-per-session injection rule', () => {
@@ -164,6 +190,52 @@ describe('recall token accounting (TASK-045 input)', () => {
     expect(registry.recallTokensUsed('s1')).toBe(100)
     expect(registry.recallTokensUsed('s2')).toBe(50)
     expect(registry.totalRecallTokensUsed()).toBe(150)
+  })
+})
+
+describe('recall usage rebaseline (TASK-001)', () => {
+  it('zeroes every live session counter and drops the total to 0', () => {
+    const { file } = tempFile()
+    const registry = makeRegistry(file)
+    registry.addRecallTokens('s1', 100)
+    registry.addRecallTokens('s2', 50)
+    registry.resetRecallUsage()
+    expect(registry.recallTokensUsed('s1')).toBe(0)
+    expect(registry.recallTokensUsed('s2')).toBe(0)
+    expect(registry.totalRecallTokensUsed()).toBe(0)
+    // Accounting restarts from zero.
+    registry.addRecallTokens('s1', 7)
+    expect(registry.totalRecallTokensUsed()).toBe(7)
+  })
+
+  it('leaves the injected-sources ledger and the throttle state untouched', () => {
+    const { file } = tempFile()
+    const clock = fakeClock()
+    const registry = makeRegistry(file, { now: clock.now })
+    registry.markInjected('s1', 'vaultA\u0000a.md', 'fp')
+    registry.noteReadInjection('s1', '/work/src')
+    registry.consumeThinkShot('s1')
+    registry.noteWakeTerms('s1', ['alpha'])
+    registry.resetRecallUsage()
+    expect(registry.shouldInject('s1', 'vaultA\u0000a.md', 'fp')).toBe(false)
+    expect(registry.readThrottleActive('s1')).toBe(true)
+    expect(registry.readCapLeft('s1')).toBe(true)
+    expect(registry.readDirCovered('s1', '/work/src')).toBe(true)
+    expect(registry.thinkBudgetLeft('s1')).toBe(2)
+    expect([...registry.wakeTermsFor('s1')]).toEqual(['alpha'])
+  })
+
+  it('triggers no persist call on its own', () => {
+    const { file } = tempFile()
+    const fs = countingFs()
+    const registry = new SessionRegistry({ file, thinkShotsPerTurn: 3, debounceMs: 0, fs })
+    registry.markInjected('s1', 'note')
+    // Baseline: a ledger mutation with debounceMs 0 writes synchronously.
+    expect(fs.writes).toBeGreaterThan(0)
+    const baseline = fs.writes
+    registry.addRecallTokens('s1', 120)
+    registry.resetRecallUsage()
+    expect(fs.writes).toBe(baseline)
   })
 })
 

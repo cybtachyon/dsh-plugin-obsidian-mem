@@ -276,6 +276,19 @@ export class SessionRegistry {
         return total;
     }
     /**
+     * ResetRecallUsage zeroes turnRecallTokensUsed on every live record: a
+     * successful dream compaction rebaselines the global budget, so the
+     * counter means "tokens injected since the last successful compaction or
+     * process start". Touches nothing else (dedupe ledger, throttle state,
+     * per-turn counters); the counters are live-only and never persisted, so
+     * the reset alone triggers no ledger write.
+     */
+    resetRecallUsage() {
+        for (const record of this.sessions.values()) {
+            record.turnRecallTokensUsed = 0;
+        }
+    }
+    /**
      * HoldProvisionNotice retains the one-time default-vault notice a recall
      * flow fetched but did not yet deliver, so no injection skip can lose it.
      * A later hold replaces the earlier one (the service answers the notice to

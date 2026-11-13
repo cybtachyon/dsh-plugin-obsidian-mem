@@ -11,6 +11,12 @@
  * the task file's `WeakMap<Agent, state>`; it dies with the agent effect)
  * lets exactly one steer per turn and makes an open-turn loop impossible.
  *
+ * While the global memory recall budget is spent, the SAME steer also
+ * carries the budget section after the checklist: `compactionInstruction`
+ * with the registry's summed usage (TASK-003, PLAN-budget-reminder
+ * Q-PIGGYBACK full piggyback). The budget section inherits the skips below
+ * unchanged: no new gate, no separate steer, no extra once-per-turn state.
+ *
  * Skips: subagent sessions (the parent carries the memory duty); turns that
  * already used a memory_* tool (observed via the plugin-ctx `tools/result`
  * listener in installMemoryToolWatch — the agent already knows); trivial
@@ -25,6 +31,7 @@
 
 import { homedir } from 'node:os'
 import { defaultVaultPath, MEMORY_TOOL_NAMES, VAULT_MODE_SHARED } from '../../core/lib/index.js'
+import { compactionInstruction, isGlobalBudgetSpent } from './budget.js'
 import type {
   HookLogger,
   LiveAgent,
@@ -116,10 +123,17 @@ export function installTurnEnd(deps: TurnEndDeps): () => void {
       // re-fires this listener; anything throwing mid-steer still counts.
       firedTurn = turn
       const home = deps.homedir ?? homedir
+      const body = [turnEndReminder(deps.memory.listVaults(), home())]
+      // Q-PIGGYBACK (TASK-003): the budget section rides this steer, so it
+      // inherits the skips above; usage exactly at the cap stays quiet.
+      const budgetTokens = deps.memory.config.budgets.globalMemoryTokens
+      if (isGlobalBudgetSpent(deps.registry, budgetTokens)) {
+        body.push(compactionInstruction(deps.registry.totalRecallTokensUsed(), budgetTokens))
+      }
       agent.steer(makeNoticeMessage(
         newId(),
         'obsidian-mem: turn-end save/audit reminder',
-        [turnEndReminder(deps.memory.listVaults(), home())],
+        body,
       ))
     })
   }

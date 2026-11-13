@@ -11,6 +11,12 @@
  * the task file's `WeakMap<Agent, state>`; it dies with the agent effect)
  * lets exactly one steer per turn and makes an open-turn loop impossible.
  *
+ * While the global memory recall budget is spent, the SAME steer also
+ * carries the budget section after the checklist: `compactionInstruction`
+ * with the registry's summed usage (TASK-003, PLAN-budget-reminder
+ * Q-PIGGYBACK full piggyback). The budget section inherits the skips below
+ * unchanged: no new gate, no separate steer, no extra once-per-turn state.
+ *
  * Skips: subagent sessions (the parent carries the memory duty); turns that
  * already used a memory_* tool (observed via the plugin-ctx `tools/result`
  * listener in installMemoryToolWatch — the agent already knows); trivial

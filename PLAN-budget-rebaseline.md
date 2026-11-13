@@ -89,10 +89,22 @@ TASK-003 flagged the same sentence family still naming no window:
 - Phrase matches TASK-002/003 exactly. Update every spec pin that quotes
   these sentences.
 
-### TASK-005 gates
+### TASK-005 wording tails + headroom pin + gates
 
-`pnpm build`, `pnpm test`, coverage bar, `pnpm lint`,
-`prek run --files`; tracked emit committed; tree clean.
+TASK-004 flags, ruled in:
+
+- `packages/service/src/audit.ts` ~862: the `budget.tracker`
+  remediation string "none: usage counts from the first turn-start
+  recall injection" → window idiom (user-visible remediation; unpinned,
+  add a pin with the new wording).
+- `packages/service/src/audit.ts` ~150: `measured` field doc
+  "reported nothing measurable this process" → window idiom (type-level
+  comment).
+- Coverage: add one service plan-text pin exercising the
+  `dream.ts` headroom branch (over=false, measured=true) so its
+  windowed wording is asserted, not just fabricated in tools fixtures.
+- Then the gates: `pnpm build`, `pnpm test`, coverage bar, `pnpm lint`,
+  `prek run --files`; tracked emit committed; tree clean.
 
 ## Verification guidelines
 

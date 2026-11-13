@@ -62,7 +62,7 @@ decoy memories, machinae-game subagents reporting every recall they see.
 
 ### Phase 1 - BM25 stop word stripping (decided)
 
- - [ ] [TASK-001-install-stopword-dep](docs/PLAN-retune-injection-TASK-001-install-stopword-dep.md)
+ - [x] [TASK-001-install-stopword-dep](docs/PLAN-retune-injection-TASK-001-install-stopword-dep.md)
  - [ ] [TASK-002-implement-bm25-stopword-strip](docs/PLAN-retune-injection-TASK-002-implement-bm25-stopword-strip.md)
  - [ ] [TASK-003-strip-route-unit-tests](docs/PLAN-retune-injection-TASK-003-strip-route-unit-tests.md)
  - [ ] [TASK-004-eval-harness-parity](docs/PLAN-retune-injection-TASK-004-eval-harness-parity.md)

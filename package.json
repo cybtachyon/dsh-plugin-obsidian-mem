@@ -96,7 +96,8 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",
     "@zilliz/milvus2-sdk-node": "^3.0.6",
-    "gray-matter": "^4.0.3"
+    "gray-matter": "^4.0.3",
+    "stopword": "^3.1.5"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.6-alpha.2"

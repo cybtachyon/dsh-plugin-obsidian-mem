@@ -86,4 +86,4 @@ each follows. TASK-013 runs after everything is checked.
 
 ### Phase 3: Gates
 
- - [ ] [TASK-012-verify-gates](docs/PLAN-mem-loop-tuning-TASK-012-verify-gates.md)
+ - [x] [TASK-012-verify-gates](docs/PLAN-mem-loop-tuning-TASK-012-verify-gates.md)

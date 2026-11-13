@@ -27,7 +27,8 @@
  * with no hit is dropped. On a hit: `service.search`
  * with only the sentences of the block that carry a matched term (capped)
  * as the query and the matched terms as
- * `wakeKeywords` (top 2), the once-per-session source filter (shared in
+ * `wakeKeywords` (every matched term), the once-per-session source filter
+ * (shared in
  * toolkit.ts, where a session never gets back what it itself wrote, no
  * matter which agent instance of that session wrote it), the per-turn
  * `budgets.thinkShotsPerTurn` gate via the registry counter, and

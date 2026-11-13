@@ -24,8 +24,15 @@ import type { VaultConfig } from '../../core/lib/index.js';
 import type { Embedder } from './embedder.js';
 import type { LlmFetch, LlmRefineConfig } from './llm-refine.js';
 export type { LlmFetch, LlmRefineConfig } from './llm-refine.js';
-/** Schema version of the per-vault state file. */
-export declare const INDEX_STATE_VERSION = 1;
+/**
+ * INDEX_STATE_VERSION is the schema version of the per-vault state file.
+ * 2: state keys became vault-root-relative when the note tree moved out of
+ * `markdown/` to the vault root. A vault still stamped 1 re-embeds once:
+ * its stale `markdown/…` keys match no file on disk, so the run's stale
+ * delete purges their old chunk ids from Milvus before the root-relative
+ * keys are inserted fresh.
+ */
+export declare const INDEX_STATE_VERSION = 2;
 /** State file name inside `<vault>/.obsidian-mem/metadata/`. */
 export declare const STATE_FILE_NAME = "obsidian-mem-state.json";
 /** Watcher debounce window; memsearch watchdog value. */
@@ -49,7 +56,7 @@ export interface IndexFileState {
     mtimeMs: number;
     chunkIds: number[];
 }
-/** The `<vault>/metadata/obsidian-mem-state.json` document. */
+/** The `<vault>/.obsidian-mem/metadata/obsidian-mem-state.json` document. */
 export interface IndexState {
     version: number;
     /** Embedding model id the stored chunkIds were hashed with. */

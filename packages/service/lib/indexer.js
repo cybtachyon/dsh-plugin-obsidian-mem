@@ -28,8 +28,15 @@ import { describeError } from './errors.js';
 import { LlmRefiner } from './llm-refine.js';
 import { assertOk } from './milvus/ok.js';
 import { createSerialQueue } from './serial-queue.js';
-/** Schema version of the per-vault state file. */
-export const INDEX_STATE_VERSION = 1;
+/**
+ * INDEX_STATE_VERSION is the schema version of the per-vault state file.
+ * 2: state keys became vault-root-relative when the note tree moved out of
+ * `markdown/` to the vault root. A vault still stamped 1 re-embeds once:
+ * its stale `markdown/…` keys match no file on disk, so the run's stale
+ * delete purges their old chunk ids from Milvus before the root-relative
+ * keys are inserted fresh.
+ */
+export const INDEX_STATE_VERSION = 2;
 /** State file name inside `<vault>/.obsidian-mem/metadata/`. */
 export const STATE_FILE_NAME = 'obsidian-mem-state.json';
 /** Watcher debounce window; memsearch watchdog value. */
@@ -185,7 +192,9 @@ export class VaultIndexer {
      */
     start() {
         this.stopped = false;
-        // TASK-005: the vault root is the watched note root now.
+        // The watched note root IS the vault root; sidecars under
+        // `.obsidian-mem/` stay inside the watch and are dropped by
+        // normalizeRel's dot rule (see onWatchEvent).
         this.watchHandle = this.watchFactory(this.vault.path, (fileName) => {
             this.onWatchEvent(fileName);
         });
@@ -437,8 +446,9 @@ export class VaultIndexer {
         this.saveState();
         return 'purged';
     }
-    // Recursive walk of the vault root (`<vault>/**/*.md`, TASK-005). Dotfiles,
-    // dot dirs (that covers `.obsidian-mem/`), and reserved non-indexed names
+    // Recursive walk of the vault root (`<vault>/**/*.md`); keys are
+    // vault-root-relative with no leading slash. Dotfiles, dot dirs (that
+    // covers `.obsidian-mem/`), and reserved non-indexed names
     // (.INTENTS.md, DREAMS.md, *_history.md) never enter the index.
     listMarkdownFiles() {
         const files = [];
@@ -525,8 +535,10 @@ export class VaultIndexer {
             this.dirtyAll = true;
         }
         else {
-            // TASK-005: the watch root is the vault root, so the event name is
-            // already the vault-relative path.
+            // The watch root is the vault root, so the event name is already
+            // the vault-relative path. State saves land under `.obsidian-mem/`
+            // and normalizeRel's dot rule drops them: the indexer never dirties
+            // itself with its own state writes.
             const rel = this.normalizeRel(fileName.replace(/\\/g, '/'));
             if (rel === null) {
                 return;
@@ -596,8 +608,10 @@ export class VaultIndexer {
         }
     }
     // Accept vault-relative or vault-absolute paths; anything that is not a
-    // candidate .md file in the note tree (dot components included, TASK-005:
-    // this is the root-relative shape now) normalizes to null.
+    // candidate .md file in the note tree normalizes to null. A leading-dot
+    // segment (`.obsidian-mem`, `.obsidian`, dotfiles, and the `.`/`..`
+    // components) is refused here, the single guard behind the watcher,
+    // indexFile, and the self-noise filter in onWatchEvent.
     normalizeRel(input) {
         let rel = input.replace(/\\/g, '/');
         if (rel.startsWith(`${this.vault.path.replace(/\\/g, '/')}/`)) {

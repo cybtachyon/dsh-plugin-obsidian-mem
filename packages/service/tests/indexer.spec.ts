@@ -8,11 +8,13 @@ import { fakeEmbedder } from '../src/embedder.ts'
 import type { Embedder } from '../src/embedder.ts'
 import {
   IndexerManager,
+  INDEX_STATE_VERSION,
   MAX_CHUNKS_PER_FILE,
   MAX_FILES_PER_VAULT,
   nodeIndexerFs,
   STATE_FILE_NAME,
   VaultIndexer,
+  WATCH_DEBOUNCE_MS,
 } from '../src/indexer.ts'
 import type {
   IndexChunkRow,
@@ -31,6 +33,9 @@ import type {
  * no-op, changed, removed), archived purge, offline retry, model/dim
  * swap migration, watcher debounce with fake timers, the polling
  * fallback, progress counters, and the LLM merge/fallback/circuit.
+ * TASK-005 re-rooted every seed and key to the vault root: the specs pin
+ * root-relative keys, the dot-dir skip, the version-1 purge, and the
+ * watcher's self-noise filter.
  */
 
 class MemFs implements IndexerFs {
@@ -161,8 +166,8 @@ const BETA_NOTE = [
 ].join('\n')
 
 function seedVault(memFs: MemFs): void {
-  memFs.add('/vault/markdown/a.md', ALPHA_NOTE, 1111)
-  memFs.add('/vault/markdown/sub/b.md', BETA_NOTE, 2222)
+  memFs.add('/vault/a.md', ALPHA_NOTE, 1111)
+  memFs.add('/vault/sub/b.md', BETA_NOTE, 2222)
 }
 
 interface IndexerFixture {
@@ -240,11 +245,16 @@ afterEach(() => {
 describe('reindex first run', () => {
   it('indexes candidate notes, skips dotfiles/reserved/non-md, and writes state atomically', async () => {
     const { fs, writer, indexer } = makeFixture()
-    fs.add('/vault/markdown/.hidden.md', '# hidden\n', 1)
-    fs.add('/vault/markdown/DREAMS.md', '# dreams\n', 1)
-    fs.add('/vault/markdown/old_history.md', '# history\n', 1)
-    fs.add('/vault/markdown/notes.txt', 'not markdown\n', 1)
-    fs.add('/vault/markdown/arch.md', [
+    fs.add('/vault/.hidden.md', '# hidden\n', 1)
+    fs.add('/vault/DREAMS.md', '# dreams\n', 1)
+    fs.add('/vault/old_history.md', '# history\n', 1)
+    fs.add('/vault/notes.txt', 'not markdown\n', 1)
+    // Dot dirs are out of the index wholesale: the plugin sidecars,
+    // Obsidian's own config, and any other hidden directory.
+    fs.add('/vault/.obsidian-mem/metadata/sidecar.md', '# sidecar\n', 1)
+    fs.add('/vault/.obsidian/workspace.md', '# obsidian ui\n', 1)
+    fs.add('/vault/.hidden-dir/secret.md', '# hidden dir\n', 1)
+    fs.add('/vault/arch.md', [
       '---', 'archive: true', '---', '# Archived', '',
     ].join('\n'), 1)
 
@@ -258,7 +268,7 @@ describe('reindex first run', () => {
     const rows = inserts[0]!.request.data!
     expect(inserts[0]!.request.collection_name).toBe('obsidian_mem')
     expect(rows[0]).toMatchObject({
-      [MILVUS_FIELDS.sourcePath]: 'markdown/a.md',
+      [MILVUS_FIELDS.sourcePath]: 'a.md',
       [MILVUS_FIELDS.vault]: '/vault',
       [MILVUS_FIELDS.scope]: 'domain',
       [MILVUS_FIELDS.updatedAt]: 1111,
@@ -273,8 +283,10 @@ describe('reindex first run', () => {
     expect(betaRows[0]![MILVUS_FIELDS.triggerExtensions]).toEqual(['.ts'])
 
     const state = filesOf(fs.state())
-    expect(Object.keys(state).sort()).toEqual(['markdown/a.md', 'markdown/arch.md', 'markdown/sub/b.md'])
-    expect(state['markdown/arch.md']!.chunkIds).toEqual([])
+    expect(Object.keys(state).sort()).toEqual(['a.md', 'arch.md', 'sub/b.md'])
+    // Root-relative keys with no leading slash; nothing from a dot dir.
+    expect(Object.keys(state).some((key) => key.startsWith('.'))).toBe(false)
+    expect(state['arch.md']!.chunkIds).toEqual([])
     expect(fs.renames).toContainEqual({
       from: `/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}.tmp`,
       to: `/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`,
@@ -299,9 +311,9 @@ describe('state diff', () => {
   it('re-embeds a changed file: deletes its old chunk ids, then inserts', async () => {
     const { fs, writer, indexer } = makeFixture()
     await indexer.reindex()
-    const oldIds = filesOf(fs.state())['markdown/a.md']!.chunkIds
+    const oldIds = filesOf(fs.state())['a.md']!.chunkIds
     const before = writer.calls.length
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nNew insight about **billing**.\n`, 3333)
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nNew insight about **billing**.\n`, 3333)
 
     await indexer.reindex()
 
@@ -310,14 +322,14 @@ describe('state diff', () => {
     expect(newCalls[0]!.request.ids).toEqual(oldIds)
     const rows = newCalls[1]!.request.data!
     expect(rows.some((row) => (row[MILVUS_FIELDS.wakeKeywords] as string[]).includes('billing'))).toBe(true)
-    expect(filesOf(fs.state())['markdown/a.md']!.mtimeMs).toBe(3333)
+    expect(filesOf(fs.state())['a.md']!.mtimeMs).toBe(3333)
   })
 
   it('deletes chunks of a removed file and drops its state entry', async () => {
     const { fs, writer, indexer } = makeFixture()
     await indexer.reindex()
-    const betaIds = filesOf(fs.state())['markdown/sub/b.md']!.chunkIds
-    fs.remove('/vault/markdown/sub/b.md')
+    const betaIds = filesOf(fs.state())['sub/b.md']!.chunkIds
+    fs.remove('/vault/sub/b.md')
     const before = writer.calls.length
 
     await indexer.reindex()
@@ -325,14 +337,14 @@ describe('state diff', () => {
     const deletes = writer.calls.slice(before).filter((call) => call.method === 'delete')
     expect(deletes).toHaveLength(1)
     expect(deletes[0]!.request.ids).toEqual(betaIds)
-    expect(filesOf(fs.state())['markdown/sub/b.md']).toBeUndefined()
+    expect(filesOf(fs.state())['sub/b.md']).toBeUndefined()
   })
 
   it('purges chunks of a note archived after it was indexed', async () => {
     const { fs, writer, indexer } = makeFixture()
     await indexer.reindex()
-    const alphaIds = filesOf(fs.state())['markdown/a.md']!.chunkIds
-    fs.add('/vault/markdown/a.md', ALPHA_NOTE.replace('archive: false', 'archive: true'), 4444)
+    const alphaIds = filesOf(fs.state())['a.md']!.chunkIds
+    fs.add('/vault/a.md', ALPHA_NOTE.replace('archive: false', 'archive: true'), 4444)
     const before = writer.calls.length
 
     await indexer.reindex()
@@ -340,7 +352,7 @@ describe('state diff', () => {
     const newCalls = writer.calls.slice(before)
     expect(newCalls.map((call) => call.method)).toEqual(['delete'])
     expect(newCalls[0]!.request.ids).toEqual(alphaIds)
-    expect(filesOf(fs.state())['markdown/a.md']!.chunkIds).toEqual([])
+    expect(filesOf(fs.state())['a.md']!.chunkIds).toEqual([])
   })
 })
 
@@ -352,19 +364,19 @@ describe('offline and migration', () => {
 
     expect(indexer.progress.errors).toBe(1)
     // a.md (first alphabetically) failed; its state entry was not written.
-    expect(filesOf(fs.state())['markdown/a.md']).toBeUndefined()
+    expect(filesOf(fs.state())['a.md']).toBeUndefined()
     const failedCalls = writer.calls.length
 
     await indexer.reindex()
 
-    expect(filesOf(fs.state())['markdown/a.md']).toBeDefined()
+    expect(filesOf(fs.state())['a.md']).toBeDefined()
     expect(writer.calls.length).toBeGreaterThan(failedCalls)
   })
 
   it('model swap: deletes every old-model chunk id and re-inserts fresh ids', async () => {
     const { fs, writer, indexer } = makeFixture()
     await indexer.reindex()
-    const oldAlphaIds = filesOf(fs.state())['markdown/a.md']!.chunkIds
+    const oldAlphaIds = filesOf(fs.state())['a.md']!.chunkIds
     const before = writer.calls.length
 
     const swapped = new VaultIndexer({
@@ -379,7 +391,7 @@ describe('offline and migration', () => {
     const newCalls = writer.calls.slice(before)
     const deletes = newCalls.filter((call) => call.method === 'delete')
     expect(deletes[0]!.request.ids).toEqual(oldAlphaIds)
-    const newAlphaIds = filesOf(fs.state())['markdown/a.md']!.chunkIds
+    const newAlphaIds = filesOf(fs.state())['a.md']!.chunkIds
     expect(newAlphaIds).not.toEqual(oldAlphaIds)
     expect((fs.state() as { modelId: string }).modelId).toBe('other-model')
   })
@@ -389,10 +401,10 @@ describe('write-through hook', () => {
   it('indexFile re-indexes one changed file by relative or absolute path', async () => {
     const { fs, writer, indexer } = makeFixture()
     await indexer.reindex()
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nUpdated\n`, 5555)
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nUpdated\n`, 5555)
     const before = writer.calls.length
 
-    await indexer.indexFile('/vault/markdown/a.md')
+    await indexer.indexFile('/vault/a.md')
 
     const newCalls = writer.calls.slice(before)
     expect(newCalls.map((call) => call.method)).toEqual(['delete', 'insert'])
@@ -403,7 +415,7 @@ describe('write-through hook', () => {
     await indexer.reindex()
     const stateBefore = JSON.stringify(fs.state())
 
-    await indexer.indexFile('markdown/never-indexed.md')
+    await indexer.indexFile('never-indexed.md')
     await indexer.indexFile('notes/outside.md')
 
     expect(JSON.stringify(fs.state())).toBe(stateBefore)
@@ -418,11 +430,11 @@ describe('watcher triggers', () => {
     await settle()
     const baseline = writer.calls.length
 
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nWatcher edit\n`, 6666)
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nWatcher edit\n`, 6666)
     const listener = listeners[0]!
-    listener('markdown/a.md')
-    listener('markdown/a.md')
-    listener('markdown/sub/../b.tmp')
+    listener('a.md')
+    listener('a.md')
+    listener('sub/../b.tmp')
 
     vi.advanceTimersByTime(1499)
     await settle()
@@ -442,8 +454,32 @@ describe('watcher triggers', () => {
     await settle()
     const baseline = writer.calls.length
 
-    listeners[0]!('markdown/a.md')
+    listeners[0]!('a.md')
     vi.advanceTimersByTime(1500)
+    await settle()
+
+    expect(writer.calls.length).toBe(baseline)
+    indexer.stop()
+  })
+
+  // The watcher root is the vault root, so the indexer's own state saves
+  // under `.obsidian-mem/metadata/` fire watch events at it. The dot rule
+  // in normalizeRel must drop them before they dirty anything, or every
+  // reindex would schedule the next one.
+  it('never dirties itself on watch events for .obsidian-mem sidecar writes', async () => {
+    vi.useFakeTimers()
+    const { writer, indexer, listeners } = makeFixture()
+    indexer.start()
+    await settle()
+    const baseline = writer.calls.length
+
+    listeners[0]!(`/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`)
+    listeners[0]!(`.obsidian-mem/metadata/${STATE_FILE_NAME}.tmp`)
+    listeners[0]!(`.obsidian-mem/metadata/${STATE_FILE_NAME}`)
+    // A candidate .md name under a dot dir: only the dot rule can stop it.
+    listeners[0]!('.obsidian-mem/metadata/scratch.md')
+    listeners[0]!('.obsidian/workspace.json')
+    vi.advanceTimersByTime(WATCH_DEBOUNCE_MS + 1)
     await settle()
 
     expect(writer.calls.length).toBe(baseline)
@@ -457,7 +493,7 @@ describe('watcher triggers', () => {
     await settle()
     const baseline = writer.calls.length
 
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nMissed by the watcher\n`, 7777)
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nMissed by the watcher\n`, 7777)
 
     vi.advanceTimersByTime(30_000)
     vi.advanceTimersByTime(1_500)
@@ -504,7 +540,7 @@ describe('LLM refinement', () => {
     expect(body.messages[0]!.content.length).toBeLessThan(6500)
 
     const rows = writer.calls.filter((call) => call.method === 'insert').flatMap((call) => call.request.data!)
-    const alphaRow = rows.find((row) => row[MILVUS_FIELDS.sourcePath] === 'markdown/a.md')!
+    const alphaRow = rows.find((row) => row[MILVUS_FIELDS.sourcePath] === 'a.md')!
     expect(alphaRow[MILVUS_FIELDS.wakeKeywords]).toContain('quantum')
     expect(alphaRow[MILVUS_FIELDS.wakeKeywords]).toContain('rate limiter')
     expect(alphaRow[MILVUS_FIELDS.triggerFrameworks]).toContain('solidjs')
@@ -518,7 +554,7 @@ describe('LLM refinement', () => {
     }
     const big = `# Big\n\n${'word '.repeat(3000)}\n`
     const { fs, indexer } = makeFixture({ llm: llmConfig, fetch: fetchImpl, env: { MEM_LLM_KEY: 'k' } })
-    fs.add('/vault/markdown/big.md', big, 1)
+    fs.add('/vault/big.md', big, 1)
 
     await indexer.reindex()
 
@@ -539,7 +575,7 @@ describe('LLM refinement', () => {
     await indexer.reindex()
 
     const rows = writer.calls.filter((call) => call.method === 'insert').flatMap((call) => call.request.data!)
-    const alphaRow = rows.find((row) => row[MILVUS_FIELDS.sourcePath] === 'markdown/a.md')!
+    const alphaRow = rows.find((row) => row[MILVUS_FIELDS.sourcePath] === 'a.md')!
     expect(alphaRow[MILVUS_FIELDS.wakeKeywords]).toContain('rate limiter')
     expect(indexer.progress.llmErrors).toBeGreaterThan(0)
   })
@@ -554,8 +590,8 @@ describe('LLM refinement', () => {
       llm: { ...llmConfig, apiKeyEnv: undefined },
       fetch: fetchImpl,
     })
-    fs.add('/vault/markdown/c.md', '# Gamma\n\n**gamma** signal.\n', 3)
-    fs.add('/vault/markdown/d.md', '# Delta\n\n**delta** signal.\n', 4)
+    fs.add('/vault/c.md', '# Gamma\n\n**gamma** signal.\n', 3)
+    fs.add('/vault/d.md', '# Delta\n\n**delta** signal.\n', 4)
 
     await indexer.reindex()
 
@@ -584,14 +620,14 @@ describe('caps and manager', () => {
       { length: MAX_CHUNKS_PER_FILE + 10 },
       (_, index) => `## Section ${index}\n\nBody ${index}.\n`,
     ).join('\n')
-    fs.add('/vault/markdown/many.md', manySections, 9)
+    fs.add('/vault/many.md', manySections, 9)
 
     await indexer.reindex()
 
     const rows = writer.calls
       .filter((call) => call.method === 'insert')
       .map((call) => call.request.data!)
-      .find((data) => data[0]![MILVUS_FIELDS.sourcePath] === 'markdown/many.md')
+      .find((data) => data[0]![MILVUS_FIELDS.sourcePath] === 'many.md')
     expect(rows).toHaveLength(MAX_CHUNKS_PER_FILE)
   })
 
@@ -602,7 +638,7 @@ describe('caps and manager', () => {
     const fs = new MemFs()
     for (let index = 0; index < MAX_FILES_PER_VAULT + 3; index += 1) {
       const name = `f${String(index).padStart(4, '0')}`
-      fs.add(`/vault/markdown/${name}.md`, `# ${name}\n\nBody ${index}.\n`, index + 1)
+      fs.add(`/vault/${name}.md`, `# ${name}\n\nBody ${index}.\n`, index + 1)
     }
     const writer = stubWriter()
     const indexer = new VaultIndexer({
@@ -620,16 +656,16 @@ describe('caps and manager', () => {
     expect(summary.errors).toBe(0)
     const state = filesOf(fs.state())
     expect(Object.keys(state)).toHaveLength(MAX_FILES_PER_VAULT)
-    expect(state['markdown/f1999.md']).toBeDefined()
-    expect(state['markdown/f2000.md']).toBeUndefined()
-    expect(state['markdown/f2002.md']).toBeUndefined()
+    expect(state['f1999.md']).toBeDefined()
+    expect(state['f2000.md']).toBeUndefined()
+    expect(state['f2002.md']).toBeUndefined()
     expect(logs.some((line) => line.includes(`exceeds cap ${MAX_FILES_PER_VAULT}`))).toBe(true)
   })
 
   it('IndexerManager reindexes every vault and aggregates progress', async () => {
     const fs = new MemFs()
-    fs.add('/vaults/one/markdown/a.md', ALPHA_NOTE, 1)
-    fs.add('/vaults/two/markdown/b.md', BETA_NOTE, 2)
+    fs.add('/vaults/one/a.md', ALPHA_NOTE, 1)
+    fs.add('/vaults/two/b.md', BETA_NOTE, 2)
     const writer = stubWriter()
     const manager = new IndexerManager({
       vaults: [
@@ -647,14 +683,14 @@ describe('caps and manager', () => {
     const sources = writer.calls
       .filter((call) => call.method === 'insert')
       .flatMap((call) => (call.request.data ?? []).map((row) => `${row[MILVUS_FIELDS.vault]}#${row[MILVUS_FIELDS.sourcePath]}`))
-    expect(sources).toContain('/vaults/one#markdown/a.md')
-    expect(sources).toContain('/vaults/two#markdown/b.md')
+    expect(sources).toContain('/vaults/one#a.md')
+    expect(sources).toContain('/vaults/two#b.md')
     expect(manager.progress().indexed).toBe(2)
     expect(manager.vaultProgress('/vaults/two')).not.toBeNull()
 
-    fs.add('/vaults/one/markdown/a.md', `${ALPHA_NOTE}\nWrite-through\n`, 5)
-    expect(await manager.indexFile('/vaults/one', 'markdown/a.md')).toBe(true)
-    expect(await manager.indexFile('/vaults/none', 'markdown/a.md')).toBe(false)
+    fs.add('/vaults/one/a.md', `${ALPHA_NOTE}\nWrite-through\n`, 5)
+    expect(await manager.indexFile('/vaults/one', 'a.md')).toBe(true)
+    expect(await manager.indexFile('/vaults/none', 'a.md')).toBe(false)
   })
 
   // TASK-025 carry-over #3: the service only ever drives the manager's
@@ -663,8 +699,8 @@ describe('caps and manager', () => {
   it('start arms every vault watcher and scan; stop closes watchers and drops queued dirt', async () => {
     vi.useFakeTimers()
     const fs = new MemFs()
-    fs.add('/vaults/one/markdown/a.md', ALPHA_NOTE, 1)
-    fs.add('/vaults/two/markdown/b.md', BETA_NOTE, 2)
+    fs.add('/vaults/one/a.md', ALPHA_NOTE, 1)
+    fs.add('/vaults/two/b.md', BETA_NOTE, 2)
     const writer = stubWriter()
     const listeners: WatchListener[] = []
     let closedWatches = 0
@@ -693,14 +729,14 @@ describe('caps and manager', () => {
 
     // Dirty two files, then stop before the debounce window closes: the
     // queued work must be dropped, and events after stop must be ignored.
-    fs.add('/vaults/one/markdown/a.md', `${ALPHA_NOTE}\nedit\n`, 7)
-    fs.add('/vaults/two/markdown/b.md', `${BETA_NOTE}\nedit\n`, 8)
-    listeners[0]!('markdown/a.md')
-    listeners[1]!('markdown/b.md')
+    fs.add('/vaults/one/a.md', `${ALPHA_NOTE}\nedit\n`, 7)
+    fs.add('/vaults/two/b.md', `${BETA_NOTE}\nedit\n`, 8)
+    listeners[0]!('a.md')
+    listeners[1]!('b.md')
     const before = writer.calls.length
 
     manager.stop()
-    listeners[0]!('markdown/a.md')
+    listeners[0]!('a.md')
     vi.advanceTimersByTime(2_000)
     await settle()
 
@@ -718,7 +754,7 @@ describe('stat sweep configuration', () => {
     await settle()
     const baseline = writer.calls.length
 
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nEdited while the watcher slept\n`, 8888)
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nEdited while the watcher slept\n`, 8888)
 
     // The default 30 s window would still be asleep at 5 s plus the debounce.
     vi.advanceTimersByTime(5_000 + 1_500)
@@ -735,7 +771,7 @@ describe('stat sweep configuration', () => {
     await settle()
     const baseline = writer.calls.length
 
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nEdit nobody reports\n`, 9999)
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nEdit nobody reports\n`, 9999)
 
     vi.advanceTimersByTime(120_000)
     await settle()
@@ -749,7 +785,7 @@ describe('insert clamps to the schema column widths', () => {
   it('truncates stored scalars to the core MILVUS_SCALAR_MAX_LENGTHS', async () => {
     const longHeader = 'H'.repeat(MILVUS_SCALAR_MAX_LENGTHS.sectionHeader + 400)
     const fs = new MemFs()
-    fs.add('/vault/markdown/long.md', `---\ntype: global\n---\n# ${longHeader}\n\nbody text\n`, 1)
+    fs.add('/vault/long.md', `---\ntype: global\n---\n# ${longHeader}\n\nbody text\n`, 1)
     const writer = stubWriter()
     const indexer = new VaultIndexer({
       vault: { path: '/vault', mode: 'shared' },
@@ -841,14 +877,14 @@ describe('run-loop failure accounting', () => {
 
     expect(first.indexed).toBe(1)
     expect(first.errors).toBe(1)
-    expect(filesOf(fs.state())['markdown/sub/b.md']).toBeUndefined()
-    expect(logs.some((line) => line.includes('markdown/sub/b.md failed'))).toBe(true)
+    expect(filesOf(fs.state())['sub/b.md']).toBeUndefined()
+    expect(logs.some((line) => line.includes('sub/b.md failed'))).toBe(true)
 
     broken = false
     const second = await indexer.reindex()
 
     expect(second.indexed).toBe(1)
-    expect(filesOf(fs.state())['markdown/sub/b.md']).toBeDefined()
+    expect(filesOf(fs.state())['sub/b.md']).toBeDefined()
   })
 
   it('keeps a removed file dirty when its stale delete fails, purging next run', async () => {
@@ -879,19 +915,19 @@ describe('run-loop failure accounting', () => {
       log: () => undefined,
     })
     await indexer.reindex()
-    const betaIds = filesOf(memFs.state())['markdown/sub/b.md']!.chunkIds
-    memFs.remove('/vault/markdown/sub/b.md')
+    const betaIds = filesOf(memFs.state())['sub/b.md']!.chunkIds
+    memFs.remove('/vault/sub/b.md')
 
     const first = await indexer.reindex()
 
     expect(first.errors).toBe(1)
     expect(first.purged).toBe(0)
-    expect(filesOf(memFs.state())['markdown/sub/b.md']).toBeDefined()
+    expect(filesOf(memFs.state())['sub/b.md']).toBeDefined()
 
     const second = await indexer.reindex()
 
     expect(second.purged).toBe(1)
-    expect(filesOf(memFs.state())['markdown/sub/b.md']).toBeUndefined()
+    expect(filesOf(memFs.state())['sub/b.md']).toBeUndefined()
     expect(calls.filter((call) => call.method === 'delete').at(-1)!.request.ids).toEqual(betaIds)
   })
 
@@ -923,20 +959,20 @@ describe('run-loop failure accounting', () => {
       log: () => undefined,
     })
     await indexer.reindex()
-    const alphaIds = filesOf(memFs.state())['markdown/a.md']!.chunkIds
-    memFs.add('/vault/markdown/a.md', ALPHA_NOTE.replace('archive: false', 'archive: true'), 4444)
+    const alphaIds = filesOf(memFs.state())['a.md']!.chunkIds
+    memFs.add('/vault/a.md', ALPHA_NOTE.replace('archive: false', 'archive: true'), 4444)
 
     const summary = await indexer.reindex()
 
     expect(summary.errors).toBe(1)
     expect(summary.purged).toBe(0)
     // State kept the old chunk ids: the next run retries the purge.
-    expect(filesOf(memFs.state())['markdown/a.md']!.chunkIds).toEqual(alphaIds)
+    expect(filesOf(memFs.state())['a.md']!.chunkIds).toEqual(alphaIds)
 
     const retry = await indexer.reindex()
 
     expect(retry.purged).toBe(1)
-    expect(filesOf(memFs.state())['markdown/a.md']!.chunkIds).toEqual([])
+    expect(filesOf(memFs.state())['a.md']!.chunkIds).toEqual([])
   })
 
   it('fails a file when the embedder returns the wrong vector count', async () => {
@@ -962,7 +998,7 @@ describe('run-loop failure accounting', () => {
   it('surfaces a background reindex failure from start() as a counted error, not a crash', async () => {
     const logs: string[] = []
     const fs = new FailOnWriteFs()
-    fs.add('/vault/markdown/a.md', ALPHA_NOTE, 1)
+    fs.add('/vault/a.md', ALPHA_NOTE, 1)
     const writer = stubWriter()
     const indexer = new VaultIndexer({
       vault: { path: '/vault', mode: 'shared' },
@@ -980,7 +1016,7 @@ describe('run-loop failure accounting', () => {
     // The per-file saveState throws first: the file is counted failed and
     // the run itself never stamps. Either way start() swallowed the throw.
     expect(indexer.progress.errors).toBeGreaterThan(0)
-    expect(logs.some((line) => line.includes('file markdown/a.md failed'))).toBe(true)
+    expect(logs.some((line) => line.includes('file a.md failed'))).toBe(true)
   })
 
   it('catches and logs a reindex rejection raised after the file loop', async () => {
@@ -1014,8 +1050,8 @@ describe('run-loop failure accounting', () => {
     indexer.start()
     await settle()
 
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nWatcher edit\n`, 6666)
-    listeners[0]!('markdown/a.md')
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nWatcher edit\n`, 6666)
+    listeners[0]!('a.md')
     vi.advanceTimersByTime(1_500)
     await settle()
 
@@ -1030,7 +1066,7 @@ describe('run-loop failure accounting', () => {
     await settle()
     const baseline = writer.calls.length
 
-    fs.add('/vault/markdown/a.md', `${ALPHA_NOTE}\nUnattributed change\n`, 7777)
+    fs.add('/vault/a.md', `${ALPHA_NOTE}\nUnattributed change\n`, 7777)
     listeners[0]!(null)
     vi.advanceTimersByTime(1_500)
     await settle()
@@ -1049,7 +1085,7 @@ describe('state file and path guards', () => {
 
     expect(summary.indexed).toBe(2)
     expect(summary.errors).toBe(0)
-    expect(Object.keys(filesOf(fs.state())).sort()).toEqual(['markdown/a.md', 'markdown/sub/b.md'])
+    expect(Object.keys(filesOf(fs.state())).sort()).toEqual(['a.md', 'sub/b.md'])
   })
 
   it('forces a full re-embed when the state file predates the schema version', async () => {
@@ -1075,7 +1111,48 @@ describe('state file and path guards', () => {
     expect(summary.indexed).toBe(2)
     expect(writer.calls.length).toBeGreaterThan(before)
     expect((JSON.parse(fs.files.get(`/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`)!.content) as { version: number }).version)
-      .toBe(1)
+      .toBe(INDEX_STATE_VERSION)
+  })
+
+  // The 1 → 2 bump is the layout migration lever: a vault whose state keys
+  // still carry the `markdown/` prefix must purge those stale keys (and
+  // their chunk rows) through the ordinary stale-delete path, then
+  // re-embed the same notes under root-relative keys.
+  it('version 1 state purges stale markdown-prefixed keys and re-embeds root-relative', async () => {
+    const fs = new MemFs()
+    fs.add('/vault/x.md', ALPHA_NOTE, 1111)
+    fs.add(`/vault/.obsidian-mem/metadata/${STATE_FILE_NAME}`, `${JSON.stringify({
+      version: 1,
+      modelId: 'fake-deterministic-embedder',
+      vectorDim: 8,
+      files: {
+        'markdown/x.md': { contentHash: 'legacy-hash', mtimeMs: 1111, chunkIds: [111, 222] },
+      },
+    }, null, 2)}\n`, 5)
+    const writer = stubWriter()
+    const migrated = new VaultIndexer({
+      vault: { path: '/vault', mode: 'shared' },
+      embedder: fakeEmbedder({ vectorDim: 8 }),
+      writer: writer.writer,
+      fs,
+      log: () => undefined,
+    })
+
+    const summary = await migrated.reindex()
+
+    // The stale key's stored chunk ids are deleted from Milvus verbatim.
+    const deletes = writer.calls.filter((call) => call.method === 'delete')
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0]!.request.ids).toEqual([111, 222])
+    expect(summary.purged).toBe(1)
+    expect(summary.indexed).toBe(1)
+    const state = filesOf(fs.state())
+    expect(state['markdown/x.md']).toBeUndefined()
+    expect(Object.keys(state)).toEqual(['x.md'])
+    expect(state['x.md']!.chunkIds).not.toEqual([111, 222])
+    const rows = writer.calls.filter((call) => call.method === 'insert').flatMap((call) => call.request.data!)
+    expect(rows[0]).toMatchObject({ [MILVUS_FIELDS.sourcePath]: 'x.md' })
+    expect((fs.state() as { version: number }).version).toBe(2)
   })
 
   it('normalizes away dotfile and reserved names on the write-through hook', async () => {
@@ -1083,9 +1160,9 @@ describe('state file and path guards', () => {
     await indexer.reindex()
     const stateBefore = JSON.stringify(fs.state())
 
-    await indexer.indexFile('/vault/markdown/.INTENTS.md')
-    await indexer.indexFile('markdown/DREAMS.md')
-    await indexer.indexFile('markdown/topic_history.md')
+    await indexer.indexFile('/vault/.INTENTS.md')
+    await indexer.indexFile('DREAMS.md')
+    await indexer.indexFile('topic_history.md')
 
     expect(JSON.stringify(fs.state())).toBe(stateBefore)
   })

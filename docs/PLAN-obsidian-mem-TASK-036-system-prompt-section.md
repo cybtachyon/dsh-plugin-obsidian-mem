@@ -1,5 +1,7 @@
 # TASK-036 System-prompt section for memory tools
 
+Status: done
+
 Depends: TASK-033. `packages/tools/src/prompt.ts`.
 
 ## Scope

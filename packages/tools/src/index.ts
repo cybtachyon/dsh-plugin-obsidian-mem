@@ -23,20 +23,31 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '../../service/lib/index.js'
 import { OBSIDIAN_MEM_SEAM } from '../../service/lib/index.js'
 import type { MemoryToolScope } from './host.js'
+import { registerMemoryPromptSection } from './prompt.js'
+import type { MemoryPromptScope } from './prompt.js'
 import { registerMemoryTools } from './register.js'
 
 export const name = 'obsidian-mem-tools'
 export const inject = ['obsidianMem']
 
 /**
- * Mount the model-facing tools: the scoped inject waits for both the
- * memory seam and the host `tools` service, then registers every memory_*
- * tool inside fiber effects.
+ * Mount the model-facing tools and the system-prompt section: the first
+ * scoped inject waits for the memory seam plus the host `tools` service,
+ * then registers every memory_* tool inside fiber effects; the second
+ * waits for the memory seam plus the host `systemPrompt` service and
+ * registers the cross-tool timing section. Either half stays inert while
+ * its service is absent.
  */
 export function apply(ctx: Context): void {
   ctx.inject([OBSIDIAN_MEM_SEAM, 'tools'], (scope) => {
     const target = scope as MemoryToolScope
     registerMemoryTools(target, target.obsidianMem)
+  })
+  ctx.inject([OBSIDIAN_MEM_SEAM, 'systemPrompt'], (scope) => {
+    const target = scope as unknown as MemoryPromptScope
+    registerMemoryPromptSection(target, (message) => {
+      ctx.logger('obsidian-mem-tools').warn(message)
+    })
   })
 }
 
@@ -95,6 +106,16 @@ export {
   DREAM_TIMEOUT_MS,
 } from './dream.js'
 export type { DreamValue } from './dream.js'
+export {
+  registerMemoryPromptSection,
+  neverThrowingText,
+  MEMORY_PROMPT_SECTION_TEXT,
+} from './prompt.js'
+export type {
+  MemoryPromptScope,
+  PromptSectionOptions,
+  SystemPromptSeam,
+} from './prompt.js'
 export type {
   JsonSchemaNode,
   MemoryService,

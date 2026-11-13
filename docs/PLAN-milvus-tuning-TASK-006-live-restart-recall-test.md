@@ -2,17 +2,25 @@
 
 First live end-to-end validation of the new radii.
 
-Step 0 (blocking investigation, resolves the 2026-11-12 anomaly where the
-machinae-game probe subagent recorded ZERO recalled_memory blocks while
-parent sessions saw many): determine, from `packages/events/src` (index.ts
-registration seam, sessions.ts, budget.ts gates) and the transcripts under
-`~/.dsh/sessions/`, whether delegated subagent sessions receive turn-start
-recall, and whether the global per-host recall budget suppressed that run.
-If subagents never receive recall, the test loop observes recall in a
-user-launched top-level GUI session on the machinae-game workspace
-instead (ask the user to open one with the agreed task prompt), or
-through the subagent's read-intercept path if that does fire. Record the
-finding in the plan file before proceeding.
+Step 0 RESOLVED 2026-11-12 (subagent 05ff0190 verdict): delegated
+subagents DO receive recall injection (every agent gets
+installTurnStart/Think/Read via `agent/created`). The zero-recall anomaly
+is the GLOBAL recall budget: `isOverGlobalBudget` (strictly over 1500
+tokens, live records since restart/last dream) gates ONLY turn-start
+recall, and the parent session burns the headroom at its first resumed
+step. Think/read-intercept recalls are ungated and fire per tool use.
+(Probe id 905b82c4 never existed on this host; ignore it.)
+
+Test-loop design therefore requires ONE enabler per iteration:
+- Preferred: temporarily raise `budgets.globalMemoryTokens` in the
+  plugin's Cordis config for the tuning-loop window (revert in
+  TASK-013), so parent and probe both recall freely; or
+- Alternative: restart the host and launch the probe subagent as the
+  first memory-touching session (fragile: the parent resumes first), or
+  trigger a successful memory_dream to reset counters.
+Verification per iteration: probe transcript contains user/message with
+source.kind "plugin:obsidian-mem" and summary "obsidian-mem: turn-start
+recall"; otherwise the iteration measured nothing.
 
 Scope:
 1. Ask the user to restart DSH (host-side lib only activates on restart;

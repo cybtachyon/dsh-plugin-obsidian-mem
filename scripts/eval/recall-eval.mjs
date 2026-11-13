@@ -21,8 +21,9 @@
  * Dispatch modes (the point of this harness — radius knobs only exist in
  * split-rrf because per-route radii inside hybridSearch are accepted but
  * NOT honored by lite 3.2.2, docs/research/radius-tuning-findings.md §4):
- * - legacy-hybrid: the CURRENT production shape (packages/service/src/
- *   search.ts dispatchHybrid): one client.hybridSearch, `data[]` routes
+ * - legacy-hybrid: the pre-split production shape (the retired
+ *   dispatchHybrid, since replaced by split dispatchRoutes): one
+ *   client.hybridSearch, `data[]` routes
  *   with per-route metric_type COSINE / BM25, dense params {ef: 64},
  *   RRFRanker(rrfK default 60), no radii, route+page limit = topK *
  *   oversample, Strong consistency, full G10 output projection.
@@ -38,6 +39,11 @@
  * provably no-ops on that route (H1-H5 evidence). --rrf-k maps to
  * RRFRanker(k) in legacy-hybrid and to the client-side fusion in split-rrf.
  * --min-score floors FUSED scores only in both modes (never raw BM25, G7).
+ * The BM25 route receives sparseQueryText(query) (the production stop-word
+ * strip from search.ts's emitted module, TASK-002) in every dispatch,
+ * matching production. --keep-stopwords sends the RAW query on the sparse
+ * route instead, the baseline half of the strip A/B (TASK-004/005); the
+ * choice is echoed in the artifact config block.
  *
  * Embeddings come from the production embedder itself:
  * packages/service/lib/embedder.js createEmbedder() loads standalone
@@ -74,14 +80,15 @@ const { MilvusClient, RRFRanker, MetricType } = require('@zilliz/milvus2-sdk-nod
 
 // Production pieces imported, never retyped: the embedder (model id,
 // query: prefix, cache layout via core constants), the exact search
-// projection, tuning constants + status gate from service/lib, and the
-// shared names from core/lib.
+// projection, tuning constants + status gate + BM25 stop-word strip from
+// service/lib, and the shared names from core/lib.
 const { createEmbedder } = await import('../../packages/service/lib/embedder.js')
 const {
   SEARCH_OUTPUT_FIELDS,
   RRF_RANKER_K,
   DENSE_SEARCH_EF,
   CANDIDATE_OVERSAMPLE,
+  sparseQueryText,
 } = await import('../../packages/service/lib/search.js')
 const { assertOk } = await import('../../packages/service/lib/milvus/ok.js')
 const {
@@ -110,6 +117,7 @@ Usage:
   --dense-radius N     dense COSINE radius; EXCLUSIVE lower bound (split-rrf only)
   --dense-range  N     dense range_filter; INCLUSIVE upper bound (split-rrf only)
   --sparse-radius N    client-side BM25 floor: keep hits with -score >= N (split-rrf only)
+  --keep-stopwords     send the RAW query to the BM25 route, skipping the production sparseQueryText stop-word strip (A/B baseline)
   --rrf-k N            RRF fusion k (default ${RRF_RANKER_K}, imported from search.ts); RRFRanker(k) in legacy-hybrid
   --min-score N        floor on FUSED scores before the top-k cut (default: none)
   --top-k N            page size (default ${SEARCH_DEFAULT_TOP_K})
@@ -125,6 +133,7 @@ function parseArgs(argv) {
     denseRadius: undefined,
     denseRange: undefined,
     sparseRadius: undefined,
+    keepStopwords: false,
     rrfK: RRF_RANKER_K,
     minScore: undefined,
     topK: SEARCH_DEFAULT_TOP_K,
@@ -157,6 +166,9 @@ function parseArgs(argv) {
         break
       case '--sparse-radius':
         opts.sparseRadius = number(arg, argv[++i])
+        break
+      case '--keep-stopwords':
+        opts.keepStopwords = true
         break
       case '--rrf-k':
         opts.rrfK = number(arg, argv[++i])
@@ -213,9 +225,20 @@ function standaloneHits(response) {
   return (Array.isArray(results[0]) ? results[0] : results).map(normalize)
 }
 
-// legacyHybrid replicates search.ts dispatchHybrid exactly: one
+// sparseText renders the query text for a BM25 dispatch: production's
+// strip (dispatchRoutes sends sparseQueryText; TASK-002), or the raw
+// query under --keep-stopwords so one corpus answers the strip A/B
+// (TASK-004/005). Every sparse call site goes through here.
+function sparseText(query, opts) {
+  return opts.keepStopwords ? query : sparseQueryText(query)
+}
+
+// legacyHybrid replays the retired pre-split dispatchHybrid shape: one
 // hybridSearch, per-route metric_type (G3), ef on the dense route only,
 // RRFRanker(k), route AND page limit = candidateLimit, G10 projection.
+// The BM25 data still goes through sparseText: the strip is a route-input
+// rule production applies in dispatchRoutes, so every mode takes it under
+// the same flag.
 async function legacyHybrid(client, embedder, query, opts, candidateLimit) {
   const dense = await embedder.embedQuery(query)
   const response = assertOk(await client.hybridSearch({
@@ -230,7 +253,7 @@ async function legacyHybrid(client, embedder, query, opts, candidateLimit) {
       },
       {
         anns_field: MILVUS_FIELDS.sparseVector,
-        data: [query],
+        data: [sparseText(query, opts)],
         limit: candidateLimit,
         metric_type: MetricType.BM25,
       },
@@ -263,7 +286,7 @@ async function routeMembership(client, embedder, query, opts, candidateLimit) {
   const sparseRes = assertOk(await client.search({
     collection_name: MILVUS_COLLECTION,
     anns_field: MILVUS_FIELDS.sparseVector,
-    data: [query],
+    data: [sparseText(query, opts)],
     limit: candidateLimit,
     metric_type: MetricType.BM25,
     output_fields: [MILVUS_FIELDS.chunkId],
@@ -306,7 +329,7 @@ async function splitRrf(client, embedder, query, opts, candidateLimit) {
   const sparseRes = assertOk(await client.search({
     collection_name: MILVUS_COLLECTION,
     anns_field: MILVUS_FIELDS.sparseVector,
-    data: [query],
+    data: [sparseText(query, opts)],
     limit: candidateLimit,
     metric_type: MetricType.BM25,
     params: {},
@@ -541,7 +564,7 @@ async function main() {
     `\n=== AGGREGATES mode=${opts.mode} topK=${opts.topK} oversample=${opts.oversample}`
     + ` rrfK=${opts.rrfK} minScore=${opts.minScore ?? 'none'}`
     + ` denseRadius=${opts.denseRadius ?? 'none'} denseRange=${opts.denseRange ?? 'none'}`
-    + ` sparseRadius=${opts.sparseRadius ?? 'none'}`,
+    + ` sparseRadius=${opts.sparseRadius ?? 'none'} keepStopwords=${opts.keepStopwords}`,
   )
   console.log(
     `  queries=${aggregates.queries} returned=${aggregates.returned}`
@@ -570,6 +593,7 @@ async function main() {
       denseRadius: opts.denseRadius ?? null,
       denseRange: opts.denseRange ?? null,
       sparseRadius: opts.sparseRadius ?? null,
+      keepStopwords: opts.keepStopwords,
       denseEf: DENSE_SEARCH_EF,
       embedder: embedder.modelId,
       embedCalls: denseEmbedCalls,

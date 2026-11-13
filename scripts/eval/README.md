@@ -29,13 +29,14 @@ production sends.
 
 ## Modes
 
-- `--mode legacy-hybrid` — the CURRENT production shape (the
-  `dispatchHybrid` in
+- `--mode legacy-hybrid` — the pre-split production shape (the retired
+  `dispatchHybrid`, since replaced by the split `dispatchRoutes` in
   [`packages/service/src/search.ts`](../../packages/service/src/search.ts)):
   one `hybridSearch` with `data[]` routes (dense COSINE `params {ef:64}`,
   sparse BM25), `RRFRanker(rrfK)`, no radii, route and page limit
   `topK * oversample`, Strong consistency, full G10 projection.
-- `--mode split-rrf` — the TASK-004 candidate shape: two standalone
+- `--mode split-rrf` — the shape production's `dispatchRoutes` ships
+  today: two standalone
   `search` calls (dense COSINE with `params {ef, radius, range_filter}`,
   sparse BM25 with `params {}`), a CLIENT-SIDE sparse floor, then
   client-side RRF fusion (`fused += 1/(k+rank)`, rank from 1, merged by
@@ -45,6 +46,15 @@ production sends.
   [radius-tuning-findings.md §4](../../docs/research/radius-tuning-findings.md).
   The BM25 floor is client-side (`-score >= --sparse-radius`) because
   BM25 scores come back negated and best-first (findings §3).
+
+In both modes the BM25 route receives `sparseQueryText(query)`, the
+production stop-word strip (retune-injection TASK-002), imported from
+`packages/service/lib/search.js` and never reimplemented here.
+`--keep-stopwords` sends the RAW query on the sparse route instead: the
+baseline half of the strip A/B (TASK-004/005). The choice is echoed as
+`keepStopwords` in the artifact config block, and it applies to the
+legacy-hybrid route-membership probes too, so those route flags stay a
+faithful replay of the dispatch under test.
 
 In `legacy-hybrid` the radius knobs are ignored (lite provably ignores
 them on that path; the harness says so on stderr). `--min-score` floors
@@ -58,6 +68,7 @@ FUSED scores only, both modes — never raw BM25 (G7).
 | `--dense-radius` | none | split-rrf | dense COSINE `radius`, EXCLUSIVE lower bound |
 | `--dense-range` | none | split-rrf | dense `range_filter`, INCLUSIVE upper bound |
 | `--sparse-radius` | none | split-rrf | client-side BM25 floor: keep `-score >= N` |
+| `--keep-stopwords` | off | both | skip the production BM25 stop-word strip: the sparse route gets the raw query (A/B baseline) |
 | `--rrf-k` | 60 | both | `RRFRanker(k)` in legacy, client fusion k in split |
 | `--min-score` | none | both | floor on fused scores before the top-k cut |
 | `--top-k` | 6 | both | page size (`SEARCH_DEFAULT_TOP_K`) |
@@ -68,7 +79,8 @@ FUSED scores only, both modes — never raw BM25 (G7).
 Defaults for `--rrf-k`/`--oversample`/ef ARE the production constants:
 `recall-eval.mjs` imports `RRF_RANKER_K`, `CANDIDATE_OVERSAMPLE`, and
 `DENSE_SEARCH_EF` from `packages/service/lib/search.js`, so harness
-defaults track `search.ts` without restating its values.
+defaults track `search.ts` without restating its values. The strip helper
+`sparseQueryText` comes from that same module in both harnesses.
 
 ## Usage
 
@@ -148,7 +160,9 @@ embedded once per run.
 production page (its own split-rrf page computation driving the constants
 `search.ts` exports, imported from `packages/service/lib/search.js`:
 radius, range, ef, sparse floor, RRF k, `FUSED_SCORE_FLOOR`, topK,
-oversample), scores every surviving row with
+oversample, and the stop-word-stripped BM25 query via `sparseQueryText`
+(no flag; this page always follows production)), scores every surviving
+row with
 `Xenova/bge-reranker-base` via `sigmoid(raw logit)`, and reports the
 cutoff sweep, the per-cutoff flipped-row ledger, per-class probability
 distributions, and latency. It answers only "what would a post-fusion

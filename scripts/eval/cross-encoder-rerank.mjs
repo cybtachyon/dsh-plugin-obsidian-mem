@@ -9,7 +9,8 @@
  * The page under reranking is reproduced exactly from recall-eval's
  * split-rrf with production's own tuning constants, imported from
  * packages/service/lib/search.ts's emitted module (radius exclusive
- * lower bound, range_filter, ef, client-side BM25 floor, client RRF,
+ * lower bound, range_filter, ef, the stop-word-stripped BM25 query
+ * (sparseQueryText, TASK-002/004), client-side BM25 floor, client RRF,
  * the shipped FUSED_SCORE_FLOOR, topK, oversample). What survives that
  * page is the reranker's input; nothing refills it. Cutoffs are applied
  * on the sigmoid probability and, separately, the page is re-sorted by
@@ -73,6 +74,7 @@ const {
   SPARSE_SEARCH_RADIUS,
   FUSED_SCORE_FLOOR,
   CANDIDATE_OVERSAMPLE,
+  sparseQueryText,
 } = await import('../../packages/service/lib/search.js')
 const { assertOk } = await import('../../packages/service/lib/milvus/ok.js')
 const {
@@ -120,7 +122,7 @@ Usage:
 
 The candidate page is fixed at the constants search.ts exports (imported,
 never restated): dense COSINE radius ${DENSE_SEARCH_RADIUS} (exclusive) range_filter
-${DENSE_RANGE_MAX} ef ${DENSE_SEARCH_EF} + BM25 with client floor ${SPARSE_SEARCH_RADIUS}, client
+${DENSE_RANGE_MAX} ef ${DENSE_SEARCH_EF} + stop-word-stripped BM25 with client floor ${SPARSE_SEARCH_RADIUS}, client
 RRF(${RRF_RANKER_K}), fused floor ${FUSED_SCORE_FLOOR}, topK ${TOP_K},
 oversample ${CANDIDATE_OVERSAMPLE}. No knobs change it; this harness only decides what
 the reranker would do to that page.
@@ -193,7 +195,9 @@ function standaloneHits(response) {
 // productionPage implements the CURRENT production dispatch exactly (the
 // split-rrf recall-eval mode with the imported search.ts constants, plus
 // the fused-floor + top-k cut search.ts applies after fusion): standalone
-// dense with the radius band, standalone sparse, client-side BM25 floor,
+// dense with the radius band, standalone sparse with the stripped query
+// (sparseQueryText, no flag here: this page follows production),
+// client-side BM25 floor,
 // client-side RRF(RRF_RANKER_K) fusion (fused += 1/(k+rank), rank from 1),
 // fused-desc then chunk_id-asc sort, FUSED_SCORE_FLOOR cut, slice to topK.
 // That sliced page is the reranker's input; nothing refills a cut row.
@@ -216,7 +220,7 @@ async function productionPage(client, embedder, query) {
   const sparseRes = assertOk(await client.search({
     ...shared,
     anns_field: MILVUS_FIELDS.sparseVector,
-    data: [query],
+    data: [sparseQueryText(query)],
     metric_type: MetricType.BM25,
     params: {},
   }), 'search(sparse)')

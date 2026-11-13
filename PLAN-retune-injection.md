@@ -65,7 +65,7 @@ decoy memories, machinae-game subagents reporting every recall they see.
  - [x] [TASK-001-install-stopword-dep](docs/PLAN-retune-injection-TASK-001-install-stopword-dep.md)
  - [x] [TASK-002-implement-bm25-stopword-strip](docs/PLAN-retune-injection-TASK-002-implement-bm25-stopword-strip.md)
  - [x] [TASK-003-strip-route-unit-tests](docs/PLAN-retune-injection-TASK-003-strip-route-unit-tests.md)
- - [ ] [TASK-004-eval-harness-parity](docs/PLAN-retune-injection-TASK-004-eval-harness-parity.md)
+ - [x] [TASK-004-eval-harness-parity](docs/PLAN-retune-injection-TASK-004-eval-harness-parity.md)
  - [ ] [TASK-005-offline-ab-eval](docs/PLAN-retune-injection-TASK-005-offline-ab-eval.md)
  - [ ] [TASK-006-sparse-floor-resweep](docs/PLAN-retune-injection-TASK-006-sparse-floor-resweep.md)
  - [ ] [TASK-007-green-gates](docs/PLAN-retune-injection-TASK-007-green-gates.md)

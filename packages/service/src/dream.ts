@@ -194,6 +194,16 @@ export interface DreamAgentsGateway {
   }): Promise<DreamAgentHandle>
 }
 
+/**
+ * The reflection-gateway slice of the host `agentDefaultModel` service
+ * (never typed; TASK-002 wiring). The structural shape matches the
+ * `dsh-headless` `ctx.get("agentDefaultModel").currentSelection():
+ * ModelSelection`.
+ */
+export interface DreamDefaultModelGateway {
+  currentSelection(): { provider: string, model: string }
+}
+
 export interface DreamAgentHandle {
   agent: {
     followup(message: unknown): unknown

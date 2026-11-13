@@ -83,7 +83,7 @@ import type { ObsidianMemConfig, ResolvedObsidianMemConfig } from './config.js'
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js'
 import type { AuditFs, AuditReport, AuditRequest, CollectionProbeResult, VaultInventory } from './audit.js'
 import { DreamOrchestrator } from './dream.js'
-import type { DreamAgentsGateway, DreamEngineResult, DreamRequest, DreamRunSummary, DreamVectorTarget } from './dream.js'
+import type { DreamAgentsGateway, DreamDefaultModelGateway, DreamEngineResult, DreamRequest, DreamRunSummary, DreamVectorTarget } from './dream.js'
 import { createEmbedder } from './embedder.js'
 import type { Embedder } from './embedder.js'
 import { describeError } from './errors.js'
@@ -957,10 +957,9 @@ export class ObsidianMemService extends Service {
         inventories: (): VaultInventory[] => this.listVaults().map((entry) => inventoryVault(entry, this.auditFs)),
         globalIndex: () => this.globalMemoryIndex(),
         agentsGateway: () => this.ctx.get('agents') as DreamAgentsGateway | undefined,
-        // TASK-002 wires this to the host agentDefaultModel service
-        // (ctx.get('agentDefaultModel').currentSelection()); until then no
-        // run is launchable and blockedReason says so honestly.
-        defaultAgentOptions: () => undefined,
+        // Same reflection-gateway pattern as agentsGateway above: ctx.get
+        // answers undefined for an unmounted service, so no try/catch.
+        defaultAgentOptions: () => (this.ctx.get('agentDefaultModel') as DreamDefaultModelGateway | undefined)?.currentSelection() ?? undefined,
         noteVectors: (targets) => this.fetchNoteVectors(targets),
         log: (message) => {
           this.log.info(`dream: ${message}`)

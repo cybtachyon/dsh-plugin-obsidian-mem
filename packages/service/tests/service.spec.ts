@@ -118,7 +118,7 @@ class MemFs implements ServiceFs {
 // ---------------------------------------------------------------------------
 // Fake ctx: just the surface the Service base class and the seam consume.
 
-function fakeCtx() {
+function fakeCtx(services: Record<string, unknown> = {}) {
   const provided = new Map<string, unknown>()
   const warnings: string[] = []
   const errors: string[] = []
@@ -141,7 +141,8 @@ function fakeCtx() {
       effects.push({ label, dispose })
       return () => { dispose() }
     },
-    get: () => undefined,
+    // Host ctx.get answers undefined for a service that is not mounted.
+    get: (name: string) => services[name],
   }
   return { ctx: ctx as unknown as Context, provided, warnings, errors, effects }
 }
@@ -265,6 +266,8 @@ interface HarnessOptions {
   existingDim?: number | null
   /** Fail the first mkdirp call hard (a non-milvus provisioning failure). */
   failFirstMkdirp?: boolean
+  /** Host services the fake ctx.get answers for (agents, agentDefaultModel). */
+  services?: Record<string, unknown>
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -286,7 +289,7 @@ function harness(options: HarnessOptions = {}) {
   for (const [path, content] of Object.entries(options.seedFiles ?? {})) {
     fs.seedFile(path, content)
   }
-  const ctx = fakeCtx()
+  const ctx = fakeCtx(options.services ?? {})
   const launcher = stubLauncher(options.milvusFail)
   const client = stubClient({ existingDim: options.existingDim })
   const indexer = stubIndexer()
@@ -1072,6 +1075,65 @@ describe('status, placeholders, and not-implemented seams', () => {
     expect(status.dream).toEqual({ state: 'idle', blocked: expect.stringContaining('no agents service'), lastDreamAt: null, lastRun: null })
     expect(status.dreaming).toEqual({ schedules: [], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD })
     expect(h.fs.mutations).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// TASK-002: dream run launch wiring through the ctx.get gateways.
+
+/** Records every agents-gateway create so the test can read agentOptions. */
+function launchGateway(): { gateway: unknown, created: Array<{ sessionId: string, agentOptions?: { provider?: string, model?: string } }> } {
+  const created: Array<{ sessionId: string, agentOptions?: { provider?: string, model?: string } }> = []
+  return {
+    created,
+    gateway: {
+      async create(options: { sessionId: string, agentOptions?: { provider?: string, model?: string } }) {
+        created.push(options)
+        return {
+          agent: {
+            followup: () => undefined,
+            whenIdle: async () => {},
+          },
+          dispose: async () => {},
+        }
+      },
+    },
+  }
+}
+
+describe('dream run launch wiring (TASK-002)', () => {
+  it('launches with the host default-model selection in the create agentOptions', async () => {
+    const agents = launchGateway()
+    const h = harness({
+      services: {
+        agents: agents.gateway,
+        agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      },
+    })
+    const result = await h.service.dream({ operation: 'run' })
+    if (result.operation !== 'run') {
+      throw new Error('expected the run operation')
+    }
+    expect((await result.done).ok).toBe(true)
+    expect(agents.created).toEqual([
+      { sessionId: `dream-${result.id}`, agentOptions: { provider: 'p', model: 'm' } },
+    ])
+  })
+
+  it('blocks a run lacking the agentDefaultModel service and launches nothing', async () => {
+    const agents = launchGateway()
+    const h = harness({
+      services: { agents: agents.gateway },
+      // Provider is host-only (PLAN-dream-launch Decisions): a config model
+      // alone cannot rescue the provider/model pair at the gate.
+      config: { dreaming: { model: 'cfg/model' } } as ObsidianMemConfig,
+    })
+    await expect(h.service.dream({ operation: 'run' })).rejects.toThrow(
+      'no provider/model can be resolved for the dream agent',
+    )
+    expect(agents.created).toEqual([])
+    // The same reason surfaces on status so the card disables Run.
+    expect(h.service.status().dream.blocked).toContain('no provider/model can be resolved')
   })
 })
 

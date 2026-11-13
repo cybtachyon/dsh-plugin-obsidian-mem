@@ -21,14 +21,13 @@
  * client-side on `-score` and a raw BM25 score is never thresholded
  * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
  * the exact formula lite's own fused scores show (radius-tuning-
- * findings §4); the score floor (request minScore, else the default
- * FUSED_SCORE_FLOOR = 1/(k+2) inclusive, TASK-009 rule, TASK-007
- * value) applies to those fused scores only: the default keeps
- * single-route rank-1 and rank-2 hits plus every both-route hit
- * inside the fetched window, and drops rank-3-only hits;
- * output_fields ALWAYS include the primary key chunk_id (G10) plus the
- * columns the result rows are built from; a Strong-consistency count(*)
- * guards the empty collection before BM25 dispatch.
+ * findings §4); the fused-score floor (request minScore, else
+ * FUSED_SCORE_FLOOR) applies to those fused scores only, and its rule
+ * has ONE home: the FUSED_SCORE_FLOOR note, cross-referenced by name
+ * everywhere else; output_fields ALWAYS include the primary key chunk_id
+ * (G10) plus the columns the result rows are built from; a
+ * Strong-consistency count(*) guards the empty collection before BM25
+ * dispatch.
  *
  * Assumes the collection is loaded: lite searches fail in the 'released'
  * state and getLoadState lies (G5/G6), so the service/indexer ensures
@@ -132,9 +131,8 @@ export interface SearchRequest {
     topK?: number;
     /**
      * Floor on the RRF-fused score (NOT a BM25 threshold, G7). Omitted:
-     * the default 1 / (RRF_RANKER_K + 2) floor applies, inclusive. An
-     * explicitly passed value, including 0 (disables the cut), fully
-     * overrides the default.
+     * the FUSED_SCORE_FLOOR default applies; that constant's note states
+     * the rule, override semantics (including 0) included.
      */
     minScore?: number;
     /** Per-result chunk_text token budget; overrides deps.defaultTokenCap. */
@@ -161,10 +159,9 @@ export interface ExactSectionRequest {
     sectionTokens?: number;
     /**
      * Floor on the RRF-fused score of the fallback leg only (NOT a BM25
-     * threshold, G7). Omitted: the default 1 / (RRF_RANKER_K + 2) floor
-     * applies, inclusive. An explicitly passed value, including 0
-     * (disables the cut), fully overrides the default. The exact-file leg
-     * is never floored (TASK-014).
+     * threshold, G7). Omitted: the FUSED_SCORE_FLOOR default applies (see
+     * that constant for the rule and override semantics). The exact-file
+     * leg is never floored (TASK-014).
      */
     minScore?: number;
     /** Explicit framework filter for the fallback route. */

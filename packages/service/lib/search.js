@@ -21,14 +21,13 @@
  * client-side on `-score` and a raw BM25 score is never thresholded
  * against a positive bound; fusion sums 1/(k + rank) with rank from 1,
  * the exact formula lite's own fused scores show (radius-tuning-
- * findings §4); the score floor (request minScore, else the default
- * FUSED_SCORE_FLOOR = 1/(k+2) inclusive, TASK-009 rule, TASK-007
- * value) applies to those fused scores only: the default keeps
- * single-route rank-1 and rank-2 hits plus every both-route hit
- * inside the fetched window, and drops rank-3-only hits;
- * output_fields ALWAYS include the primary key chunk_id (G10) plus the
- * columns the result rows are built from; a Strong-consistency count(*)
- * guards the empty collection before BM25 dispatch.
+ * findings §4); the fused-score floor (request minScore, else
+ * FUSED_SCORE_FLOOR) applies to those fused scores only, and its rule
+ * has ONE home: the FUSED_SCORE_FLOOR note, cross-referenced by name
+ * everywhere else; output_fields ALWAYS include the primary key chunk_id
+ * (G10) plus the columns the result rows are built from; a
+ * Strong-consistency count(*) guards the empty collection before BM25
+ * dispatch.
  *
  * Assumes the collection is loaded: lite searches fail in the 'released'
  * state and getLoadState lies (G5/G6), so the service/indexer ensures
@@ -182,14 +181,7 @@ export async function hybridSearch(deps, request) {
     }
     const dense = await deps.embedder.embedQuery(request.query);
     const rows = await dispatchRoutes(deps, request.query, dense, expr, candidatesFor(topK));
-    // The floor rides fused scores only; BM25 raw scores are negated
-    // relevancy (G7, radius-tuning-findings §3) and never reach this
-    // comparison. An explicit minScore (including 0, which disables the
-    // cut) fully overrides the TASK-009 default.
-    const scoreFloor = request.minScore ?? FUSED_SCORE_FLOOR;
-    const results = toResults(deps, rows, tokenCap)
-        .filter((result) => result.score >= scoreFloor);
-    return topSections(results, topK);
+    return flooredSections(deps, rows, tokenCap, topK, request.minScore);
 }
 /**
  * SearchExactSections serves the Read intercept: with a vault-relative
@@ -227,15 +219,25 @@ export async function searchExactSections(deps, request) {
             return exact;
         }
     }
-    // Fallback: ext/framework-filtered recall on the query text. Directory
-    // signals only join as wake keywords when nothing else narrows, so the
-    // clause never over-restricts an already-filtered query.
+    // Fallback: a general neighborhood search by ext/framework filters on
+    // the query text, so it takes the same fused-score floor as
+    // hybridSearch (TASK-009 rule, TASK-014 reach).
+    const fallbackExpr = fallbackFilterExpr(request, ext);
+    const fallbackRows = await dispatchRoutes(deps, queryText, dense, fallbackExpr, candidatesFor(k));
+    return flooredSections(deps, fallbackRows, sectionTokens, k, request.minScore);
+}
+// FallbackFilterExpr renders the neighborhood leg's scalar filter: the
+// normalized ext, frameworks (request plus EXT_FRAMEWORK_HINTS), and
+// vaults. Directory signals join as wake keywords only when nothing
+// else narrows, so the clause never over-restricts an already-filtered
+// query.
+function fallbackFilterExpr(request, ext) {
     const frameworks = [
         ...(request.frameworks ?? []),
         ...(ext === null ? [] : EXT_FRAMEWORK_HINTS[ext] ?? []),
     ];
     const wakeKeywords = request.dirSignals?.map((signal) => signal.replace(/\/+$/, '')) ?? [];
-    const fallbackExpr = buildFilterExpr({
+    return buildFilterExpr({
         ...(ext === null ? {} : { ext }),
         ...(frameworks.length > 0 ? { frameworks } : {}),
         ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
@@ -243,14 +245,6 @@ export async function searchExactSections(deps, request) {
             ? { wakeKeywords }
             : {}),
     });
-    // The fallback is a general neighborhood search, so it takes the same
-    // fused-score floor as hybridSearch (TASK-009 rule, TASK-014 reach);
-    // an explicit minScore (including 0) fully overrides the default.
-    const scoreFloor = request.minScore ?? FUSED_SCORE_FLOOR;
-    const fallbackRows = await dispatchRoutes(deps, queryText, dense, fallbackExpr, candidatesFor(k));
-    const floored = toResults(deps, fallbackRows, sectionTokens)
-        .filter((result) => result.score >= scoreFloor);
-    return topSections(floored, k);
 }
 // Shared dispatch: two standalone `search` calls, one per route, carrying
 // the same candidate limit, filter expr, and G10 projection (one
@@ -361,6 +355,16 @@ function toResults(deps, rows, tokenCap) {
         };
     });
 }
+// flooredSections is the shared page shape of every floored dispatch
+// leg: shape the rows, cut those under the effective fused-score floor
+// (request minScore, else FUSED_SCORE_FLOOR), then topSections. Raw
+// BM25 route scores never reach the comparison (G7); what the floor
+// keeps is stated on FUSED_SCORE_FLOOR.
+function flooredSections(deps, rows, tokenCap, limit, minScore) {
+    const scoreFloor = minScore ?? FUSED_SCORE_FLOOR;
+    const scored = toResults(deps, rows, tokenCap).filter((result) => result.score >= scoreFloor);
+    return topSections(scored, limit);
+}
 // collectionOf resolves the one collection name every dispatch reads.
 function collectionOf(deps) {
     return deps.collectionName ?? MILVUS_COLLECTION;
@@ -375,9 +379,12 @@ function tokenBudget(requestValue, deps) {
 function candidatesFor(limit) {
     return limit * CANDIDATE_OVERSAMPLE;
 }
-// Same file + same section header is one logical section that long-chunk
-// splitting or the two routes both surfaced: keep the highest score.
-function dedupeBySection(results) {
+// topSections is the one shaping order every dispatch ends on: dedupe
+// to one row per logical section first (same file + same section
+// header is one logical section that long-chunk splitting or the two
+// routes both surfaced: keep the highest score), then cut to the
+// caller's limit.
+function topSections(results, limit) {
     const best = new Map();
     for (const result of [...results].sort((a, b) => b.score - a.score)) {
         const key = `${result.source_path}\u0000${result.section_header}`;
@@ -385,12 +392,7 @@ function dedupeBySection(results) {
             best.set(key, result);
         }
     }
-    return [...best.values()];
-}
-// topSections is the one shaping order every dispatch ends on: dedupe to one
-// row per logical section first, then cut to the caller's limit.
-function topSections(results, limit) {
-    return dedupeBySection(results).slice(0, limit);
+    return [...best.values()].slice(0, limit);
 }
 function truncateToTokens(text, tokens) {
     const capChars = approxCharsForTokens(tokens);

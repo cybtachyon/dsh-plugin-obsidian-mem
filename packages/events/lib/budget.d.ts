@@ -1,8 +1,9 @@
 /**
- * Global memory budget gate (TASK-045). Every recall flow accounts its
- * injected tokens per session (`SessionRegistry.addRecallTokens`); the
+ * Global memory budget accounting (TASK-045). Every recall flow accounts
+ * its injected tokens per session (`SessionRegistry.addRecallTokens`); the
  * registry sums them (`totalRecallTokensUsed`), and that one number feeds
- * both decisions made with it: this gate and the service's
+ * every decision made with it. The strictly-over comparison itself is
+ * core's `isOverGlobalBudget`, the single rule shared with the service's
  * `globalMemoryIndex()` echo (audit/dream/card read the identical
  * numbers). A session reaching turn-start recall while the summed recall
  * injections sit past `budgets.globalMemoryTokens` gets no fresh recall
@@ -15,14 +16,6 @@
  * the much heavier `memory_dream` for a more complete optimization.
  * @module dsh-plugin-obsidian-mem/events/budget
  */
-import type { SessionRegistry } from './sessions.js';
-/**
- * IsGlobalBudgetSpent answers whether the summed recall injections across
- * every session the registry knows have run past the configured budget.
- * Strictly over: usage exactly at the cap still gets fresh recall (the
- * flow flips at cap + 1), matching `GlobalMemoryIndex.overBudget`.
- */
-export declare function isGlobalBudgetSpent(registry: SessionRegistry, budgetTokens: number): boolean;
 /**
  * CompactionInstruction returns the over-budget reminder text carried by
  * the turn-end steer (TASK-003). The framing sentence names the window
@@ -32,7 +25,10 @@ export declare function isGlobalBudgetSpent(registry: SessionRegistry, budgetTok
  * global-scope memory notes with the ordinary memory tools, which the
  * agent must not start until the user approves, plus the instruction to
  * suggest the much heavier `memory_dream` to the user for a more complete
- * optimization of the whole store.
+ * optimization of the whole store. This steer-facing prose keeps its own
+ * voice (backticked tool names, full sentences) rather than composing the
+ * core render fragments: the steer is read as prose, the surfaces are
+ * read as report lines, and the events specs pin this wording separately.
  */
 export declare function compactionInstruction(usedTokens: number, budgetTokens: number): string;
 //# sourceMappingURL=budget.d.ts.map

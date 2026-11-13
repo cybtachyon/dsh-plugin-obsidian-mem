@@ -140,5 +140,5 @@ export { guidanceLine, installTurnStart, nodeManifestFs } from './turnStart.js';
 export { dirSignalsOf, HARNESS_READ_TOOL_NAME, importSnippetFrom, installReadIntercept, } from './readIntercept.js';
 export { extractCompletedThinkBlocks, installThinkIntercept, THINK_QUERY_MAX_CHARS, THINK_SEARCH_TOP_K, } from './thinkIntercept.js';
 export { installMemoryToolWatch, installTurnEnd, isTrivialTurn, TURN_END_REMINDER, TRIVIAL_TURN_MAX_CHARS, turnEndReminder, WORK_MARKER, } from './turnEnd.js';
-export { compactionInstruction, isGlobalBudgetSpent } from './budget.js';
+export { compactionInstruction } from './budget.js';
 //# sourceMappingURL=index.js.map

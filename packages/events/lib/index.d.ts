@@ -74,5 +74,5 @@ export { extractCompletedThinkBlocks, installThinkIntercept, THINK_QUERY_MAX_CHA
 export type { ThinkInterceptDeps } from './thinkIntercept.js';
 export { installMemoryToolWatch, installTurnEnd, isTrivialTurn, TURN_END_REMINDER, TRIVIAL_TURN_MAX_CHARS, turnEndReminder, WORK_MARKER, } from './turnEnd.js';
 export type { MemoryToolWatchDeps, TurnEndDeps } from './turnEnd.js';
-export { compactionInstruction, isGlobalBudgetSpent } from './budget.js';
+export { compactionInstruction } from './budget.js';
 //# sourceMappingURL=index.d.ts.map

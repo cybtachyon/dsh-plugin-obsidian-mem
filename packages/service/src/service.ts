@@ -47,6 +47,7 @@ import {
   firstSharedVault,
   formatLocalDate,
   globalFilePath,
+  isOverGlobalBudget,
   isReservedNonIndexed,
   isVaultMode,
   metadataDir,
@@ -856,7 +857,7 @@ export class ObsidianMemService extends Service {
       budgetTokens,
       usedTokens,
       remainingTokens: Math.max(0, budgetTokens - usedTokens),
-      overBudget: usedTokens > budgetTokens,
+      overBudget: isOverGlobalBudget(usedTokens, budgetTokens),
     }
   }
 

@@ -161,6 +161,13 @@ describe('memory_audit render', () => {
 
   it('renders a protected-only over-budget store as compaction that cannot help', async () => {
     const { service } = fixture(reportFixture({
+      // Keep the finding echo honest for the scenario: a protected-only
+      // store gets the compaction-cannot-help remediation naming the
+      // protected file, not the ordinary compactable-list one.
+      issues: [
+        ...reportFixture().issues.slice(0, 2),
+        { id: 'budget.over', severity: 'ISSUE', detail: 'global memory injection is over budget: 2000 of 1500 tokens used, injected since the last successful dream or host restart', remediation: 'compaction cannot help: every live global note is a vault global file the dreaming pass never compacts; with the user\'s approval, manually tighten "/v/GLOBAL.md" to reclaim budget' },
+      ],
       budget: {
         budgetTokens: 1500,
         usedTokens: 2000,

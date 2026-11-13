@@ -27,7 +27,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync
 import { homedir as osHomedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, globalFilePath, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
+import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, globalFilePath, isOverGlobalBudget, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
 import { expandHomePath, globalFileShapeIssue, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js';
 import { DreamOrchestrator } from './dream.js';
@@ -530,7 +530,7 @@ export class ObsidianMemService extends Service {
             budgetTokens,
             usedTokens,
             remainingTokens: Math.max(0, budgetTokens - usedTokens),
-            overBudget: usedTokens > budgetTokens,
+            overBudget: isOverGlobalBudget(usedTokens, budgetTokens),
         };
     }
     /**

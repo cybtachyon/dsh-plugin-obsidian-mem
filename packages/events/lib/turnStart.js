@@ -26,9 +26,8 @@
  * @module dsh-plugin-obsidian-mem/events/turnStart
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { approxCharsForTokens, approxTokens, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js';
+import { approxCharsForTokens, approxTokens, isOverGlobalBudget, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js';
 import { describeError } from '../../service/lib/errors.js';
-import { isGlobalBudgetSpent } from './budget.js';
 import { firstUserText } from './host.js';
 import { sourceKeyFor } from './sessions.js';
 import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
@@ -101,7 +100,7 @@ async function runTurnStartRecall(deps, sessionId, messages) {
     // reminder moved to the turn-end steer (TASK-003), and the audit's
     // budget.over line still names the remedy with the same numbers.
     const budgetTokens = memory.config.budgets.globalMemoryTokens;
-    if (isGlobalBudgetSpent(registry, budgetTokens)) {
+    if (isOverGlobalBudget(registry.totalRecallTokensUsed(), budgetTokens)) {
         registry.addRecallTokens(sessionId, injectedTokens);
         return;
     }

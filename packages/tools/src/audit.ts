@@ -9,7 +9,13 @@
  * @module dsh-plugin-obsidian-mem/tools/audit
  */
 
-import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, TOOL_MEMORY_AUDIT } from '../../core/lib/index.js'
+import {
+  AUDIT_DEFAULT_LIMIT,
+  AUDIT_MAX_LIMIT,
+  MANUAL_COMPACTION_APPROVAL,
+  MANUAL_COMPACTION_RECIPE,
+  TOOL_MEMORY_AUDIT,
+} from '../../core/lib/index.js'
 import { AUDIT_VIEWS } from '../../service/lib/audit.js'
 import type { AuditReport, AuditRequest, AuditView } from '../../service/lib/audit.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
@@ -301,7 +307,7 @@ export function renderAudit(value: AuditValue): string {
       lines.push('OVER BUDGET: compaction cannot help: every live global note is a protected vault global file; with the user\'s approval, tighten these files by hand to shrink every session:',
         ...value.budget.global_note_paths.map((path) => `- ${path}`))
     } else {
-      lines.push('OVER BUDGET: as the lighter remedy, compact the global memory only: survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves. Also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store. Global notes to compact, least-read first:',
+      lines.push(`OVER BUDGET: as the lighter remedy, compact the global memory only: ${MANUAL_COMPACTION_RECIPE}; ${MANUAL_COMPACTION_APPROVAL}. Also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store. Global notes to compact, least-read first:`,
         ...value.budget.compactable_global_note_paths.map((path) => `- ${path}`))
     }
   }

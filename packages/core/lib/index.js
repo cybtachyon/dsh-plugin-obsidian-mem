@@ -12,6 +12,7 @@
  * @module dsh-plugin-obsidian-mem/core
  */
 export * from './constants.js';
+export * from './budget.js';
 export * from './chunk.js';
 export * from './idhash.js';
 export * from './manifest.js';

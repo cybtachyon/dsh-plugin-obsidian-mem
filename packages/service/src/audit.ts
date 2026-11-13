@@ -34,7 +34,10 @@ import {
   INTENT_MARKERS,
   INTENTS_FILE,
   isIntentMarker,
+  isOverGlobalBudget,
   isReservedNonIndexed,
+  MANUAL_COMPACTION_APPROVAL,
+  MANUAL_COMPACTION_RECIPE,
   metadataDir,
   modelCacheDir,
   NOTE_TIMELINE_BYTES,
@@ -609,7 +612,7 @@ export function globalBudgetReport(
     budgetTokens,
     usedTokens,
     measured: usedTokens > 0 || globalIndex.overBudget === true,
-    overBudget: globalIndex.overBudget ?? usedTokens > budgetTokens,
+    overBudget: globalIndex.overBudget ?? isOverGlobalBudget(usedTokens, budgetTokens),
     globalNoteCount: globalPaths.length,
     globalNotePaths: globalPaths,
     compactableGlobalNotePaths: globalPaths.filter((path) => !targets.has(path)),
@@ -628,18 +631,18 @@ export function budgetProtectedOnly(budget: GlobalBudgetReport): boolean {
 }
 
 // The budget.over instruction: the same two-part remedy the turn-end
-// reminder carries (PLAN-budget-reminder Q-WORDING-SCOPE). The lighter
-// part names the notes to compact by hand, least-read first, a manual
-// pass that waits on the user's approval; the heavier suggestion is
-// memory_dream for the whole store. Compactable files stay
-// protected-dropped from the named list; when only protected files
-// remain compaction cannot help and only hand-tightening the named
-// files can (TASK-015).
+// reminder carries (PLAN-budget-reminder Q-WORDING-SCOPE), composed from
+// the shared core fragments. The lighter part names the notes to compact
+// by hand, least-read first, a manual pass that waits on the user's
+// approval; the heavier suggestion is memory_dream for the whole store.
+// Compactable files stay protected-dropped from the named list; when only
+// protected files remain compaction cannot help and only hand-tightening
+// the named files can (TASK-015).
 function budgetOverRemediation(budget: GlobalBudgetReport, limit: number): string {
   if (budgetProtectedOnly(budget)) {
     return `compaction cannot help: every live global note is a vault global file the dreaming pass never compacts; with the user's approval, manually tighten ${pathList(budget.globalNotePaths, limit)} to reclaim budget`
   }
-  return `as the lighter remedy, compact the global memory only, least-read first: ${pathList(budget.compactableGlobalNotePaths, limit)}; survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves; also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store`
+  return `as the lighter remedy, compact the global memory only, least-read first: ${pathList(budget.compactableGlobalNotePaths, limit)}; ${MANUAL_COMPACTION_RECIPE}; ${MANUAL_COMPACTION_APPROVAL}; also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store`
 }
 
 /**

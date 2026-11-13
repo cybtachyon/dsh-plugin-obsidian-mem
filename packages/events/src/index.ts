@@ -212,4 +212,4 @@ export {
   WORK_MARKER,
 } from './turnEnd.js'
 export type { MemoryToolWatchDeps, TurnEndDeps } from './turnEnd.js'
-export { compactionInstruction, isGlobalBudgetSpent } from './budget.js'
+export { compactionInstruction } from './budget.js'

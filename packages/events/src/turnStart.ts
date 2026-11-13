@@ -27,11 +27,10 @@
  */
 
 import { readdirSync, readFileSync } from 'node:fs'
-import { approxCharsForTokens, approxTokens, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js'
+import { approxCharsForTokens, approxTokens, isOverGlobalBudget, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js'
 import type { ManifestFs, WorkspaceManifest } from '../../core/lib/index.js'
 import { describeError } from '../../service/lib/errors.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
-import { isGlobalBudgetSpent } from './budget.js'
 import type { HookLogger, LiveAgent, MemoryEventsService, PreStepListener, StepMessage } from './host.js'
 import { firstUserText } from './host.js'
 import { sourceKeyFor, type SessionRegistry } from './sessions.js'
@@ -145,7 +144,7 @@ async function runTurnStartRecall(
   // reminder moved to the turn-end steer (TASK-003), and the audit's
   // budget.over line still names the remedy with the same numbers.
   const budgetTokens = memory.config.budgets.globalMemoryTokens
-  if (isGlobalBudgetSpent(registry, budgetTokens)) {
+  if (isOverGlobalBudget(registry.totalRecallTokensUsed(), budgetTokens)) {
     registry.addRecallTokens(sessionId, injectedTokens)
     return
   }

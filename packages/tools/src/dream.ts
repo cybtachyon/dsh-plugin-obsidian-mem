@@ -9,7 +9,12 @@
  * @module dsh-plugin-obsidian-mem/tools/dream
  */
 
-import { TOOL_MEMORY_DREAM } from '../../core/lib/index.js'
+import {
+  DREAM_RUN_SUGGESTION,
+  MANUAL_COMPACTION_APPROVAL,
+  MANUAL_COMPACTION_RECIPE,
+  TOOL_MEMORY_DREAM,
+} from '../../core/lib/index.js'
 import { DreamBlockedError, DreamBusyError } from '../../service/lib/dream.js'
 import type { DreamEngineResult, DreamPlan, DreamRequest } from '../../service/lib/dream.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
@@ -260,7 +265,7 @@ export function renderDream(value: DreamValue): string {
     } else {
       lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart; ${String(value.budget.global_note_count)} live global notes inject, compactable least-read first:`)
       lines.push(...value.budget.compactable_global_note_paths.map((path) => `- ${path}`))
-      lines.push('As the lighter remedy, compact just these notes: survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves. Also suggest to the user that executing this plan via operation run is the much heavier, more complete optimization of the whole memory store.')
+      lines.push(`As the lighter remedy, compact just these notes: ${MANUAL_COMPACTION_RECIPE}; ${MANUAL_COMPACTION_APPROVAL}. ${DREAM_RUN_SUGGESTION}`)
     }
   } else if (value.budget.measured) {
     lines.push('', `Budget headroom: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used, injected since the last successful dream or host restart.`)

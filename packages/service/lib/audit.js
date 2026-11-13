@@ -19,7 +19,7 @@
  */
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, clampInt, dbStateDir, DREAM_STATE_FILE, DREAMS_FILE, defaultVaultPath, globalFilePath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isReservedNonIndexed, metadataDir, modelCacheDir, NOTE_TIMELINE_BYTES, parseNote, PLUGIN_METADATA_REL, SCOPE_GLOBAL, VAULT_MODE_READ_ONLY, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
+import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, clampInt, dbStateDir, DREAM_STATE_FILE, DREAMS_FILE, defaultVaultPath, globalFilePath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isOverGlobalBudget, isReservedNonIndexed, MANUAL_COMPACTION_APPROVAL, MANUAL_COMPACTION_RECIPE, metadataDir, modelCacheDir, NOTE_TIMELINE_BYTES, parseNote, PLUGIN_METADATA_REL, SCOPE_GLOBAL, VAULT_MODE_READ_ONLY, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { indexStatePath, MAX_FILES_PER_VAULT } from './indexer.js';
 /** The bounded row list a `memory_audit` call shows. */
@@ -374,7 +374,7 @@ export function globalBudgetReport(notes, vaults, globalIndex) {
         budgetTokens,
         usedTokens,
         measured: usedTokens > 0 || globalIndex.overBudget === true,
-        overBudget: globalIndex.overBudget ?? usedTokens > budgetTokens,
+        overBudget: globalIndex.overBudget ?? isOverGlobalBudget(usedTokens, budgetTokens),
         globalNoteCount: globalPaths.length,
         globalNotePaths: globalPaths,
         compactableGlobalNotePaths: globalPaths.filter((path) => !targets.has(path)),
@@ -391,18 +391,18 @@ export function budgetProtectedOnly(budget) {
     return budget.globalNoteCount > 0 && budget.compactableGlobalNotePaths.length === 0;
 }
 // The budget.over instruction: the same two-part remedy the turn-end
-// reminder carries (PLAN-budget-reminder Q-WORDING-SCOPE). The lighter
-// part names the notes to compact by hand, least-read first, a manual
-// pass that waits on the user's approval; the heavier suggestion is
-// memory_dream for the whole store. Compactable files stay
-// protected-dropped from the named list; when only protected files
-// remain compaction cannot help and only hand-tightening the named
-// files can (TASK-015).
+// reminder carries (PLAN-budget-reminder Q-WORDING-SCOPE), composed from
+// the shared core fragments. The lighter part names the notes to compact
+// by hand, least-read first, a manual pass that waits on the user's
+// approval; the heavier suggestion is memory_dream for the whole store.
+// Compactable files stay protected-dropped from the named list; when only
+// protected files remain compaction cannot help and only hand-tightening
+// the named files can (TASK-015).
 function budgetOverRemediation(budget, limit) {
     if (budgetProtectedOnly(budget)) {
         return `compaction cannot help: every live global note is a vault global file the dreaming pass never compacts; with the user's approval, manually tighten ${pathList(budget.globalNotePaths, limit)} to reclaim budget`;
     }
-    return `as the lighter remedy, compact the global memory only, least-read first: ${pathList(budget.compactableGlobalNotePaths, limit)}; survey with memory_search, review with memory_read, merge or correct with memory_write, retire the weakest with archive: true; ask the user to approve this manual compaction and do not start until the user approves; also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store`;
+    return `as the lighter remedy, compact the global memory only, least-read first: ${pathList(budget.compactableGlobalNotePaths, limit)}; ${MANUAL_COMPACTION_RECIPE}; ${MANUAL_COMPACTION_APPROVAL}; also suggest to the user that the much heavier memory_dream is available for a more complete optimization of the whole memory store`;
 }
 /**
  * DayEnd answers the epoch of the end of the day (23:59:59.999Z) a

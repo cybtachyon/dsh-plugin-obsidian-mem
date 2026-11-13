@@ -82,7 +82,7 @@ Task bodies live in the linked files. Execute top to bottom.
 
 ### Phase 3: refactor and verification
 
-- [ ] [TASK-008-refactor-review](docs/PLAN-budget-reminder-TASK-008-refactor-review.md)
+- [x] [TASK-008-refactor-review](docs/PLAN-budget-reminder-TASK-008-refactor-review.md)
 - [ ] [TASK-009-docs-verify](docs/PLAN-budget-reminder-TASK-009-docs-verify.md)
 
 ## Task dependencies

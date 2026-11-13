@@ -29,8 +29,8 @@
  * @module dsh-plugin-obsidian-mem/events/turnEnd
  */
 import { homedir } from 'node:os';
-import { defaultVaultPath, MEMORY_TOOL_NAMES, VAULT_MODE_SHARED } from '../../core/lib/index.js';
-import { compactionInstruction, isGlobalBudgetSpent } from './budget.js';
+import { defaultVaultPath, isOverGlobalBudget, MEMORY_TOOL_NAMES, VAULT_MODE_SHARED } from '../../core/lib/index.js';
+import { compactionInstruction } from './budget.js';
 import { makeNoticeMessage } from './host.js';
 import { messageIdFactory, runGuarded } from './toolkit.js';
 /** First user text this long or shorter is trivial unless it carries a work marker. */
@@ -95,9 +95,11 @@ export function installTurnEnd(deps) {
             const body = [turnEndReminder(deps.memory.listVaults(), home())];
             // Q-PIGGYBACK (TASK-003): the budget section rides this steer, so it
             // inherits the skips above; usage exactly at the cap stays quiet.
+            // One registry read serves both the gate and the text's numbers.
             const budgetTokens = deps.memory.config.budgets.globalMemoryTokens;
-            if (isGlobalBudgetSpent(deps.registry, budgetTokens)) {
-                body.push(compactionInstruction(deps.registry.totalRecallTokensUsed(), budgetTokens));
+            const usedTokens = deps.registry.totalRecallTokensUsed();
+            if (isOverGlobalBudget(usedTokens, budgetTokens)) {
+                body.push(compactionInstruction(usedTokens, budgetTokens));
             }
             agent.steer(makeNoticeMessage(newId(), 'obsidian-mem: turn-end save/audit reminder', body));
         });

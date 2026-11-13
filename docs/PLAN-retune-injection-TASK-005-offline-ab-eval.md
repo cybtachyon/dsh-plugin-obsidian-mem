@@ -21,4 +21,15 @@ Definition of Done:
 - Note the label-honesty caveat if the live vault drifted since
   `queries-labels.mjs` was cut (README "Collections drift").
 
+Interpretation notes carried from TASK-002 (read before writing the
+findings doc):
+- The `zho` list carries high-frequency Han characters (日 月 年 時 分 秒
+  一 二 等), so Japanese-adjacent Han text is stripped of real content
+  (日本語 loses 日). Any query regression touching CJK must be attributed
+  here, not to the English strip.
+- Han query text is re-joined per codepoint; whether those tokens match
+  the default analyzer's index-time output is THIS task's empirical check.
+  If a CJK probe query provably cannot match, adopt the documented
+  fallback (CJK left UNSTRIPPED) and record it.
+
 Depends on: TASK-004.

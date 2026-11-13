@@ -63,7 +63,13 @@ TypeScript: because no `.d.ts` ships, a strict nodenext import needs the
 DefinitelyTyped package `@types/stopword` (npm latest 2.0.3). Its
 declarations match the v3 flat-array signature (`removeStopwords: (text:
 string[], stopwords?: string[]) => string[]` plus a `[LanguageCode]:
-string[]` map, `export =`). TASK-002 must add
-`@types/stopword@^2.0.3` as a devDependency at root AND
-`packages/service` (same lockstep rule as the runtime row) or the first
-import fails `pnpm build` with TS7016.
+string[]` map, `export =`).
+
+CORRECTION (TASK-002, commit fbcca60, 2026-11-13): this paragraph
+originally demanded `@types/stopword@^2.0.3` at root AND
+`packages/service` per the runtime lockstep rule. That was an untested
+assumption and is false: root-ONLY devDependency suffices, verified by
+TASK-002's shipped build (packages/service tsc finds it via the upward
+`node_modules/@types` walk, the same resolution `@types/node` already
+relies on; dev-type rows follow the `@types/node` root-only convention,
+not the runtime-dep lockstep rule).

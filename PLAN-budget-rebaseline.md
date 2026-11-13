@@ -40,8 +40,11 @@ throttle state unchanged; no persist call triggered by the reset alone.
 - `packages/service/src/dream.ts`: add optional
   `onRunSucceeded?: () => void` to `DreamDeps`, called after
   `setLastDream(Date.now())` on the ok path only.
-- `packages/service/src/service.ts`: wire
-  `onRunSucceeded: () => this.sessionRegistryValue?.resetRecallUsage()`.
+- `packages/service/src/service.ts`: widen `SessionRegistryView`
+  (TASK-001 note: it is currently only `{ totalRecallTokensUsed(): number
+  }`; this service-side slice of the events registry must add
+  `resetRecallUsage(): void` or the wiring below will not typecheck), then
+  wire `onRunSucceeded: () => this.sessionRegistryValue?.resetRecallUsage()`.
 - Wording in `packages/events/src/budget.ts` `compactionInstruction` and
   `packages/service/src/audit.ts` budget.over line: name the window
   ("injected since the last successful dream or host restart").

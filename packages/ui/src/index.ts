@@ -301,12 +301,10 @@ function requiredString(body: Record<string, unknown>, key: string, code: string
 
 /** OptionalString reads a body field that may be absent; present means a non-blank string, returned trimmed. */
 function optionalString(body: Record<string, unknown>, key: string, code: string): string | undefined {
-  const value = body[key]
-  if (value === undefined) return undefined
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new RouteError(400, code, `${key} must be a non-empty string`)
+  if (body[key] === undefined) {
+    return undefined
   }
-  return value.trim()
+  return requiredString(body, key, code)
 }
 
 /**

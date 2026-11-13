@@ -181,13 +181,10 @@ function requiredString(body, key, code) {
 }
 /** OptionalString reads a body field that may be absent; present means a non-blank string, returned trimmed. */
 function optionalString(body, key, code) {
-    const value = body[key];
-    if (value === undefined)
+    if (body[key] === undefined) {
         return undefined;
-    if (typeof value !== 'string' || value.trim() === '') {
-        throw new RouteError(400, code, `${key} must be a non-empty string`);
     }
-    return value.trim();
+    return requiredString(body, key, code);
 }
 /**
  * VaultAnswer maps a service add/remove refusal onto the code the card

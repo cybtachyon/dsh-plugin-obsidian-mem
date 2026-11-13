@@ -156,27 +156,8 @@ async function runTurnStartRecall(
   }
 
   // TASK-014: pinned session-start injection of each shared vault's global
-  // memory file, inside the remaining global budget (`approxCharsForTokens`
-  // cuts the text; a file with nothing left in the budget is skipped). The
-  // source mark is fingerprint-less on purpose: that is the registry's
-  // session-wide block form, and the search recall below computes its
-  // fingerprint from the indexed updated_at, which the raw file read here
-  // cannot know. Token accounting rides the flow-total below.
-  for (const source of memory.globalMemorySources()) {
-    const remainingTokens = budgetTokens - registry.totalRecallTokensUsed()
-    if (remainingTokens <= 0) {
-      break
-    }
-    const cap = approxCharsForTokens(remainingTokens)
-    const body = source.content.length > cap ? source.content.slice(0, cap) : source.content
-    injectedTokens += injectNotice(
-      deps.agent,
-      newId(),
-      'obsidian-mem: pinned global memory',
-      [wrapRecalled(source.path, body)],
-    )
-    registry.markInjected(sessionId, sourceKeyFor({ vault: source.vaultPath, source_path: source.path }))
-  }
+  // memory file, inside the remaining global budget.
+  injectedTokens += injectPinnedGlobalMemory(deps, sessionId, newId, budgetTokens)
 
   // Step 1: one manifest scan for the session, at the agent's workspace.
   const cwd = sessionWorkspaceCwd(deps.agent)
@@ -221,6 +202,46 @@ async function runTurnStartRecall(
   }
   // TASK-045's global budget counts every token this flow injected.
   registry.addRecallTokens(sessionId, injectedTokens)
+}
+
+/**
+ * InjectPinnedGlobalMemory injects each shared vault's global memory file
+ * (TASK-014) clamped to the remaining global budget, marks every injected
+ * source, and answers the injected token total for the flow's accounting.
+ * The sources are read even when nothing is left in the budget (the
+ * strictly-over gate returned earlier; consulting the service is side-
+ * effect free, and the at-cap session still consults it). The cap is
+ * loop-invariant because this flow's own usage reaches the registry only
+ * through the flow-total below, so every pinned file is clamped to the same
+ * remaining budget. The source mark is fingerprint-less on purpose: that is
+ * the registry's session-wide block form, and the search recall in the flow
+ * below computes its fingerprint from the indexed updated_at, which the raw
+ * file read here cannot know.
+ */
+function injectPinnedGlobalMemory(
+  deps: TurnStartDeps,
+  sessionId: string,
+  newId: () => string,
+  budgetTokens: number,
+): number {
+  const sources = deps.memory.globalMemorySources()
+  const remainingTokens = budgetTokens - deps.registry.totalRecallTokensUsed()
+  if (remainingTokens <= 0) {
+    return 0
+  }
+  const cap = approxCharsForTokens(remainingTokens)
+  let injectedTokens = 0
+  for (const source of sources) {
+    const body = source.content.length > cap ? source.content.slice(0, cap) : source.content
+    injectedTokens += injectNotice(
+      deps.agent,
+      newId(),
+      'obsidian-mem: pinned global memory',
+      [wrapRecalled(source.path, body)],
+    )
+    deps.registry.markInjected(sessionId, sourceKeyFor({ vault: source.vaultPath, source_path: source.path }))
+  }
+  return injectedTokens
 }
 
 /** GuidanceLine names the discovered file types, languages, frameworks. */

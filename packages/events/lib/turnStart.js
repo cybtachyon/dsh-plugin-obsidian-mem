@@ -16,8 +16,10 @@
  * reminder rides the turn-end steer instead), TASK-014's pinned injection
  * of each shared vault's global memory file within the remaining global
  * budget, one workspace manifest scan at
- * the agent's session cwd, search over the first user text plus the manifest
- * query text, budget trimming to `budgets.turnStartRecallTokens`, the
+ * the agent's session cwd, search over the first user text alone (the
+ * manifest text feeds only the guidance line; the TASK-015 A/B measured
+ * its contamination of both search routes), budget trimming to
+ * `budgets.turnStartRecallTokens`, the
  * once-per-session source filter, `core.wrapRecalled` envelopes (defang
  * included), the memory_search guidance line naming the discovered
  * extensions/languages/frameworks, the token accounting TASK-045 consumes,
@@ -26,7 +28,7 @@
  * @module dsh-plugin-obsidian-mem/events/turnStart
  */
 import { readdirSync, readFileSync } from 'node:fs';
-import { approxCharsForTokens, approxTokens, isOverGlobalBudget, manifestQueryText, scanManifest, wrapRecalled } from '../../core/lib/index.js';
+import { approxCharsForTokens, approxTokens, isOverGlobalBudget, scanManifest, wrapRecalled } from '../../core/lib/index.js';
 import { describeError } from '../../service/lib/errors.js';
 import { firstUserText } from './host.js';
 import { sourceKeyFor } from './sessions.js';
@@ -112,10 +114,13 @@ async function runTurnStartRecall(deps, sessionId, messages) {
     const manifest = cwd === null
         ? null
         : scanManifestSafe(cwd, deps.manifestFs ?? nodeManifestFs, deps.logger);
-    // Steps 2-3: query = first user text + manifest text; budget-fit trim.
-    const query = [firstUserText(messages), manifest === null ? '' : manifestQueryText(manifest)]
-        .filter((part) => part !== '')
-        .join('\n\n');
+    // Steps 2-3: query = first user text alone; budget-fit trim. The
+    // manifest text stays out of the query: the TASK-015 A/B
+    // (docs/PLAN-milvus-tuning-TASK-015-manifest-text-ab.md) measured its
+    // token soup pulling generic-process notes into the dual-route band
+    // and displacing in-domain rows (P@6 0.417 vs 0.267). The manifest
+    // still feeds the guidance line below, unchanged.
+    const query = firstUserText(messages);
     const kept = [];
     if (query !== '') {
         let results;

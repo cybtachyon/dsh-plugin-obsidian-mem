@@ -16,8 +16,10 @@
  * reminder rides the turn-end steer instead), TASK-014's pinned injection
  * of each shared vault's global memory file within the remaining global
  * budget, one workspace manifest scan at
- * the agent's session cwd, search over the first user text plus the manifest
- * query text, budget trimming to `budgets.turnStartRecallTokens`, the
+ * the agent's session cwd, search over the first user text alone (the
+ * manifest text feeds only the guidance line; the TASK-015 A/B measured
+ * its contamination of both search routes), budget trimming to
+ * `budgets.turnStartRecallTokens`, the
  * once-per-session source filter, `core.wrapRecalled` envelopes (defang
  * included), the memory_search guidance line naming the discovered
  * extensions/languages/frameworks, the token accounting TASK-045 consumes,

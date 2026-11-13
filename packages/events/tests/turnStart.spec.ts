@@ -310,21 +310,31 @@ describe('injection content', () => {
     expect(recalled[0]).toContain('AAAA')
   })
 
-  it('skips the search when neither user text nor a manifest is available', async () => {
-    const { agent, memory, preStep } = turnStartHarness({ cwd: null, notice: null })
-    await preStep(1, 1, [])
+  it('skips the search when there is no user text, manifest or not (TASK-015)', async () => {
+    const noManifest = turnStartHarness({ cwd: null, notice: null })
+    await noManifest.preStep(1, 1, [])
     await settled()
-    expect(memory.searchRequests).toHaveLength(0)
-    expect(agent.injected).toHaveLength(0)
+    expect(noManifest.memory.searchRequests).toHaveLength(0)
+    expect(noManifest.agent.injected).toHaveLength(0)
+
+    const withManifest = turnStartHarness({ notice: null })
+    await withManifest.preStep(1, 1, [])
+    await settled()
+    // The workspace manifest still scans, but it feeds only the guidance
+    // line: an empty user text searches nothing, and the guidance is the
+    // flow's sole injection.
+    expect(withManifest.memory.searchRequests).toHaveLength(0)
+    const blocks = withManifest.agent.injected.map((message) => message.content[0]!.text)
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]).toContain('memory_search')
   })
 
-  it('searches on the user text plus the manifest query text', async () => {
+  it('searches on the user text alone, never the manifest text (TASK-015)', async () => {
     const { memory, preStep } = turnStartHarness()
     await preStep(1, 1, ['Do we have a note about deploys?'])
     await settled()
     const request = memory.searchRequests[0]!
-    expect(request.query).toContain('Do we have a note about deploys?')
-    expect(request.query).toContain('top extensions:')
+    expect(request.query).toBe('Do we have a note about deploys?')
     expect(request.topK).toBe(6)
   })
 

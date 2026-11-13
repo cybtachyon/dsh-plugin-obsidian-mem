@@ -20,3 +20,12 @@ Scope:
 
 Definition of Done: plan-file comparison table; explicit adopted/rejected
 verdict with numbers; if adopted, gates green and committed.
+
+## CLOSED: REJECTED offline (2026-11-13, no implementation, no restart)
+
+Basis (PLAN-milvus-tuning.md separability study): WeightedRanker
+reweights per-route scores on a shared scale, but the route scores do
+not separate relevant from forbidden (dense medians 0.863 vs 0.836;
+sparse relevance medians 16.2 vs 11.0, overlapping ranges). No weights
+fix unseparable inputs. The discriminating signals are rank agreement
+(handled by the fused floor, TASK-009) and semantics (TASK-012).

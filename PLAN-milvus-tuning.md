@@ -50,6 +50,8 @@ All resolved; see Answers below.
 - [ ] [TASK-010-weighted-ranker-eval](docs/PLAN-milvus-tuning-TASK-010-weighted-ranker-eval.md)
 - [ ] [TASK-011-bm25-index-params](docs/PLAN-milvus-tuning-TASK-011-bm25-index-params.md)
 - [ ] [TASK-012-cross-encoder-reranker](docs/PLAN-milvus-tuning-TASK-012-cross-encoder-reranker.md)
+- [ ] [TASK-014-read-intercept-fallback-floor](docs/PLAN-milvus-tuning-TASK-014-read-intercept-fallback-floor.md)
+- [x] [TASK-015-manifest-text-ab](docs/PLAN-milvus-tuning-TASK-015-manifest-text-ab.md)
 
 ### Phase D: Finalize
 

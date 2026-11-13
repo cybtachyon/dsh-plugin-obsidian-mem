@@ -7,6 +7,7 @@ import {
 import {
   classifyPath,
   firstSharedVault,
+  globalFilePath,
   isPluginInternalPath,
   metadataDir,
   pluginDir,
@@ -184,6 +185,22 @@ describe('vault dir accessors', () => {
     expect(isPluginInternalPath('/vaults/team', '/vaults/team/topic.md')).toBe(false)
     // A sibling whose name merely starts with the plugin dir name stays out.
     expect(isPluginInternalPath('/vaults/team', '/vaults/team/.obsidian-memx/x.md')).toBe(false)
+  })
+})
+
+describe('globalFilePath', () => {
+  it('joins the vault globalFile onto the vault root, flat or nested', () => {
+    expect(globalFilePath({ path: '/vaults/team', globalFile: GLOBAL_MEMORY_FILE_DEFAULT }))
+      .toBe('/vaults/team/GLOBAL.md')
+    expect(globalFilePath({ path: '/vaults/team', globalFile: 'notes/MAIN.md' }))
+      .toBe('/vaults/team/notes/MAIN.md')
+  })
+
+  it('answers null when the joined path escapes the vault root', () => {
+    // Hand-edited registries reach this belt after config validation.
+    expect(globalFilePath({ path: '/vaults/team', globalFile: '../elsewhere/GLOBAL.md' })).toBeNull()
+    expect(globalFilePath({ path: '/vaults/team', globalFile: '.' })).toBeNull()
+    expect(globalFilePath({ path: '/vaults/team', globalFile: 'notes/../../GLOBAL.md' })).toBeNull()
   })
 })
 

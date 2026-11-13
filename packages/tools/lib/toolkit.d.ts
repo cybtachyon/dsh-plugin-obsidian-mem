@@ -32,6 +32,10 @@ export interface BudgetSectionValue {
     over_budget: boolean;
     global_note_count: number;
     global_note_paths: string[];
+    /** Global notes a dream may compact: vault globalFile protected files dropped (TASK-015). */
+    compactable_global_note_paths: string[];
+    /** True when EVERY live global note is protected: compaction cannot help. */
+    protected_only: boolean;
 }
 /** MapBudgetSection renames the service report's camelCase fields for the model. */
 export declare function mapBudgetSection(budget: GlobalBudgetReport): BudgetSectionValue;

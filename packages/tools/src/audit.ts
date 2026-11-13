@@ -297,8 +297,13 @@ export function renderAudit(value: AuditValue): string {
     : `no recall budget spent in this process yet (configured budget ${String(value.budget.budget_tokens)} tokens)`
   lines.push('', `Global memory budget: ${tracker}; ${String(value.budget.global_note_count)} live global notes.`)
   if (value.budget.over_budget) {
-    lines.push('OVER BUDGET: run memory_dream to process and compact all global memory markdown files, least-read first:',
-      ...value.budget.global_note_paths.map((path) => `- ${path}`))
+    if (value.budget.protected_only) {
+      lines.push('OVER BUDGET: compaction cannot help: every live global note is a protected vault global file; tighten these files by hand to shrink every session:',
+        ...value.budget.global_note_paths.map((path) => `- ${path}`))
+    } else {
+      lines.push('OVER BUDGET: run memory_dream to process and compact the global memory markdown files, least-read first:',
+        ...value.budget.compactable_global_note_paths.map((path) => `- ${path}`))
+    }
   }
   lines.push('', `Notes (${value.view}, showing ${String(value.rows.length)} of ${String(value.rows_total)}):`)
   for (const row of value.rows) {

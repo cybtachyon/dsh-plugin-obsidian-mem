@@ -203,8 +203,14 @@ export function renderDream(value) {
         value.plan,
     ];
     if (value.budget.over_budget) {
-        lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used; ${String(value.budget.global_note_count)} live global notes inject, least-read first:`);
-        lines.push(...value.budget.global_note_paths.map((path) => `- ${path}`));
+        if (value.budget.protected_only) {
+            lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used; compaction cannot help: every live global note is a protected vault global file; tighten these files by hand:`);
+            lines.push(...value.budget.global_note_paths.map((path) => `- ${path}`));
+        }
+        else {
+            lines.push('', `OVER BUDGET: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used; ${String(value.budget.global_note_count)} live global notes inject, compactable least-read first:`);
+            lines.push(...value.budget.compactable_global_note_paths.map((path) => `- ${path}`));
+        }
     }
     else if (value.budget.measured) {
         lines.push('', `Budget headroom: ${String(value.budget.used_tokens)} of ${String(value.budget.budget_tokens)} tokens used.`);

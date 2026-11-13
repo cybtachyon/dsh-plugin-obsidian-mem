@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { NOTE_TIMELINE_BYTES } from '../../core/lib/index.js'
+import { GLOBAL_MEMORY_FILE_DEFAULT, NOTE_TIMELINE_BYTES } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import { DEFAULT_DREAM_PROMPT, DreamBlockedError, DreamBusyError, DreamOrchestrator, renderPromptTunables } from '../src/dream.ts'
 import type { DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
@@ -121,9 +121,9 @@ function brokenNote(vaultPath: string, name: string): AuditedNote {
   return { ...note(vaultPath, name), meta: null, malformed: '"bad frontmatter"' }
 }
 
-function inventory(vaultPath: string, mode: 'shared' | 'read-only', notes: AuditedNote[]): VaultInventory {
+function inventory(vaultPath: string, mode: 'shared' | 'read-only', notes: AuditedNote[], globalFile: string = GLOBAL_MEMORY_FILE_DEFAULT): VaultInventory {
   return {
-    vault: { path: vaultPath, mode, source: 'settings' },
+    vault: { path: vaultPath, mode, globalFile, source: 'settings' },
     facts: { exists: true, rootIsDirectory: true, sidecarPresent: true, writable: mode === 'shared' },
     notes,
     reservedMisplaced: [],
@@ -324,6 +324,59 @@ describe('plan: candidate ranking', () => {
       'near-duplicate analysis (no stored vectors available: the vector index is cold or the candidates are unindexed)',
     ])
     expect(plan.plan).toContain('Skipped check')
+  })
+
+  // TASK-015: a vault's own globalFile note is never a candidate, so it
+  // enters no cluster and no work line, while still counting in the budget.
+  it('never ranks or clusters a vault globalFile, and protection is per vault', async () => {
+    const a = `${SHARED}/a.md`
+    const b = `${SHARED}/b.md`
+    const orchestrator = new DreamOrchestrator(deps({
+      inventories: [
+        inventory(SHARED, 'shared', [
+          // Never-read + oversized + global-over-budget: every reason, still skipped.
+          note(SHARED, 'GLOBAL', { sizeBytes: NOTE_TIMELINE_BYTES + 1 }),
+          note(SHARED, 'a'),
+          note(SHARED, 'b'),
+        ]),
+        // Vault B names a different global file: its GLOBAL.md stays an ordinary note.
+        inventory(READ_ONLY, 'read-only', [note(READ_ONLY, 'GLOBAL')], 'notes/MAIN.md'),
+      ],
+      globalIndex: { budgetTokens: 1500, usedTokens: 2000, remainingTokens: -500 },
+      vectors: async () => new Map<string, number[]>([
+        [`${SHARED}/GLOBAL.md`, [1, 0]],
+        [a, [0.99, 0.01]],
+        [b, [0.98, 0.02]],
+      ]),
+    }))
+    const plan = await orchestrator.plan()
+    const candidatePaths = plan.candidates.map((candidate) => candidate.path)
+    expect(candidatePaths).not.toContain(`${SHARED}/GLOBAL.md`)
+    expect(candidatePaths).toContain(`${READ_ONLY}/GLOBAL.md`)
+    // The protected copy carries a near-duplicate vector and still never clusters.
+    expect(plan.clusters).toEqual([[a, b]])
+    // Budget math honesty: the protected note counts, it just never works.
+    expect(plan.budget.globalNoteCount).toBe(4)
+    expect(plan.budget.globalNotePaths).toEqual([`${READ_ONLY}/GLOBAL.md`, `${SHARED}/GLOBAL.md`, a, b])
+    expect(plan.budget.compactableGlobalNotePaths).toEqual([`${READ_ONLY}/GLOBAL.md`, a, b])
+    expect(plan.plan).not.toContain(`${SHARED}/GLOBAL.md`)
+  })
+
+  it('answers the cannot-help work plan when every live global note is protected', async () => {
+    const orchestrator = new DreamOrchestrator(deps({
+      inventories: [inventory(SHARED, 'shared', [
+        note(SHARED, 'GLOBAL'),
+        note(SHARED, 'domain-note', { meta: { type: 'domain', read_count: 1, last_read_at: '2026-11-09' } }),
+      ])],
+      globalIndex: { budgetTokens: 1500, usedTokens: 1800, remainingTokens: -300 },
+    }))
+    const plan = await orchestrator.plan()
+    expect(plan.budget.globalNoteCount).toBe(1)
+    expect(plan.budget.compactableGlobalNotePaths).toEqual([])
+    expect(plan.plan).toBe([
+      '1. Global memory is over budget (1800 of 1500 tokens used), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; manually tighten /vault/shared/GLOBAL.md to reclaim budget.',
+      '2. Skipped check: near-duplicate analysis (no candidates to compare).',
+    ].join('\n'))
   })
 
   it('answers the golden work plan text for a small over-budget store', async () => {

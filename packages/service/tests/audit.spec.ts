@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   defaultVaultPath,
+  GLOBAL_MEMORY_FILE_DEFAULT,
   INTENT_MARKERS,
   INTENTS_FILE,
   modelCacheDir,
@@ -193,8 +194,8 @@ function noteFixture(over: Partial<NoteMeta> = {}): string {
   return serializeNoteWithRaw({ meta: meta(over), body: 'fact body' })
 }
 
-function vault(path: string, mode: 'shared' | 'read-only' = 'shared'): VaultEntry {
-  return { path, mode, source: 'settings' }
+function vault(path: string, mode: 'shared' | 'read-only' = 'shared', globalFile: string = GLOBAL_MEMORY_FILE_DEFAULT): VaultEntry {
+  return { path, mode, globalFile, source: 'settings' }
 }
 
 /** A healthy shared vault: layout, .INTENTS.md, two notes, state file. */
@@ -567,13 +568,15 @@ describe('runStoreAudit: global budget section', () => {
       '/v/popular.md',
     ])
     expect(report.budget.globalNoteCount).toBe(3)
+    // No note here is /v's globalFile (GLOBAL.md), so all stay compactable.
+    expect(report.budget.compactableGlobalNotePaths).toEqual(report.budget.globalNotePaths)
   })
 
   it('over budget: reports an ISSUE instructing memory_dream over the least-read-first list', async () => {
     const report = await run({ fs: budgetFs(), globalIndex: globalIndexFixture({ usedTokens: 2000 }), vaults: [vault('/v')] })
     const over = findIssue(report, 'budget.over')
     expect(over?.severity).toBe('ISSUE')
-    expect(over?.remediation).toContain('run memory_dream to process and compact all global memory markdown files, least-read first')
+    expect(over?.remediation).toContain('run memory_dream to process and compact the global memory markdown files, least-read first')
     const remediation = over?.remediation ?? ''
     expect(remediation.indexOf('unread.md')).toBeLessThan(remediation.indexOf('popular.md'))
     expect(issueIds(report)).not.toContain('budget.tracker')
@@ -585,6 +588,65 @@ describe('runStoreAudit: global budget section', () => {
     expect(report.budget.measured).toBe(true)
     expect(report.budget.overBudget).toBe(true)
     expect(issueIds(report)).toContain('budget.over')
+  })
+
+  // TASK-015: each vault's own globalFile target is protected from the
+  // dreaming pass, vault by vault. Vault B configures a different
+  // globalFile, so B's GLOBAL.md is an ordinary note.
+  function perVaultGlobalFs(): MemAuditFs {
+    return new MemAuditFs({
+      dirs: ['/vA', '/vB', '/vB/notes', modelCacheDir(HOME)],
+      files: {
+        '/vA/GLOBAL.md': noteFixture({ index_title: 'A global', type: 'global' }),
+        '/vA/loose.md': noteFixture({ index_title: 'Loose global', type: 'global', read_count: 1, last_read_at: '2026-10-01' }),
+        '/vB/GLOBAL.md': noteFixture({ index_title: 'B ordinary', type: 'global' }),
+        '/vB/notes/MAIN.md': noteFixture({ index_title: 'B global', type: 'global' }),
+      },
+    })
+  }
+
+  it('drops each vault\'s own globalFile from the compactable list but still counts it', async () => {
+    const report = await run({
+      fs: perVaultGlobalFs(),
+      collection: null,
+      globalIndex: globalIndexFixture({ usedTokens: 2000 }),
+      vaults: [vault('/vA'), vault('/vB', 'shared', 'notes/MAIN.md')],
+    })
+    // Budget math honesty: every live global note injects, protected included.
+    expect(report.budget.globalNoteCount).toBe(4)
+    expect(report.budget.globalNotePaths).toEqual([
+      '/vA/GLOBAL.md',
+      '/vB/GLOBAL.md',
+      '/vB/notes/MAIN.md',
+      '/vA/loose.md',
+    ])
+    // Protection is per-vault: A's GLOBAL.md and B's notes/MAIN.md drop;
+    // B's GLOBAL.md stays compactable because B names a different file.
+    expect(report.budget.compactableGlobalNotePaths).toEqual(['/vB/GLOBAL.md', '/vA/loose.md'])
+    const remediation = findIssue(report, 'budget.over')?.remediation ?? ''
+    expect(remediation).toContain('/vB/GLOBAL.md')
+    expect(remediation).toContain('/vA/loose.md')
+    expect(remediation).not.toContain('/vA/GLOBAL.md')
+    expect(remediation).not.toContain('/vB/notes/MAIN.md')
+  })
+
+  it('protected-only over budget: the remediation says compaction cannot help and names the file', async () => {
+    const fs = new MemAuditFs({
+      dirs: ['/v', modelCacheDir(HOME)],
+      files: {
+        '/v/GLOBAL.md': noteFixture({ index_title: 'Vault global', type: 'global' }),
+        '/v/domain-note.md': noteFixture({ index_title: 'Domain', type: 'domain' }),
+      },
+    })
+    const report = await run({ fs, collection: null, globalIndex: globalIndexFixture({ usedTokens: 2000 }), vaults: [vault('/v')] })
+    expect(report.budget.globalNoteCount).toBe(1)
+    expect(report.budget.compactableGlobalNotePaths).toEqual([])
+    const over = findIssue(report, 'budget.over')
+    expect(over?.severity).toBe('ISSUE')
+    expect(over?.remediation).toContain('compaction cannot help')
+    expect(over?.remediation).toContain('manually tighten')
+    expect(over?.remediation).toContain('/v/GLOBAL.md')
+    expect(over?.remediation).not.toContain('run memory_dream')
   })
 })
 

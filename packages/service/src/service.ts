@@ -35,7 +35,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir as osHomedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, sep } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { MilvusClient } from '@zilliz/milvus2-sdk-node'
@@ -46,6 +46,7 @@ import {
   dbStateDir,
   firstSharedVault,
   formatLocalDate,
+  globalFilePath,
   isReservedNonIndexed,
   isVaultMode,
   metadataDir,
@@ -465,7 +466,8 @@ export class ObsidianMemService extends Service {
    * The read bypasses the read registry and never bumps note read stats;
    * the joined path is refused when it lands outside the vault, a belt over
    * the config/addVault shape validation that already refuses absolute and
-   * `..` forms.
+   * `..` forms (core globalFilePath, shared with the TASK-015 dream
+   * protection).
    */
   globalMemorySources(): GlobalMemorySource[] {
     const sources: GlobalMemorySource[] = []
@@ -473,9 +475,8 @@ export class ObsidianMemService extends Service {
       if (vault.mode !== VAULT_MODE_SHARED) {
         continue
       }
-      const path = join(vault.path, vault.globalFile)
-      const rel = relative(vault.path, path)
-      if (rel === '' || rel === '.' || rel.startsWith('..' + sep) || rel === '..' || isAbsolute(rel)) {
+      const path = globalFilePath(vault)
+      if (path === null) {
         this.log.debug(`global memory file escapes vault ${vault.path} (skipped): ${vault.globalFile}`)
         continue
       }

@@ -39,7 +39,7 @@ import {
 import type { VaultMode } from '../../core/lib/index.js'
 import type { ResolvedObsidianMemConfig } from './config.js'
 import { describeError } from './errors.js'
-import { dayEnd, dreamStatePath, globalBudgetReport, readLastDreamAt } from './audit.js'
+import { budgetProtectedOnly, dayEnd, dreamStatePath, globalBudgetReport, globalFileTargets, readLastDreamAt } from './audit.js'
 import type { AuditedNote, GlobalBudgetReport, VaultInventory } from './audit.js'
 import type { GlobalMemoryIndex, ServiceFs } from './service.js'
 
@@ -378,12 +378,20 @@ export class DreamOrchestrator {
     const inventories = this.deps.inventories()
     const allNotes = inventories.flatMap((inventory) => inventory.notes)
     const lastDreamAt = this.lastDreamAt()
-    const budget = globalBudgetReport(allNotes, this.deps.globalIndex())
+    const vaults = inventories.map((inventory) => inventory.vault)
+    const budget = globalBudgetReport(allNotes, vaults, this.deps.globalIndex())
     const skipped: string[] = []
 
+    // TASK-015: a vault's own globalFile note is never a candidate, so it
+    // lands in no work list, no timeline pick, no review pick, and never a
+    // near-duplicate cluster (clusters only span candidates).
+    const protectedTargets = globalFileTargets(vaults)
     const candidates: DreamCandidate[] = []
     for (const inventory of inventories) {
       for (const note of inventory.notes) {
+        if (protectedTargets.has(note.path)) {
+          continue
+        }
         const candidate = rankCandidate(note, inventory.vault.mode, budget.overBudget, lastDreamAt)
         if (candidate !== null) {
           candidates.push(candidate)
@@ -711,7 +719,11 @@ function renderPlanText(input: {
     lines.push(`${next()} Review (${candidate.reasons.join(', ')}): ${candidate.path}: ${action}.`)
   }
   if (input.budget.overBudget) {
-    lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used). ${String(input.budget.globalNotePaths.length)} live global notes inject; compact least-read first: ${input.budget.globalNotePaths.join(', ')}.`)
+    if (budgetProtectedOnly(input.budget)) {
+      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used), and every live global note is a vault global file the dreaming pass never compacts: compaction cannot help; manually tighten ${input.budget.globalNotePaths.join(', ')} to reclaim budget.`)
+    } else {
+      lines.push(`${next()} Global memory is over budget (${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used). ${String(input.budget.globalNoteCount)} live global notes inject; compact least-read first: ${input.budget.compactableGlobalNotePaths.join(', ')}.`)
+    }
   } else {
     lines.push(`${next()} Global budget headroom: ${String(input.budget.usedTokens)} of ${String(input.budget.budgetTokens)} tokens used, ${String(input.budget.globalNoteCount)} live global notes.`)
   }

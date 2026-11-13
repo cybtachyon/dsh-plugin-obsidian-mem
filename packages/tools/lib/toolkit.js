@@ -9,6 +9,7 @@
  * (host.ts mirrors it); only the assembly is shared here.
  * @module dsh-plugin-obsidian-mem/tools/toolkit
  */
+import { budgetProtectedOnly } from '../../service/lib/audit.js';
 import { describeError } from '../../service/lib/errors.js';
 import { textBlock } from './host.js';
 // The provisioning notice pair: ensureMemoryAccess answers a notice only
@@ -38,7 +39,7 @@ export function failedValue(toolName, error) {
 export const BudgetSectionSchema = {
     type: 'object',
     additionalProperties: false,
-    required: ['budget_tokens', 'used_tokens', 'measured', 'over_budget', 'global_note_count', 'global_note_paths'],
+    required: ['budget_tokens', 'used_tokens', 'measured', 'over_budget', 'global_note_count', 'global_note_paths', 'compactable_global_note_paths', 'protected_only'],
     properties: {
         budget_tokens: { type: 'integer' },
         used_tokens: { type: 'integer' },
@@ -46,6 +47,8 @@ export const BudgetSectionSchema = {
         over_budget: { type: 'boolean' },
         global_note_count: { type: 'integer' },
         global_note_paths: { type: 'array', items: { type: 'string' } },
+        compactable_global_note_paths: { type: 'array', items: { type: 'string' } },
+        protected_only: { type: 'boolean' },
     },
 };
 /** MapBudgetSection renames the service report's camelCase fields for the model. */
@@ -57,6 +60,8 @@ export function mapBudgetSection(budget) {
         over_budget: budget.overBudget,
         global_note_count: budget.globalNoteCount,
         global_note_paths: [...budget.globalNotePaths],
+        compactable_global_note_paths: [...budget.compactableGlobalNotePaths],
+        protected_only: budgetProtectedOnly(budget),
     };
 }
 // Nullable report scalars (offline index) stay honest nulls, a closed

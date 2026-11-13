@@ -17,7 +17,7 @@
  * while the row list is bounded by `limit`.
  * @module dsh-plugin-obsidian-mem/service/audit
  */
-import type { NoteMeta } from '../../core/lib/index.js';
+import type { NoteMeta, VaultConfig } from '../../core/lib/index.js';
 import type { ResolvedObsidianMemConfig } from './config.js';
 import type { IndexProgress } from './indexer.js';
 import type { GlobalMemoryIndex, ObsidianMemStatus, VaultEntry } from './service.js';
@@ -110,9 +110,16 @@ export interface GlobalBudgetReport {
     /** False when the tracker reported nothing measurable this process. */
     measured: boolean;
     overBudget: boolean;
+    /** Live global notes in FULL, protected global files counted (they inject). */
     globalNoteCount: number;
     /** Absolute paths of live global notes, sorted least-read first. */
     globalNotePaths: string[];
+    /**
+     * The compaction-target subset: live global notes that are not some
+     * vault's own globalFile (TASK-015). A protected file still counts above
+     * and injects every session; it just never appears in a work list.
+     */
+    compactableGlobalNotePaths: string[];
 }
 /** A report row (a bounded, model-facing projection of an AuditedNote). */
 export interface AuditNoteRow {
@@ -217,13 +224,32 @@ export declare function readLastDreamAt(readSource: {
  */
 export declare function globalNotePaths(notes: readonly AuditedNote[]): string[];
 /**
+ * GlobalFileTargets answers the absolute note paths the dreaming pass must
+ * never pick as compaction or merge targets: each vault's own
+ * `<vault path>/<globalFile>` through the ONE joined-path definition (core
+ * globalFilePath). Vaults are independent: vault A's globalFile protects
+ * only the copy inside vault A. A globalFile that escapes its vault root
+ * (hand-edited registry) protects nothing, mirroring the injection skip.
+ */
+export declare function globalFileTargets(vaults: readonly Pick<VaultConfig, 'path' | 'globalFile'>[]): Set<string>;
+/**
  * GlobalBudgetReport folds the tracker echo and the note inventory into the
  * shared budget section. Audit and the dream plan read the same numbers
  * from here (single source of truth for the compaction instruction).
+ * Protected global files stay in `globalNoteCount` and the token math (they
+ * inject into every session) but drop out of `compactableGlobalNotePaths`.
  */
-export declare function globalBudgetReport(notes: readonly AuditedNote[], globalIndex: GlobalMemoryIndex & {
+export declare function globalBudgetReport(notes: readonly AuditedNote[], vaults: readonly Pick<VaultConfig, 'path' | 'globalFile'>[], globalIndex: GlobalMemoryIndex & {
     overBudget?: boolean;
 }): GlobalBudgetReport;
+/**
+ * BudgetProtectedOnly reports the over-budget shape where EVERY live global
+ * note is some vault's protected globalFile: neither memory_dream nor any
+ * work list can reclaim budget there, only hand-tightening the file can
+ * (TASK-015). Audit's instruction and the dream work plan branch on this
+ * one predicate.
+ */
+export declare function budgetProtectedOnly(budget: GlobalBudgetReport): boolean;
 /**
  * DayEnd answers the epoch of the end of the day (23:59:59.999Z) a
  * YYYY-MM-DD note stamp names, so a read on that day counts as access

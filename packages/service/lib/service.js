@@ -25,9 +25,9 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, } from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
-import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
+import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, globalFilePath, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
 import { expandHomePath, globalFileShapeIssue, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js';
 import { DreamOrchestrator } from './dream.js';
@@ -185,7 +185,8 @@ export class ObsidianMemService extends Service {
      * The read bypasses the read registry and never bumps note read stats;
      * the joined path is refused when it lands outside the vault, a belt over
      * the config/addVault shape validation that already refuses absolute and
-     * `..` forms.
+     * `..` forms (core globalFilePath, shared with the TASK-015 dream
+     * protection).
      */
     globalMemorySources() {
         const sources = [];
@@ -193,9 +194,8 @@ export class ObsidianMemService extends Service {
             if (vault.mode !== VAULT_MODE_SHARED) {
                 continue;
             }
-            const path = join(vault.path, vault.globalFile);
-            const rel = relative(vault.path, path);
-            if (rel === '' || rel === '.' || rel.startsWith('..' + sep) || rel === '..' || isAbsolute(rel)) {
+            const path = globalFilePath(vault);
+            if (path === null) {
                 this.log.debug(`global memory file escapes vault ${vault.path} (skipped): ${vault.globalFile}`);
                 continue;
             }

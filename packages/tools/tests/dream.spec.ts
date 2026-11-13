@@ -43,6 +43,7 @@ function planFixture(over: Partial<DreamPlan> = {}): DreamPlan {
       overBudget: true,
       globalNoteCount: 2,
       globalNotePaths: ['/v/markdown/a.md', '/v/markdown/b.md'],
+      compactableGlobalNotePaths: ['/v/markdown/a.md', '/v/markdown/b.md'],
     },
     skipped: [],
     ...over,
@@ -159,7 +160,7 @@ describe('memory_dream render', () => {
           lastDreamAt: null,
           candidates: [],
           clusters: [],
-          budget: { budgetTokens: 1500, usedTokens: 0, measured: false, overBudget: false, globalNoteCount: 0, globalNotePaths: [] },
+          budget: { budgetTokens: 1500, usedTokens: 0, measured: false, overBudget: false, globalNoteCount: 0, globalNotePaths: [], compactableGlobalNotePaths: [] },
         }),
       },
     })
@@ -167,6 +168,30 @@ describe('memory_dream render', () => {
     expect(text).toContain('last dream: never')
     expect(text).toContain('No recall budget spent in this process yet')
     expect(text).not.toContain('OVER BUDGET')
+  })
+
+  it('renders a protected-only over-budget store as compaction that cannot help', async () => {
+    const service = createFakeService({
+      vaults: [],
+      dreamResult: {
+        operation: 'plan',
+        plan: planFixture({
+          budget: {
+            budgetTokens: 1500,
+            usedTokens: 1800,
+            measured: true,
+            overBudget: true,
+            globalNoteCount: 1,
+            globalNotePaths: ['/v/GLOBAL.md'],
+            compactableGlobalNotePaths: [],
+          },
+        }),
+      },
+    })
+    const text = renderDream(await executeDream(service, {}))
+    expect(text).toContain('OVER BUDGET: 1800 of 1500 tokens used; compaction cannot help')
+    expect(text).toContain('- /v/GLOBAL.md')
+    expect(text).not.toContain('compactable least-read first')
   })
 
   it('renders every non-plan kind as its message', () => {

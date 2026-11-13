@@ -53,6 +53,7 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
       overBudget: true,
       globalNoteCount: 2,
       globalNotePaths: ['/v/markdown/unread.md', '/v/markdown/a.md'],
+      compactableGlobalNotePaths: ['/v/markdown/unread.md', '/v/markdown/a.md'],
     },
     ...over,
   }
@@ -147,12 +148,30 @@ describe('memory_audit render', () => {
     const { service } = fixture(reportFixture({
       ok: true,
       issues: [],
-      budget: { budgetTokens: 1500, usedTokens: 0, measured: false, overBudget: false, globalNoteCount: 0, globalNotePaths: [] },
+      budget: { budgetTokens: 1500, usedTokens: 0, measured: false, overBudget: false, globalNoteCount: 0, globalNotePaths: [], compactableGlobalNotePaths: [] },
     }))
     const text = renderAudit(await executeAudit(service, {}))
     expect(text).toContain('no recall budget spent in this process yet (configured budget 1500 tokens)')
     expect(text).toContain('found no problems')
     expect(text).toContain('- none')
+  })
+
+  it('renders a protected-only over-budget store as compaction that cannot help', async () => {
+    const { service } = fixture(reportFixture({
+      budget: {
+        budgetTokens: 1500,
+        usedTokens: 2000,
+        measured: true,
+        overBudget: true,
+        globalNoteCount: 1,
+        globalNotePaths: ['/v/GLOBAL.md'],
+        compactableGlobalNotePaths: [],
+      },
+    }))
+    const text = renderAudit(await executeAudit(service, {}))
+    expect(text).toContain('OVER BUDGET: compaction cannot help')
+    expect(text).toContain('- /v/GLOBAL.md')
+    expect(text).not.toContain('OVER BUDGET: run memory_dream')
   })
 
   it('renders the failed kind as its message', () => {

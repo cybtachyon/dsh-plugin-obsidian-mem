@@ -10,6 +10,7 @@
  * @module dsh-plugin-obsidian-mem/tools/toolkit
  */
 
+import { budgetProtectedOnly } from '../../service/lib/audit.js'
 import type { GlobalBudgetReport } from '../../service/lib/audit.js'
 import { describeError } from '../../service/lib/errors.js'
 import type { GenericCallView, JsonSchemaNode, ToolDefinition } from './host.js'
@@ -48,7 +49,7 @@ export function failedValue(toolName: string, error: unknown): { kind: 'failed',
 export const BudgetSectionSchema: JsonSchemaNode = {
   type: 'object',
   additionalProperties: false,
-  required: ['budget_tokens', 'used_tokens', 'measured', 'over_budget', 'global_note_count', 'global_note_paths'],
+  required: ['budget_tokens', 'used_tokens', 'measured', 'over_budget', 'global_note_count', 'global_note_paths', 'compactable_global_note_paths', 'protected_only'],
   properties: {
     budget_tokens: { type: 'integer' },
     used_tokens: { type: 'integer' },
@@ -56,6 +57,8 @@ export const BudgetSectionSchema: JsonSchemaNode = {
     over_budget: { type: 'boolean' },
     global_note_count: { type: 'integer' },
     global_note_paths: { type: 'array', items: { type: 'string' } },
+    compactable_global_note_paths: { type: 'array', items: { type: 'string' } },
+    protected_only: { type: 'boolean' },
   },
 }
 
@@ -67,6 +70,10 @@ export interface BudgetSectionValue {
   over_budget: boolean
   global_note_count: number
   global_note_paths: string[]
+  /** Global notes a dream may compact: vault globalFile protected files dropped (TASK-015). */
+  compactable_global_note_paths: string[]
+  /** True when EVERY live global note is protected: compaction cannot help. */
+  protected_only: boolean
 }
 
 /** MapBudgetSection renames the service report's camelCase fields for the model. */
@@ -78,6 +85,8 @@ export function mapBudgetSection(budget: GlobalBudgetReport): BudgetSectionValue
     over_budget: budget.overBudget,
     global_note_count: budget.globalNoteCount,
     global_note_paths: [...budget.globalNotePaths],
+    compactable_global_note_paths: [...budget.compactableGlobalNotePaths],
+    protected_only: budgetProtectedOnly(budget),
   }
 }
 

@@ -19,7 +19,7 @@
  */
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, clampInt, dbStateDir, DREAM_STATE_FILE, DREAMS_FILE, defaultVaultPath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isReservedNonIndexed, metadataDir, modelCacheDir, NOTE_TIMELINE_BYTES, parseNote, PLUGIN_METADATA_REL, SCOPE_GLOBAL, VAULT_MODE_READ_ONLY, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
+import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, clampInt, dbStateDir, DREAM_STATE_FILE, DREAMS_FILE, defaultVaultPath, globalFilePath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isReservedNonIndexed, metadataDir, modelCacheDir, NOTE_TIMELINE_BYTES, parseNote, PLUGIN_METADATA_REL, SCOPE_GLOBAL, VAULT_MODE_READ_ONLY, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { indexStatePath, MAX_FILES_PER_VAULT } from './indexer.js';
 /** The bounded row list a `memory_audit` call shows. */
@@ -341,12 +341,33 @@ export function globalNotePaths(notes) {
         .map((note) => note.path);
 }
 /**
+ * GlobalFileTargets answers the absolute note paths the dreaming pass must
+ * never pick as compaction or merge targets: each vault's own
+ * `<vault path>/<globalFile>` through the ONE joined-path definition (core
+ * globalFilePath). Vaults are independent: vault A's globalFile protects
+ * only the copy inside vault A. A globalFile that escapes its vault root
+ * (hand-edited registry) protects nothing, mirroring the injection skip.
+ */
+export function globalFileTargets(vaults) {
+    const targets = new Set();
+    for (const vault of vaults) {
+        const path = globalFilePath(vault);
+        if (path !== null) {
+            targets.add(path);
+        }
+    }
+    return targets;
+}
+/**
  * GlobalBudgetReport folds the tracker echo and the note inventory into the
  * shared budget section. Audit and the dream plan read the same numbers
  * from here (single source of truth for the compaction instruction).
+ * Protected global files stay in `globalNoteCount` and the token math (they
+ * inject into every session) but drop out of `compactableGlobalNotePaths`.
  */
-export function globalBudgetReport(notes, globalIndex) {
+export function globalBudgetReport(notes, vaults, globalIndex) {
     const globalPaths = globalNotePaths(notes);
+    const targets = globalFileTargets(vaults);
     const usedTokens = globalIndex.usedTokens;
     const budgetTokens = globalIndex.budgetTokens;
     return {
@@ -356,7 +377,27 @@ export function globalBudgetReport(notes, globalIndex) {
         overBudget: globalIndex.overBudget ?? usedTokens > budgetTokens,
         globalNoteCount: globalPaths.length,
         globalNotePaths: globalPaths,
+        compactableGlobalNotePaths: globalPaths.filter((path) => !targets.has(path)),
     };
+}
+/**
+ * BudgetProtectedOnly reports the over-budget shape where EVERY live global
+ * note is some vault's protected globalFile: neither memory_dream nor any
+ * work list can reclaim budget there, only hand-tightening the file can
+ * (TASK-015). Audit's instruction and the dream work plan branch on this
+ * one predicate.
+ */
+export function budgetProtectedOnly(budget) {
+    return budget.globalNoteCount > 0 && budget.compactableGlobalNotePaths.length === 0;
+}
+// The budget.over instruction. Compactable files stay protected-dropped from
+// the named list; when only protected files remain the instruction says
+// compaction cannot help and names the files to tighten by hand.
+function budgetOverRemediation(budget, limit) {
+    if (budgetProtectedOnly(budget)) {
+        return `compaction cannot help: every live global note is a vault global file the dreaming pass never compacts; manually tighten ${pathList(budget.globalNotePaths, limit)} to reclaim budget`;
+    }
+    return `run memory_dream to process and compact the global memory markdown files, least-read first: ${pathList(budget.compactableGlobalNotePaths, limit)}`;
 }
 /**
  * DayEnd answers the epoch of the end of the day (23:59:59.999Z) a
@@ -534,12 +575,12 @@ export async function runStoreAudit(deps, request = {}) {
         ? 'no dreaming schedules are configured (memory_dream runs manually or on an agent-led request)'
         : `dreaming schedules: ${schedules.map((schedule) => quoted(schedule.label === '' ? schedule.id : schedule.label, ECHO_LABEL_CAP)).join(', ')}`, 'manage schedules in the Obsidian Mem settings card Dreaming section');
     // 8. Global memory budget (TASK-045 tracker echo; instruction on over).
-    const budget = globalBudgetReport(allNotes, deps.globalIndex);
+    const budget = globalBudgetReport(allNotes, deps.vaults, deps.globalIndex);
     if (!budget.measured) {
         issue('budget.tracker', 'INFO', `no recall budget spent in this process yet; configured budget is ${String(budget.budgetTokens)} tokens`, 'none: usage counts from the first turn-start recall injection');
     }
     if (budget.overBudget) {
-        issue('budget.over', 'ISSUE', `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used`, `run memory_dream to process and compact all global memory markdown files, least-read first: ${pathList(budget.globalNotePaths, limit)}`);
+        issue('budget.over', 'ISSUE', `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used`, budgetOverRemediation(budget, limit));
     }
     // 9. Rows: bounded view; rollups above covered the whole store.
     const live = allNotes.filter((note) => note.meta?.archive !== true);

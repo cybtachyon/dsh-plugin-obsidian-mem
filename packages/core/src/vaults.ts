@@ -197,6 +197,24 @@ export function resolveGlobalFile(value: string | undefined): string {
 }
 
 /**
+ * GlobalFilePath answers one vault's absolute global memory file target,
+ * `<vault path>/<globalFile>`, or null when the joined path lands outside
+ * the vault root. This is the ONE joined-path definition (PLAN-vault-layout
+ * "Config model change"): session-start injection (TASK-014) reads it, and
+ * the dreaming pass (TASK-015) protects exactly this path from compaction.
+ * The escape check is the belt that hand-edited registries meet; config
+ * validation already refuses absolute and `..` forms.
+ */
+export function globalFilePath(vault: Pick<VaultConfig, 'path' | 'globalFile'>): string | null {
+  const path = join(vault.path, vault.globalFile)
+  const rel = relative(vault.path, path)
+  if (rel === '' || rel === '.' || rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel)) {
+    return null
+  }
+  return path
+}
+
+/**
  * Creates the default shared vault's directory tree under the injected
  * homedir and returns its VaultConfig. Lazy by contract: only the service's
  * ensureMemoryAccess seam calls it, so installs without memory use create no

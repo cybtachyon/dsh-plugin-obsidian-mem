@@ -273,7 +273,8 @@ export declare class ObsidianMemService extends Service {
      * The read bypasses the read registry and never bumps note read stats;
      * the joined path is refused when it lands outside the vault, a belt over
      * the config/addVault shape validation that already refuses absolute and
-     * `..` forms.
+     * `..` forms (core globalFilePath, shared with the TASK-015 dream
+     * protection).
      */
     globalMemorySources(): GlobalMemorySource[];
     /**

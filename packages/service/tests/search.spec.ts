@@ -21,7 +21,8 @@ import type { SearchDependencies } from '../src/search.ts'
  * client-side RRF fusion math, the sparse -score cutoff, the TASK-009
  * default fused floor (default filtering, explicit 0 disables, explicit
  * override), dedupe/token budgets/mode resolution, the exact-section
- * fallback, and the typed offline degradation.
+ * fallback with its TASK-014 fused floor (exact-file leg unfloored), and
+ * the typed offline degradation.
  */
 
 interface Recorded {
@@ -569,6 +570,72 @@ describe('searchExactSections', () => {
     for (const dispatch of dispatches.slice(2)) {
       expect(dispatch.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"])')
     }
+  })
+
+  // One page feeds both routes of a dispatch pair (stubSequenced), so a
+  // score-0.85 row dies on the sparse -score cutoff and fuses as a
+  // single-route dense hit at its positional rank: the production shape
+  // for sub-floor candidates.
+  const floorPage = [
+    row({ [MILVUS_FIELDS.chunkId]: 1, [MILVUS_FIELDS.sectionHeader]: 'A' }),
+    row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: 0.85 }),
+    row({ [MILVUS_FIELDS.chunkId]: 3, [MILVUS_FIELDS.sectionHeader]: 'C' }),
+  ]
+
+  it('floors the fallback page: drops single-route rank-2-only rows, keeps the rest (TASK-014)', async () => {
+    const { client } = stubSequenced([[], floorPage])
+
+    const results = await searchExactSections(deps(client), {
+      filePath: 'src/widget.tsx',
+      ext: '.tsx',
+      snippet: 'widget lifecycle',
+      k: 3,
+    })
+
+    // chunk 2 sits at dense rank 2 alone (1/62 < the 1/61 default floor).
+    // chunk 1 is both-route rank 1; chunk 3 is dense rank 3 + sparse
+    // rank 2, and every both-route hit clears the floor.
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 3])
+    expect(results[0]!.score).toBe(1 / 61 + 1 / 61)
+  })
+
+  it('lets an explicit fallback minScore of 0 disable the floor (TASK-014)', async () => {
+    const { client } = stubSequenced([[], floorPage])
+
+    const results = await searchExactSections(deps(client), {
+      filePath: 'src/widget.tsx',
+      ext: '.tsx',
+      snippet: 'widget lifecycle',
+      k: 3,
+      minScore: 0,
+    })
+
+    // The same page under the default floor returns only chunks 1 and 3.
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 3, 2])
+  })
+
+  it('keeps the exact-file leg floor-free: a file being read is relevant by construction (TASK-014)', async () => {
+    const exactPage = [
+      row({ [MILVUS_FIELDS.chunkId]: 1, [MILVUS_FIELDS.sourcePath]: 'src/app.tsx' }),
+      row({
+        [MILVUS_FIELDS.chunkId]: 2,
+        [MILVUS_FIELDS.sourcePath]: 'src/app.tsx',
+        [MILVUS_FIELDS.sectionHeader]: 'B',
+        score: 0.85,
+      }),
+    ]
+    const { client, calls } = stubSequenced([exactPage])
+
+    const results = await searchExactSections(deps(client), {
+      filePath: 'src/app.tsx',
+      ext: '.tsx',
+      k: 3,
+    })
+
+    // chunk 2's 1/62 would face the fallback floor; the exact page
+    // returns it unfloored, and its non-empty answer skips the fallback.
+    expect(results.map((result) => result.chunk_id)).toEqual([1, 2])
+    expect(searchDispatches(calls)).toHaveLength(2)
   })
 
   it('returns empty when both exact and fallback dispatches find nothing', async () => {

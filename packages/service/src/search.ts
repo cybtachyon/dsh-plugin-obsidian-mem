@@ -188,6 +188,14 @@ export interface ExactSectionRequest {
   k?: number
   /** Token budget per section; default RECALL_READ_SECTION_TOKENS. */
   sectionTokens?: number
+  /**
+   * Floor on the RRF-fused score of the fallback leg only (NOT a BM25
+   * threshold, G7). Omitted: the default 1 / (RRF_RANKER_K + 1) floor
+   * applies, inclusive. An explicitly passed value, including 0
+   * (disables the cut), fully overrides the default. The exact-file leg
+   * is never floored (TASK-014).
+   */
+  minScore?: number
   /** Explicit framework filter for the fallback route. */
   frameworks?: readonly string[]
   /** Restrict to these vaults. */
@@ -224,8 +232,9 @@ const DENSE_RANGE_MAX = 1.0
 // relevancy and has no ceiling.
 const SPARSE_SEARCH_RADIUS = 2.5
 
-// FusedScoreFloor is the default FUSED-score floor hybridSearch applies
-// when the request carries no minScore (TASK-009): a single-route hit
+// FusedScoreFloor is the default FUSED-score floor hybridSearch and
+// searchExactSections' fallback leg apply when the request carries no
+// minScore (TASK-009 rule, TASK-014 reach): a single-route hit
 // scores 1/(k + rank), so the inclusive floor keeps exactly its rank 1
 // and drops rank >= 2. Every both-route hit inside the fetched window
 // clears it: the worst case takes the window's last rank on both routes
@@ -313,10 +322,11 @@ export async function hybridSearch(
 
 /**
  * SearchExactSections serves the Read intercept: with a vault-relative
- * filePath, chunks of that exact file (source_path == filter) come first;
- * otherwise (absolute path, or no indexed chunks) a fallback search by
- * trigger_extensions (ext), frameworks, and the query text. Same section
- * budget per result as the main search; offline degrades to
+ * filePath, chunks of that exact file (source_path == filter) come first,
+ * unfloored; otherwise (absolute path, or no indexed chunks) a fallback
+ * search by trigger_extensions (ext), frameworks, and the query text
+ * takes the same fused-score floor as hybridSearch (TASK-014). Same
+ * section budget per result as the main search; offline degrades to
  * IndexOfflineError. Output source_paths are absolute (see toResults).
  */
 export async function searchExactSections(
@@ -341,6 +351,9 @@ export async function searchExactSections(
       sourcePath: request.filePath,
       ...(request.vaults !== undefined ? { vaults: request.vaults } : {}),
     })
+  // The exact-file leg stays floor-free (TASK-014): a file the agent is
+  // reading is relevant by construction, so its chunks keep whatever
+  // fused rank the routes give them.
   if (exactFilter !== null) {
     const exactRows = await dispatchRoutes(deps, queryText, dense, exactFilter, candidatesFor(k))
     const exact = topSections(toResults(deps, exactRows, sectionTokens), k)
@@ -365,8 +378,14 @@ export async function searchExactSections(
       ? { wakeKeywords }
       : {}),
   })
+  // The fallback is a general neighborhood search, so it takes the same
+  // fused-score floor as hybridSearch (TASK-009 rule, TASK-014 reach);
+  // an explicit minScore (including 0) fully overrides the default.
+  const scoreFloor = request.minScore ?? FUSED_SCORE_FLOOR
   const fallbackRows = await dispatchRoutes(deps, queryText, dense, fallbackExpr, candidatesFor(k))
-  return topSections(toResults(deps, fallbackRows, sectionTokens), k)
+  const floored = toResults(deps, fallbackRows, sectionTokens)
+    .filter((result) => result.score >= scoreFloor)
+  return topSections(floored, k)
 }
 
 // Shared dispatch: two standalone `search` calls, one per route, carrying

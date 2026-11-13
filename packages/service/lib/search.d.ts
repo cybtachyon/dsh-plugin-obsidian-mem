@@ -159,6 +159,14 @@ export interface ExactSectionRequest {
     k?: number;
     /** Token budget per section; default RECALL_READ_SECTION_TOKENS. */
     sectionTokens?: number;
+    /**
+     * Floor on the RRF-fused score of the fallback leg only (NOT a BM25
+     * threshold, G7). Omitted: the default 1 / (RRF_RANKER_K + 1) floor
+     * applies, inclusive. An explicitly passed value, including 0
+     * (disables the cut), fully overrides the default. The exact-file leg
+     * is never floored (TASK-014).
+     */
+    minScore?: number;
     /** Explicit framework filter for the fallback route. */
     frameworks?: readonly string[];
     /** Restrict to these vaults. */
@@ -186,10 +194,11 @@ export declare function buildFilterExpr(criteria: FilterCriteria): string | unde
 export declare function hybridSearch(deps: SearchDependencies, request: SearchRequest): Promise<MemorySearchResult[]>;
 /**
  * SearchExactSections serves the Read intercept: with a vault-relative
- * filePath, chunks of that exact file (source_path == filter) come first;
- * otherwise (absolute path, or no indexed chunks) a fallback search by
- * trigger_extensions (ext), frameworks, and the query text. Same section
- * budget per result as the main search; offline degrades to
+ * filePath, chunks of that exact file (source_path == filter) come first,
+ * unfloored; otherwise (absolute path, or no indexed chunks) a fallback
+ * search by trigger_extensions (ext), frameworks, and the query text
+ * takes the same fused-score floor as hybridSearch (TASK-014). Same
+ * section budget per result as the main search; offline degrades to
  * IndexOfflineError. Output source_paths are absolute (see toResults).
  */
 export declare function searchExactSections(deps: SearchDependencies, request: ExactSectionRequest): Promise<MemorySearchResult[]>;

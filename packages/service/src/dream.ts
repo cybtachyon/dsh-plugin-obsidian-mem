@@ -5,9 +5,13 @@
  * dream agent through the reflection gateway `ctx.get('agents')` only
  * (never a typed import of agents internals), following the engramory-ext
  * §2.6 sequence: single flight armed synchronously before the first await,
- * session `dream-<uuid>`, followup then whenIdle then dispose, and a
- * deterministic post-pass that re-scores relevancy purely from frontmatter
- * read evidence, THEN stamps lastDreamAt (order load-bearing).
+ * session `dream-<uuid>` created with a resolved provider/model
+ * `AgentOptions` (model precedence: per-run override, then config
+ * `dreaming.model`, then the host default model; the provider comes only
+ * from the host default, so a model override never changes the provider
+ * route), followup then whenIdle then dispose, and a deterministic
+ * post-pass that re-scores relevancy purely from frontmatter read
+ * evidence, THEN stamps lastDreamAt (order load-bearing).
  *
  * Git-churn stressors are a documented deviation from the ext: vaults are
  * not necessarily git repos here, so stress is read-staleness, staleness
@@ -97,7 +101,11 @@ Near-duplicate cosine threshold: {{NEAR_DUPLICATE_THRESHOLD}}.
 /** One dreaming request; `plan` never calls a model, `run` launches one. */
 export interface DreamRequest {
   operation?: 'plan' | 'run'
-  /** Per-run model override; empty falls through to config dreaming.model. */
+  /**
+   * Per-run model override; empty counts as unset and falls through to
+   * config dreaming.model, then the host default model. It never changes
+   * the provider route, which only the host default supplies.
+   */
   model?: string
 }
 
@@ -182,7 +190,7 @@ export class DreamBlockedError extends Error {
 export interface DreamAgentsGateway {
   create(options: {
     sessionId: string
-    agentOptions?: { model?: string }
+    agentOptions?: { provider?: string, model?: string }
   }): Promise<DreamAgentHandle>
 }
 
@@ -211,6 +219,12 @@ export interface DreamDeps {
   globalIndex: () => GlobalMemoryIndex & { overBudget?: boolean }
   /** Reflection gateway: undefined until an agents service mounts. */
   agentsGateway: () => DreamAgentsGateway | undefined
+  /**
+   * Host default provider/model route for spawned agents; undefined when
+   * the host offers no default-model service. It is the only provider
+   * source: model overrides never change the provider route.
+   */
+  defaultAgentOptions: () => { provider?: string, model?: string } | undefined
   /** Stored chunk vectors averaged per note; empty map when index cold. */
   noteVectors: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>
   log: (message: string) => void
@@ -243,6 +257,10 @@ const ARCHIVE_CANDIDATE_CAP = 50
 
 // Relevancy decay is rounded to three decimals; the scale is that rounding.
 const RELEVANCY_DECAY_SCALE = 1000
+
+// Shared by blockedReason and the launch guard so the card banner and a
+// raced launch report one provider/model resolution failure.
+const NO_AGENT_MODEL_ROUTE = 'no provider/model can be resolved for the dream agent (mount the host agentDefaultModel service or set dreaming.model)'
 
 /** The deterministic post-pass counts, recorded onto DreamRunSummary. */
 interface DreamScoring {
@@ -312,6 +330,11 @@ function cosine(a: readonly number[], b: readonly number[]): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB))
 }
 
+/** FirstNonEmpty returns the first non-empty string argument, else undefined. */
+function firstNonEmpty(...values: readonly (string | undefined)[]): string | undefined {
+  return values.find((value) => value !== undefined && value !== '')
+}
+
 /**
  * DreamOrchestrator holds the ONE single-flight guard that converges the
  * tool, the settings-card button, and scheduled triggers (ext §2.6): the
@@ -337,10 +360,17 @@ export class DreamOrchestrator {
     return this.state === 'running'
   }
 
-  /** Why no run can start at all (no agents gateway); null when ready. */
+  /**
+   * Why no run can start at all (no agents gateway, or no provider/model
+   * pair resolves from config plus the host default); null when ready.
+   */
   blockedReason(): string | null {
     if (this.deps.agentsGateway() === undefined) {
       return 'the host provides no agents service, so no dream agent can run (mount dsh-agent and an agent driver)'
+    }
+    const route = this.agentLaunchOptions()
+    if (route.provider === undefined || route.model === undefined) {
+      return NO_AGENT_MODEL_ROUTE
     }
     return null
   }
@@ -462,6 +492,22 @@ export class DreamOrchestrator {
 
   private nearDuplicateThreshold(): number {
     return this.deps.config.dreaming.nearDuplicateThreshold
+  }
+
+  /**
+   * AgentLaunchOptions is the single home of the launch model rule: the
+   * model is the first non-empty of the per-run override, config
+   * dreaming.model, and the host default model (empty string counts as
+   * unset); the provider comes only from the host default selection, so
+   * model overrides never change the provider route. blockedReason and
+   * drive read the same resolution.
+   */
+  private agentLaunchOptions(modelOverride?: string): { provider: string | undefined, model: string | undefined } {
+    const host = this.deps.defaultAgentOptions() ?? {}
+    return {
+      provider: host.provider,
+      model: firstNonEmpty(modelOverride, this.deps.config.dreaming.model, host.model),
+    }
   }
 
   /**
@@ -605,10 +651,16 @@ export class DreamOrchestrator {
         throw new DreamBlockedError('the agents service disappeared before the run could launch')
       }
       const launchText = `${plan.prompt}\n---\n\n# Work plan for this run\n\n${plan.plan}\n\nVaults, budgets, and cluster detail above are authoritative; verify each candidate with memory_read before acting.\n`
-      const createOptions = model === undefined || model === ''
-        ? { sessionId: `${DREAM_SESSION_PREFIX}${id}` }
-        : { sessionId: `${DREAM_SESSION_PREFIX}${id}`, agentOptions: { model } }
-      const handle = await gateway.create(createOptions)
+      const route = this.agentLaunchOptions(model)
+      if (route.provider === undefined || route.model === undefined) {
+        // startRun's blockedReason already gates this; the host default
+        // route is live, so re-check it at the moment of launch.
+        throw new DreamBlockedError(NO_AGENT_MODEL_ROUTE)
+      }
+      const handle = await gateway.create({
+        sessionId: `${DREAM_SESSION_PREFIX}${id}`,
+        agentOptions: { provider: route.provider, model: route.model },
+      })
       try {
         handle.agent.followup({ content: [{ type: 'text', text: launchText }], source: { kind: 'user' } })
         await handle.agent.whenIdle()

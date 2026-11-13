@@ -622,6 +622,10 @@ export class ObsidianMemService extends Service {
                 inventories: () => this.listVaults().map((entry) => inventoryVault(entry, this.auditFs)),
                 globalIndex: () => this.globalMemoryIndex(),
                 agentsGateway: () => this.ctx.get('agents'),
+                // TASK-002 wires this to the host agentDefaultModel service
+                // (ctx.get('agentDefaultModel').currentSelection()); until then no
+                // run is launchable and blockedReason says so honestly.
+                defaultAgentOptions: () => undefined,
                 noteVectors: (targets) => this.fetchNoteVectors(targets),
                 log: (message) => {
                     this.log.info(`dream: ${message}`);

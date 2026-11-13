@@ -2,11 +2,13 @@
  * DreamOrchestrator spec (TASK-035 DoD): candidate ranking with faked
  * vectors and stats, the golden work-plan text, prompt seed-once with
  * render-on-load tunables, the single-flight guard armed before the first
- * await, the ext launch sequence (session dream-<uuid>, followup, whenIdle,
- * dispose), and the load-bearing scoring order (relevancy scored against
+ * await, the ext launch sequence (session dream-<uuid> with resolved
+ * provider/model AgentOptions, followup, whenIdle, dispose), the
+ * provider/model precedence and blocked resolution (dream-launch
+ * TASK-001), and the load-bearing scoring order (relevancy scored against
  * the PREVIOUS stamp, THEN lastDreamAt written). Everything external is a
  * fake: ServiceFs in memory, inventories as data, a fake agents gateway,
- * faked vectors.
+ * a fake host default-model route, faked vectors.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -161,7 +163,7 @@ function stampedFs(files: Record<string, string> = {}): MemFs {
 
 interface GatewayRecorder {
   gateway: DreamAgentsGateway
-  created: Array<{ sessionId: string; agentOptions?: { model?: string } }>
+  created: Array<{ sessionId: string; agentOptions?: { provider?: string; model?: string } }>
   followups: unknown[]
   calls: string[]
   disposed: number
@@ -207,6 +209,7 @@ interface DepsOptions {
   config?: ResolvedObsidianMemConfig
   globalIndex?: { budgetTokens: number; usedTokens: number; remainingTokens: number; overBudget?: boolean }
   gateway?: DreamAgentsGateway | null
+  defaultAgentOptions?: () => { provider?: string; model?: string } | undefined
   vectors?: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>
   logs?: string[]
 }
@@ -218,6 +221,7 @@ function deps(fixture: DepsOptions): DreamDeps {
     inventories: () => fixture.inventories ?? [],
     globalIndex: () => fixture.globalIndex ?? { budgetTokens: 1500, usedTokens: 0, remainingTokens: 1500 },
     agentsGateway: () => fixture.gateway ?? undefined,
+    defaultAgentOptions: fixture.defaultAgentOptions ?? (() => ({ provider: 'acme', model: 'm-1' })),
     noteVectors: fixture.vectors ?? (async () => new Map<string, number[]>()),
     log: (message) => {
       ;(fixture.logs ?? []).push(message)
@@ -479,7 +483,7 @@ describe('run: single flight and the launch sequence', () => {
     expect(summary.ok).toBe(true)
 
     expect(handle.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i)
-    expect(recorder.created).toEqual([{ sessionId: `dream-${handle.id}` }])
+    expect(recorder.created).toEqual([{ sessionId: `dream-${handle.id}`, agentOptions: { provider: 'acme', model: 'm-1' } }])
     expect(recorder.calls).toEqual(['create', 'followup', 'whenIdle', 'dispose'])
     const message = recorder.followups[0] as { content: Array<{ type: string; text: string }>; source: { kind: string } }
     expect(message.source).toEqual({ kind: 'user' })
@@ -506,11 +510,35 @@ describe('run: single flight and the launch sequence', () => {
     expect(logs.some((entry) => entry.includes('done'))).toBe(true)
   })
 
-  it('passes a per-run model override as agentOptions', async () => {
+  it('launches with the host default model when override and config are unset (config empty string is unset)', async () => {
     const recorder = fakeGateway()
-    const orchestrator = new DreamOrchestrator(deps({ gateway: recorder.gateway }))
-    await orchestrator.startRun({ model: 'some/model-x' }).done
-    expect(recorder.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { model: 'some/model-x' } })
+    const config = configFixture({ dreaming: { schedules: [], model: '', nearDuplicateThreshold: 0.92 } })
+    await new DreamOrchestrator(deps({ gateway: recorder.gateway, config })).startRun().done
+    expect(recorder.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'm-1' } })
+  })
+
+  it('resolves the model by precedence: per-run override over config, config over host', async () => {
+    const config = configFixture({ dreaming: { schedules: [], model: 'cfg/model', nearDuplicateThreshold: 0.92 } })
+    const overridden = fakeGateway()
+    await new DreamOrchestrator(deps({ gateway: overridden.gateway, config })).startRun({ model: 'some/model-x' }).done
+    // The override replaces only the model id; provider routing is host-only.
+    expect(overridden.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'some/model-x' } })
+    const configured = fakeGateway()
+    await new DreamOrchestrator(deps({ gateway: configured.gateway, config })).startRun().done
+    expect(configured.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'cfg/model' } })
+  })
+
+  it('rejects the run as blocked when no provider/model pair resolves', () => {
+    const recorder = fakeGateway()
+    // No host route, config dreaming.model stays '', no per-run override.
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: recorder.gateway,
+      defaultAgentOptions: () => undefined,
+    }))
+    expect(orchestrator.blockedReason()).toContain('no provider/model can be resolved')
+    expect(() => orchestrator.startRun()).toThrow(DreamBlockedError)
+    expect(orchestrator.busy).toBe(false)
+    expect(recorder.created).toEqual([])
   })
 
   it('disposes even when whenIdle rejects, and the guard reopens with a failed summary', async () => {

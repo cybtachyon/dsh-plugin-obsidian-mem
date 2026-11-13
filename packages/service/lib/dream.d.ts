@@ -5,9 +5,13 @@
  * dream agent through the reflection gateway `ctx.get('agents')` only
  * (never a typed import of agents internals), following the engramory-ext
  * §2.6 sequence: single flight armed synchronously before the first await,
- * session `dream-<uuid>`, followup then whenIdle then dispose, and a
- * deterministic post-pass that re-scores relevancy purely from frontmatter
- * read evidence, THEN stamps lastDreamAt (order load-bearing).
+ * session `dream-<uuid>` created with a resolved provider/model
+ * `AgentOptions` (model precedence: per-run override, then config
+ * `dreaming.model`, then the host default model; the provider comes only
+ * from the host default, so a model override never changes the provider
+ * route), followup then whenIdle then dispose, and a deterministic
+ * post-pass that re-scores relevancy purely from frontmatter read
+ * evidence, THEN stamps lastDreamAt (order load-bearing).
  *
  * Git-churn stressors are a documented deviation from the ext: vaults are
  * not necessarily git repos here, so stress is read-staleness, staleness
@@ -34,7 +38,11 @@ export declare const DEFAULT_DREAM_PROMPT = "# Obsidian Mem: dreaming protocol\n
 /** One dreaming request; `plan` never calls a model, `run` launches one. */
 export interface DreamRequest {
     operation?: 'plan' | 'run';
-    /** Per-run model override; empty falls through to config dreaming.model. */
+    /**
+     * Per-run model override; empty counts as unset and falls through to
+     * config dreaming.model, then the host default model. It never changes
+     * the provider route, which only the host default supplies.
+     */
     model?: string;
 }
 /** A note the plan proposes work for. */
@@ -111,6 +119,7 @@ export interface DreamAgentsGateway {
     create(options: {
         sessionId: string;
         agentOptions?: {
+            provider?: string;
             model?: string;
         };
     }): Promise<DreamAgentHandle>;
@@ -140,6 +149,15 @@ export interface DreamDeps {
     };
     /** Reflection gateway: undefined until an agents service mounts. */
     agentsGateway: () => DreamAgentsGateway | undefined;
+    /**
+     * Host default provider/model route for spawned agents; undefined when
+     * the host offers no default-model service. It is the only provider
+     * source: model overrides never change the provider route.
+     */
+    defaultAgentOptions: () => {
+        provider?: string;
+        model?: string;
+    } | undefined;
     /** Stored chunk vectors averaged per note; empty map when index cold. */
     noteVectors: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>;
     log: (message: string) => void;
@@ -159,7 +177,10 @@ export declare class DreamOrchestrator {
     get lastSummary(): DreamRunSummary | null;
     /** True while a run owns the guard. */
     get busy(): boolean;
-    /** Why no run can start at all (no agents gateway); null when ready. */
+    /**
+     * Why no run can start at all (no agents gateway, or no provider/model
+     * pair resolves from config plus the host default); null when ready.
+     */
     blockedReason(): string | null;
     /** Absolute path of the editable dream prompt (seeded on first use). */
     promptPath(): string;
@@ -184,6 +205,15 @@ export declare class DreamOrchestrator {
         model?: string;
     }): DreamRunHandle;
     private nearDuplicateThreshold;
+    /**
+     * AgentLaunchOptions is the single home of the launch model rule: the
+     * model is the first non-empty of the per-run override, config
+     * dreaming.model, and the host default model (empty string counts as
+     * unset); the provider comes only from the host default selection, so
+     * model overrides never change the provider route. blockedReason and
+     * drive read the same resolution.
+     */
+    private agentLaunchOptions;
     /**
      * ApplyDreamScoring is the deterministic post-pass: relevancy is bumped
      * to the target from frontmatter read evidence newer than the PREVIOUS

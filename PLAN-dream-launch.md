@@ -49,7 +49,7 @@ surfaces the failure in the card.
 
 ### Phase A: launch with resolved AgentOptions
 
-- [ ] [TASK-001-dream-agent-options-resolution](docs/PLAN-dream-launch-TASK-001-dream-agent-options-resolution.md)
+- [x] [TASK-001-dream-agent-options-resolution](docs/PLAN-dream-launch-TASK-001-dream-agent-options-resolution.md)
 - [ ] [TASK-002-default-model-gateway-wiring](docs/PLAN-dream-launch-TASK-002-default-model-gateway-wiring.md)
 
 ### Phase B: honest run outcomes

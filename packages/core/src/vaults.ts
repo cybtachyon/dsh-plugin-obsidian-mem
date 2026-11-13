@@ -227,7 +227,12 @@ function isWithin(dir: string, target: string): boolean {
   return target.startsWith(dir.endsWith(sep) ? dir : dir + sep)
 }
 
-const INTENT_HINTS: Record<IntentMarker, string> = {
+/**
+ * INTENT_HINTS is the seed line under each `.INTENTS.md` marker. Audit
+ * compares section bodies against these lines to tell a recorded intent
+ * from seed-only content.
+ */
+export const INTENT_HINTS: Record<IntentMarker, string> = {
   who: 'People, tools, and services a memory involves.',
   what: 'What happened, what was decided, what rule was learned.',
   when: 'Timing, deadlines, and sequence facts worth keeping.',
@@ -241,7 +246,12 @@ const INTENT_HINTS: Record<IntentMarker, string> = {
 
 // One canonical section per intent marker, built from INTENT_MARKERS so the
 // file and the constant list can never drift apart.
-function renderIntentsFile(): string {
+/**
+ * RenderIntentsFile returns the exact seed body of `.INTENTS.md`: one
+ * section per intent marker. Audit compares a live file against it to tell
+ * seed-only content from recorded intents.
+ */
+export function renderIntentsFile(): string {
   const header = [
     '# Memory intents',
     '',

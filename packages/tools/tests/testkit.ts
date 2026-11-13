@@ -18,6 +18,7 @@ import {
   serializeNoteWithRaw,
 } from '../../core/lib/index.js'
 import type { NoteMeta, VaultConfig } from '../../core/lib/index.js'
+import type { AuditReport, AuditRequest } from '../../service/lib/audit.js'
 import type { MemorySearchResult, SearchRequest } from '../../service/lib/search.js'
 import type {
   ObsidianMemReadResult,
@@ -58,6 +59,8 @@ export interface FakeServiceOptions {
   searchError?: Error
   readRecords?: Map<string, ReadRegistryEntry>
   budgets?: { searchTopK: number, readSectionTokens: number }
+  /** Canned audit report; absent makes the fake audit throw (never stubbed). */
+  auditReport?: AuditReport
 }
 
 /** The fake plus its call ledgers. */
@@ -68,6 +71,7 @@ export interface FakeMemoryService extends MemoryService {
   writeRequests: Array<{ path: string, meta: NoteMeta, body: string }>
   /** The read-registry; tests seed staleness scenarios here. */
   records: Map<string, ReadRegistryEntry>
+  auditRequests: AuditRequest[]
 }
 
 /** Create the seam-slice fake. read/applyWrite mirror the real service. */
@@ -124,6 +128,14 @@ export function createFakeService(options: FakeServiceOptions): FakeMemoryServic
     },
     readRecord(absPath) {
       return records.get(absPath)
+    },
+    auditRequests: [],
+    async audit(request = {}) {
+      fake.auditRequests.push(request)
+      if (options.auditReport === undefined) {
+        throw new Error('fake service: audit report not stubbed')
+      }
+      return options.auditReport
     },
     async applyWrite(path, meta, body) {
       fake.writeRequests.push({ path, meta, body })
@@ -275,6 +287,9 @@ export function schemaViolations(node: JsonSchemaNode, value: unknown, path = '$
       break
     case 'boolean':
       if (typeof value !== 'boolean') out.push(`${path}: not a boolean`)
+      break
+    case 'null':
+      if (value !== null) out.push(`${path}: not null`)
       break
     default:
       break

@@ -1,5 +1,7 @@
 # TASK-034 Tool: memory_audit
 
+Status: done
+
 Depends: TASK-030, TASK-023, TASK-045 (interface may be stubbed until 045). `packages/tools/src/audit.ts`.
 Read `/home/derek/src/engramory` audit process (SKILL.md / AGENT-SETUP.md doctor sections)
 as the canonical reference before implementing.

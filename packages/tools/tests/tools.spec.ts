@@ -1,14 +1,14 @@
 /**
  * Row-shape and registration-shape spec: the package exports the cordis
- * plugin row {name, inject, apply}; the three tool definitions built from
- * a fake seam carry the registered names, timeout budgets, closed oneOf
- * output unions, and generic-card presentCall views the host contract
- * expects. Live mounting is covered by mount.spec.ts on a real Context.
+ * plugin row {name, inject, apply}; the tool definitions built from a fake
+ * seam carry the registered names, timeout budgets, closed oneOf output
+ * unions, and generic-card presentCall views the host contract expects.
+ * Live mounting is covered by mount.spec.ts on a real Context.
  */
 
 import { describe, expect, it } from 'vitest'
 
-import { TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
+import { TOOL_MEMORY_AUDIT, TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE } from '../../core/lib/index.js'
 import plugin, {
   createReadTool,
   createSearchTool,
@@ -38,17 +38,17 @@ describe('obsidian-mem tools package row', () => {
     })
   })
 
-  it('registers read, search, and write in order through the scope effect', () => {
+  it('registers read, search, write, and audit in order through the scope effect', () => {
     const scope = createRecordingScope()
     registerMemoryTools(scope as unknown as MemoryToolScope, fakeSeam())
     expect(scope.registered.map((definition) => definition.name))
-      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE])
+      .toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT])
     // Every registration is effect-owned: running the disposers unregisters
     // exactly the registered names (row unload closes the tool set).
     for (const dispose of scope.effectDisposers) {
       dispose()
     }
-    expect(scope.disposed).toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE])
+    expect(scope.disposed).toEqual([TOOL_MEMORY_READ, TOOL_MEMORY_SEARCH, TOOL_MEMORY_WRITE, TOOL_MEMORY_AUDIT])
   })
 })
 

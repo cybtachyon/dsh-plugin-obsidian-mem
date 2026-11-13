@@ -74,6 +74,8 @@ import {
   vaultKey,
 } from './config.js'
 import type { ObsidianMemConfig, ResolvedObsidianMemConfig } from './config.js'
+import { nodeAuditFs, runStoreAudit } from './audit.js'
+import type { AuditFs, AuditReport, AuditRequest, CollectionProbeResult } from './audit.js'
 import { createEmbedder } from './embedder.js'
 import type { Embedder } from './embedder.js'
 import { describeError } from './errors.js'
@@ -82,7 +84,8 @@ import type { IndexProgress, IndexWriter } from './indexer.js'
 import { readyMilvusClient } from './milvus/client.js'
 import { MILVUS_LITE_VERSION, MilvusLauncher } from './milvus/launcher.js'
 import type { MilvusLauncherOptions, MilvusStartResult } from './milvus/launcher.js'
-import { ensureCollection, rebuildCollection } from './milvus/schema.js'
+import { assertOk } from './milvus/ok.js'
+import { ensureCollection, rebuildCollection, storedDenseDim } from './milvus/schema.js'
 import { hybridSearch, IndexOfflineError } from './search.js'
 import type { MemorySearchResult, SearchDependencies, SearchRequest } from './search.js'
 
@@ -247,6 +250,8 @@ export interface ObsidianMemHooks {
   indexerFactory?: (options: ConstructorParameters<typeof IndexerManager>[0]) => IndexerLike
   /** uvx cache warm for spawn mode; default a detached `uvx ... --help`. */
   prewarm?: (command: string, args: readonly string[]) => void
+  /** Read-only fs the audit engine walks; default nodeAuditFs. */
+  auditFs?: AuditFs
 }
 
 /** The persisted card-vaults file shape. */
@@ -280,6 +285,7 @@ export class ObsidianMemService extends Service {
   private readonly clientFactory: (address: string) => Promise<MilvusClient>
   private readonly indexerFactory: ((options: ConstructorParameters<typeof IndexerManager>[0]) => IndexerLike) | null
   private readonly prewarm: (command: string, args: readonly string[]) => void
+  private readonly auditFs: AuditFs
   private readonly log: {
     info(message: string): void
     warn(message: string): void
@@ -336,6 +342,7 @@ export class ObsidianMemService extends Service {
       ?? ((address) => readyMilvusClient(address))
     this.indexerFactory = hooks.indexerFactory ?? null
     this.prewarm = hooks.prewarm ?? defaultUvxPrewarm
+    this.auditFs = hooks.auditFs ?? nodeAuditFs
     this.embedderStore = hooks.embedder ?? null
   }
 
@@ -666,11 +673,63 @@ export class ObsidianMemService extends Service {
   }
 
   /**
-   * Audit is the seam memory_audit will drive.
-   * TASK-034 replaces this throw with the read-only store audit.
+   * Audit drives the read-only doctor pass (TASK-034). It never provisions
+   * and never writes: the registry comes from the sync read path, the
+   * filesystem walk goes through the read-only AuditFs seam, and a live
+   * collection is contacted only through one probe (describe + statistics)
+   * when the index already reports ready.
    */
-  audit(): Promise<unknown> {
-    return Promise.reject(new Error('obsidian-mem audit() is not implemented before TASK-034'))
+  async audit(request: AuditRequest = {}): Promise<AuditReport> {
+    const collection = this.client === null
+      ? null
+      : async (): Promise<CollectionProbeResult> => await this.probeCollection()
+    return await runStoreAudit({
+      vaults: this.listVaults(),
+      status: this.status(),
+      config: this.config,
+      globalIndex: this.globalMemoryIndex(),
+      homedir: this.homedir(),
+      fs: this.auditFs,
+      collection,
+    }, request)
+  }
+
+  // One describe + one statistics read; every Milvus failure comes back as
+  // the typed probe result (reachable:false + error), never a throw, so a
+  // dead child degrades into report lines instead of killing the audit.
+  private async probeCollection(): Promise<CollectionProbeResult> {
+    const client = this.client
+    if (client === null) {
+      return { reachable: false, exists: false, dim: null, count: null, error: 'no live client' }
+    }
+    try {
+      const has = assertOk(
+        await client.hasCollection({ collection_name: MILVUS_COLLECTION }),
+        'audit hasCollection',
+      ).value
+      if (!has) {
+        return { reachable: true, exists: false, dim: null, count: null, error: null }
+      }
+      const described = assertOk(
+        await client.describeCollection({ collection_name: MILVUS_COLLECTION }),
+        'audit describeCollection',
+      )
+      const statistics = assertOk(
+        await client.getCollectionStatistics({ collection_name: MILVUS_COLLECTION }),
+        'audit getCollectionStatistics',
+      )
+      const rowCount = (statistics.stats ?? []).find((entry) => entry.key === 'rowCount')?.value
+      const count = rowCount === undefined ? null : Number(rowCount)
+      return {
+        reachable: true,
+        exists: true,
+        dim: storedDenseDim(described),
+        count: count !== null && Number.isFinite(count) ? count : null,
+        error: null,
+      }
+    } catch (error: unknown) {
+      return { reachable: false, exists: false, dim: null, count: null, error: describeError(error) }
+    }
   }
 
   /**

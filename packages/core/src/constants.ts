@@ -243,6 +243,24 @@ export const SEARCH_MAX_RESULTS = 20
 /** Token ceiling one chunk may reach before the chunker splits it. */
 export const CHUNK_MAX_TOKENS = 500
 
+/** Default row cap for one memory_audit call; rollups cover the whole store. */
+export const AUDIT_DEFAULT_LIMIT = 50
+
+/**
+ * AUDIT_NOTE_READ_CAP_BYTES is the doctor read cap: a note past it is
+ * flagged, not read. The audit enumerates an attacker-influenceable store,
+ * and a planted or runaway file must not exhaust the backstop meant to
+ * report it (engramory doctor NOTE_READ_CAP canon).
+ */
+export const AUDIT_NOTE_READ_CAP_BYTES = 4 * 1024 * 1024
+
+/**
+ * NOTE_TIMELINE_BYTES marks a note as a timeline: keep the conclusion, move
+ * the history out to a `<slug>_history.md` archive note (engramory 0.12.0
+ * lesson: a PR-by-PR grown note is the common bloat shape).
+ */
+export const NOTE_TIMELINE_BYTES = 12_288
+
 // Heuristic used everywhere a budget is enforced before a tokenizer runs;
 // ~4 Latin characters per token is the standard rough estimate.
 const APPROX_CHARS_PER_TOKEN = 4

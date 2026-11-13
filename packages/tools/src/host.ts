@@ -18,6 +18,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { VaultConfig } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
+import type { AuditReport, AuditRequest } from '../../service/lib/audit.js'
 import type { MemorySearchResult, SearchRequest } from '../../service/lib/search.js'
 import type {
   ObsidianMemReadResult,
@@ -98,6 +99,8 @@ export interface MemoryService {
   search(request: SearchRequest): Promise<MemorySearchResult[]>
   readRecord(absPath: string): ReadRegistryEntry | undefined
   applyWrite(path: string, meta: NoteMeta, body: string): Promise<ObsidianMemWriteResult>
+  /** Read-only doctor pass (memory_audit); never provisions, never writes. */
+  audit(request?: AuditRequest): Promise<AuditReport>
   readonly config: {
     budgets: {
       searchTopK: number

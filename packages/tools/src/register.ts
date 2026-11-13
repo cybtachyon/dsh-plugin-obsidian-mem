@@ -3,12 +3,13 @@
  * through the scoped `tools` service inside a `ctx.effect`, so unloading
  * the row (or the tools service changing) disposes every registration
  * through the disposer `register` hands back. The tool set lands here in
- * registration order: memory_read, memory_search, memory_write (audit and
- * dream join in TASK-034/035).
+ * registration order: memory_read, memory_search, memory_write,
+ * memory_audit (memory_dream joins in TASK-035).
  * @module dsh-plugin-obsidian-mem/tools/register
  */
 
 import type { MemoryService, MemoryToolScope } from './host.js'
+import { createAuditTool } from './audit.js'
 import { createReadTool } from './read.js'
 import { createSearchTool } from './search.js'
 import { createWriteTool } from './write.js'
@@ -19,6 +20,7 @@ export function registerMemoryTools(scope: MemoryToolScope, service: MemoryServi
     createReadTool(service),
     createSearchTool(service),
     createWriteTool(service),
+    createAuditTool(service),
   ]) {
     scope.effect(
       () => scope.tools.register(definition),

@@ -282,7 +282,7 @@ export async function rebuildCollection(
 }
 
 /** StoredDenseDim reads the dense_vector width out of a describe response. */
-function storedDenseDim(described: DescribeCollectionResponse): number | null {
+export function storedDenseDim(described: DescribeCollectionResponse): number | null {
   const dense = described.schema.fields.find(
     (field) => field.name === MILVUS_FIELDS.denseVector,
   )

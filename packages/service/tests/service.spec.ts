@@ -814,9 +814,8 @@ describe('status, placeholders, and not-implemented seams', () => {
     expect(harness().service.globalMemoryIndex().budgetTokens).toBe(GLOBAL_MEMORY_TOKENS)
   })
 
-  it('audit() and dream() reject as not-implemented seams', async () => {
+  it('dream() rejects as the not-implemented seam until TASK-035', async () => {
     const h = harness()
-    await expect(h.service.audit()).rejects.toThrow(/audit\(\) is not implemented before TASK-034/)
     await expect(h.service.dream({})).rejects.toThrow(/dream\(\) is not implemented before TASK-035/)
   })
 })

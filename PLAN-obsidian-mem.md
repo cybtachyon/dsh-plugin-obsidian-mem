@@ -81,7 +81,7 @@ task file lists explicit cross-phase prerequisites.
 - [ ] [TASK-031-tool-memory-read](docs/PLAN-obsidian-mem-TASK-031-tool-memory-read.md)
 - [ ] [TASK-032-tool-memory-search](docs/PLAN-obsidian-mem-TASK-032-tool-memory-search.md)
 - [ ] [TASK-033-tool-memory-write](docs/PLAN-obsidian-mem-TASK-033-tool-memory-write.md)
-- [ ] [TASK-034-tool-memory-audit](docs/PLAN-obsidian-mem-TASK-034-tool-memory-audit.md)
+- [x] [TASK-034-tool-memory-audit](docs/PLAN-obsidian-mem-TASK-034-tool-memory-audit.md)
 - [ ] [TASK-035-tool-memory-dream](docs/PLAN-obsidian-mem-TASK-035-tool-memory-dream.md)
 - [ ] [TASK-036-system-prompt-section](docs/PLAN-obsidian-mem-TASK-036-system-prompt-section.md)
 - [ ] [Refactor: review Phase 4 files for code risks](docs/PLAN-obsidian-mem-TASK-037-refactor-tools.md)

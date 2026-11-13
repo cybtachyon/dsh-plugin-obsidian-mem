@@ -339,20 +339,25 @@ describe('sessions.json persistence', () => {
     const registry = makeRegistry(file, { now: clock.now, maxSessions: 2 })
     registry.markInjected('old', 'note')
     clock.advance(31 * 24 * 60 * 60 * 1000)
+    // Three survivors so the TTL prune leaves the store OVER the cap and
+    // the LRU eviction actually runs (two survivors would sit at the cap).
     registry.markInjected('mid', 'note')
     clock.advance(1_000)
     registry.markInjected('new', 'note')
+    clock.advance(1_000)
+    registry.markInjected('newer', 'note')
     registry.flush()
 
     const saved = JSON.parse(readFileSync(file, 'utf8')) as {
       version: number
       sessions: Record<string, { injected: Record<string, unknown> }>
     }
-    // 'old' is past the 30-day TTL; 'mid' is outlive by the cap of 2.
-    expect(Object.keys(saved.sessions).sort()).toEqual(['mid', 'new'])
+    // 'old' is past the 30-day TTL; 'mid' is the LRU victim of the cap of 2.
+    expect(Object.keys(saved.sessions).sort()).toEqual(['new', 'newer'])
     expect(saved.version).toBe(1)
-    // In-memory records followed the prune.
+    // In-memory records followed both prunes.
     expect(registry.shouldInject('old', 'note')).toBe(true)
+    expect(registry.shouldInject('mid', 'note')).toBe(true)
   })
 
   it('treats a corrupt ledger as empty and warns', () => {

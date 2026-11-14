@@ -16,6 +16,43 @@ import { BudgetSectionSchema, defineMemoryTool, failedValue, makePresentCall, ma
 export const AUDIT_TIMEOUT_MS = 30_000;
 /** The description the model sees for `memory_audit`. */
 export const AUDIT_DESCRIPTION = 'Run a read-only doctor pass over the memory vaults, the indexer state, the vector index, and the global memory budget. Returns every finding as an ISSUE (needs fixing) or INFO line with its remediation, whole-store rollups, a bounded list of note rows (size, read stats, indexed and archive flags), and the global memory budget section. Audit never writes, bumps read stats, or provisions the default vault: a missing store is reported, never created. Run it any time; an over-budget line names the manual compaction order and the heavier memory_dream alternative.';
+export const AUDIT_CHECKPOINT_PROMPT_SECTION_TEXT = `# Completion Checkpoint
+
+Promote what this session settled, retire what was transient, and write nothing
+when nothing qualifies (an empty checkpoint still has to be decided). This is a
+judgment call, not an implicit write step.
+
+1. Do not write anything the repo, git history, code, README, or the project's
+   own instruction file (e.g. AGENTS.md) already records: those are the source of
+   truth. Do not write anything that only matters to the current conversation and
+   will not be needed after a compact, clear, or new thread.
+2. Only add a project status memory note if the project, repo, or a project
+   management skill or tool does not provide status state. Do not accumulate
+   project status memories. Instead, coalesce and rewrite existing notes so that
+   there is a single source of truth note for the project status without
+   duplication. Only carry the few stable pointers needed to resume (branch,
+   issue/PR number, file path). It may record a settled fact (what shipped, when,
+   what was decided) but never current state: record where to read it, not the
+   values.
+3. Before writing a new note, use the \`memory_search\` tool and see if a note
+   already covers the fact. Settled facts accumulate by update, not by
+   accumulation: use the \`memory_read\` tool on the existing note and the
+   \`memory_write\` tool on the same path with the corrected content instead of
+   writing a second, contradicting note.
+4. Save once a fact is settled (a decision made, a bug root-caused, a
+   stated user preference), not mid-speculation. If the note would only
+   restate the current conversation, it is not settled yet.
+5. New memories go in the most related shared vault.
+6. The memory must carry a Why: line and a How to apply: line in the body.
+7. Never store secret values (tokens, passwords, api keys). Store where a
+   secret lives, never the secret itself.
+8. Retire notes by archiving (memory_write with the archive flag), never
+   by deleting files; archived notes stay out of recall.
+9. Evaluate your turn and find instances where existing memories would have
+   assisted you. Check if there were any significant patterns in your language
+   that would indicate a use for the memory then update
+   {{FIRST_SHARED_VAULT}}/.INTENTS.md with those intent(s).
+`;
 /** Parameter schema; view meanings and the rollup guarantee live on them. */
 export const AUDIT_PARAMETERS = {
     type: 'object',

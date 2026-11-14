@@ -46,30 +46,24 @@ export interface MemoryPromptScope {
 export const MEMORY_PROMPT_SECTION_TEXT = `# Obsidian Mem
 
 Five memory_* tools (read, search, write, audit, dream) provide access to shared
-markdown memory.
+Markdown memory.
 
-- Before starting real work on a project or task, memory_search the vault
-  for prior decisions, gotchas, and settings tied to the project name.
-- Before writing a new note, memory_search for a note that already covers
-  the fact. Settled facts accumulate by update, not by accumulation:
-  memory_read the existing note and memory_write the same path with the
-  corrected content instead of writing a second, contradicting note.
-- Save once a fact is settled (a decision made, a bug root-caused, a
-  stated user preference), not mid-speculation. If the note would only
-  restate the current conversation, it is not settled yet.
-- At the end of a task, run the completion checkpoint: promote what this
-  session settled, retire what was transient, and write nothing when
-  nothing qualifies (an empty checkpoint still has to be decided).
-- Never store secret values (tokens, passwords, api keys). Store where a
-  secret lives, never the secret itself.
-- Retire notes by archiving (memory_write with the archive flag), never
-  by deleting files; archived notes stay out of recall.
-- memory_audit is read-only and safe to run any time: when memory feels
-  disorganized or before large vault cleanups. Its over-budget line names
-  the compaction remedy to apply next.
-- Vaults are shared across agents or read-only; managed in the Obsidian
-  Mem settings card. Reads answer from every registered vault; writes go
-  to shared vaults only.`
+## Before starting real work
+Before starting real work on a project or task, memory_search the vault
+for prior decisions, gotchas, and settings tied to the project name.
+
+## At the end of real work
+At the end of real work, before presenting to the user run the completion
+checkpoint: call the \`memory_audit\` tool with "checkpoint" as the view.
+
+## FAQ
+ - memory_audit is read-only and safe to run any time: when memory feels
+   disorganized or before large vault cleanups. Its over-budget line names
+   the compaction run to do next.
+ - Vaults are shared across agents or read-only; managed in the Obsidian
+   Mem settings card. Reads answer from every registered vault; writes go
+   to shared vaults only.
+`
 
 /**
  * RegisterMemoryPromptSection registers the section through the scoped

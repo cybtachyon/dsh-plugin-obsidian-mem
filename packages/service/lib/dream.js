@@ -48,33 +48,97 @@ memory_write (never raw shell or file tools), and never delete a note:
 retire it by writing it back with archive=true.
 
 Ground rules:
-- Resolve contradictions toward the newer, more relevant memory; fold the
-  older information into the surviving note as background.
-- Merge near-duplicate notes: keep the richer note, move every unique fact
-  into it, then archive=true on the others.
-- A note larger than {{NOTE_TIMELINE_BYTES}} bytes is a timeline: keep the
-  conclusion in the note and move the history into a note named after it
-  with the suffix {{ARCHIVE_HISTORY_SUFFIX}} at the vault root (reserved,
-  never indexed).
-- After each step, append a dated section "## <YYYY-MM-DD> Step <N>: <step
-  name>" to DREAMS.md in the first shared vault's ${PLUGIN_METADATA_REL}/
-  directory. The diary is a log: never treat it as a memory source and
-  never write memory notes into it.
-- Never change the frontmatter fields read_count or last_read_at; the
-  plugin scores relevancy deterministically after this run.
+ - Resolve contradictions toward the newer, more relevant memory; fold the
+   older information into the surviving note as background.
+ - Merge near-duplicate notes: keep the richer note, move every unique fact
+   into it, then archive=true on the others.
+ - A note larger than {{NOTE_TIMELINE_BYTES}} bytes is a timeline: keep the
+   conclusion in the note and move the history into a note named after it
+   with the suffix {{ARCHIVE_HISTORY_SUFFIX}} at the vault root (reserved,
+   never indexed).
+ - Never change the frontmatter fields read_count or last_read_at; the
+   plugin scores relevancy deterministically after this run.
+ - After each step, append a dated section "## <YYYY-MM-DD> Step <N>: <step
+   name>" to DREAMS.md in the first shared vault's ${PLUGIN_METADATA_REL}/
+   directory. This is the only file to use the regular read and edit tools on.
+   The diary is a plain file log: never treat it as a memory note and
+   never write a memory note into it.
+## Step 0: Pre-Sync
 
-Steps, in order:
-1. Post-cognition: for the notes the work plan touches, retitle
-   index_title to the reader's next action in "Topic: Scenario" form,
-   tighten index_description to the recall hook that decides whether to
-   open the note, and keep the body settled facts only.
-2. Abstraction: for each surviving note, imagine the future scenario that
-   would need it; correct whatever that scenario exposes as wrong, vague,
-   or stale.
-3. Post-cognition again: repeat step 1; step 2 churned the notes.
-4. Forgetting: for each near-duplicate cluster, merge and archive the
-   losers; for each stale or never-read candidate, verify it and set
-   archive=true when it no longer holds.
+Synchronize the memory git repository before touching any memory:
+
+1. Run \`git fetch\` in the memory root when a remote is configured. When no
+   remote is configured, check the local state alone.
+2. Merge or pull so the branch catches up with its remote. If the merge
+   reports conflicts, resolve every one of them: read both sides and merge
+   the content. Where the two sides disagree and the right merge is
+   ambiguous, preserve both sides in the file rather than picking one.
+3. Re-check until the branch is fully up to date and no unresolved merge
+   remains.
+4. Begin Step 1 only once the store is fully synced. Never edit a memory
+   while a merge is open.
+
+## Step 1: Post-Cognition
+
+Light sleep.
+Sort, rewrite, and tidy the store for the notes the work plan lists:
+
+1. Re-sort: move data to where it is most relevant. A memory
+   may be coalesced from several files into one, or split apart for cleaner
+   relevancy.
+2. Re-title: each memory index_title phrased as the reader's next action.
+   Write the primary, most-unique verb keyword(s) for the topic, then the
+   remaining relevant title words.
+3. Review: Check memories for contradictions. Resolve cognitive dissonance
+   toward the newer, more relevant information; keep the older information
+   as background. Discard outdated, irrelevant, or dangling references.
+4. Distill: remove fluff language, keeping the core semantic principles and
+   abstract learnings.
+5. Tighten: Rewrite index_description to the recall hook that decides whether to
+   open the note and keep the body settled facts only.
+6. Make presentable: correct run-on sentences into short
+   statements, put line breaks between ideas, use white-space formatting
+   for complex ideas, and turn list-sentences into bulleted lists.
+7. Layer: when one topic holds a large number of memories,
+   place them in a subdirectory and add a topical overview pointer memory
+   that directs the reader to the subdirectory's index. Move archived notes
+   to the \`archive\` subdirectory.
+
+## Step 2: Cognitive Abstraction
+
+REM sleep.
+Pressure-test each memory by simulating its use:
+
+1. Think of the memory in the most abstract manner possible.
+2. Imagine an example scenario that uses the memory together with the
+   memories most likely related to it. Re-add to the abstraction the
+   important details that affect its meaning.
+3. Launch a subagent and ask it to reason about the scenario, providing it
+   only the scenario and the relevant abstracted memories. This is a reasoning
+   task only and must not result in any real change to the file system.
+4. Compare the subagent's result against the original memory for semantic
+   principles and learnings.
+5. Correct whatever that scenario exposes as wrong, vague, or stale, then
+   ensure the memory note covers lessons learned.
+
+## Step 3: Post-Cognition Re-run
+
+Post-cognition again: repeat step 1; step 2 churned the notes.
+
+## Step 4: Long-Term Memory, Bias, and Forgetting
+
+Deep sleep.
+Settle relevancy, surface stressors, and forget on purpose:
+
+1. Identify stressors: memories with high relevancy and consistent churn.
+   From git history, a stressor is a file edited in over
+   {{CHURN_THRESHOLD_PERCENT}}% of the last {{CHURN_WINDOW_COMMITS}}
+   commits. Annotate each stressor with a set of investigative questions
+   oriented toward reducing its future churn, and instruct future agents
+   to resolve them at the next memory edit.
+2. For each near-duplicate cluster, merge and archive the losers;
+   for each stale or never-read candidate, verify it and set archive=true when
+   it no longer holds.
 
 Global memory injection budget: {{GLOBAL_MEMORY_TOKENS}} tokens.
 Near-duplicate cosine threshold: {{NEAR_DUPLICATE_THRESHOLD}}.

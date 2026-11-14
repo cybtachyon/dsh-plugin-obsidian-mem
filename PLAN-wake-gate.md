@@ -166,7 +166,7 @@ pid 1091813 verified alive 2026-11-13).
  - [x] [TASK-006-fakes-green](docs/PLAN-wake-gate-TASK-006-fakes-green.md)
  - [x] [TASK-007-harness-flag](docs/PLAN-wake-gate-TASK-007-harness-flag.md)
  - [x] [TASK-008-commit-green](docs/PLAN-wake-gate-TASK-008-commit-green.md)
- - [ ] [TASK-009-refactor-review](docs/PLAN-wake-gate-TASK-009-refactor-review.md)
+ - [x] [TASK-009-refactor-review](docs/PLAN-wake-gate-TASK-009-refactor-review.md)
 
  TASK-004..008 result (2026-11-13, spec Step 2, commit 9c2ae27): the
  wake gate shipped. `dispatchRoutes` merges
@@ -196,6 +196,25 @@ pid 1091813 verified alive 2026-11-13).
  ON carries the production-merged expr on the 6 non-fail-open texts and
  all three run-* probes keep BOTH pinned hits gated (TASK-017 preview
  confirmed end-to-end against the live analyzer). TASK-009 is next.
+
+  TASK-009 result (2026-11-13, spec Step 2 follow-up, commit 36ab4c6):
+  behavior-preserving refactor; all 8 risk classes answered in the commit
+  body (resolved: the gate-clause merge in recall-eval.mjs and
+  zh-analyzer-probe.mjs is now an import of `sparseWakeGateExpr`, never a
+  copy; the token-legality floor/ceiling import core's
+  `WAKE_KEYWORD_MIN_LENGTH` and
+  `MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords`, one home each;
+  wake-kill-check-probe.mjs's restated
+  GATE_TOKEN_MIN/MAX and inline 64 are gone, it calls the shipped
+  `sparseWakeFilterTokens`; bloater/shotgun/feature-envy/overengineering
+  none found, the zh probe's single-call wrapper deleted at its call
+  site; waived with reasons: probe client boilerplate + range-window
+  scan duplication (task file allows), core extract* (meta, text,
+  filePath) data clump (it is the TriggerInput record re-destructured at
+  one entry point)). Gates re-run: build green (core+service lib
+  rebuilt, tracked), full test 854 passed / 2 skipped with zero test
+  edits (goldens included), lint green. No live-collection access
+  (probes edited, not run).
 
 ### Phase C: same-session A/B (spec Step 3)
 

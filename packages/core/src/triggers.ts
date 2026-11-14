@@ -31,7 +31,7 @@ export interface TriggerInput {
   noteMeta?: Record<string, unknown>
   /** The chunk's stored text (chunk_text), header path line included. */
   sectionText: string
-  /** Vault-relative source file path; its own name is an extension signal. */
+  /** Vault-relative source file path; its own name is an extension and wake-word signal. */
   filePath: string
   /** Framework labels from the workspace manifest; applied only when the section text names them. */
   manifestVocabulary?: TriggerVocabulary
@@ -233,14 +233,49 @@ const KEYWORD_EDGES = /^[\s"'`([{:;,.!?—-]+|[\s"'`)\]}:;,.!?—-]+$/g
 // is the schema element cap (MILVUS_ARRAY_ELEMENT_MAX_LENGTHS repeats it).
 const MAX_WAKE_KEYWORD_WORDS = 8
 
+// Generic section labels the note house format sprinkles everywhere. The
+// format mandates a "Why:" and a "How to apply:" line, and headers arrive
+// as "Why:", "How:", "Where:", so these interrogative labels land in the
+// wake list from headers, emphasis, and the intent-marker scan alike. The
+// TASK-001 audit (spec §Pre-flight) measured them topping the whole
+// corpus wake vocabulary (when 95, how 91, why 82, how to apply 31, where
+// 23, what 20 rows of 210); they carry no retrieval signal and gate
+// nothing, so they drop from wake output wherever found. The intent-marker
+// list keeps the concrete markers (investigate, debug, troubleshoot).
+const GENERIC_WAKE_TERMS: ReadonlySet<string> = new Set([
+  'who',
+  'what',
+  'when',
+  'where',
+  'why',
+  'how',
+  'how to apply',
+])
+
+// Unbalanced parens/brackets/braces mark an extraction fragment (a cut
+// header like "dialog open flow (ordering" or "2/(k+1"), not a term; a
+// real identifier or phrase closes what it opens. Each pair is counted
+// over the whole key and must match.
+const BALANCED_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ['(', ')'],
+  ['[', ']'],
+  ['{', '}'],
+]
+
+// A wake key is a term, so it opens with a letter. Digit- or symbol-led
+// candidates ("0 of 54", "+ `field.field`", "2/(k+1") are line-fragment
+// residue, not vocabulary.
+const LED_BY_LETTER = /^\p{L}/u
+
 /**
  * ExtractTriggers computes the three trigger lists for one chunk.
  * Overrides win wholesale: a frontmatter `trigger_extensions:` or
  * `trigger_frameworks:` replaces the heuristics for that field (the
  * author's explicit vocabulary beats detection). `keywords:` only
  * prepends; text signals still contribute wake keywords. Order is
- * deterministic: frontmatter first, then fence/inline/manifest/header/
- * emphasis/marker discovery order, deduplicated, lowercased, capped.
+ * deterministic: frontmatter and file-name words first, then
+ * fence/inline/manifest/header/emphasis/marker discovery order,
+ * deduplicated, lowercased, legality-filtered, capped.
  */
 export function extractTriggers(input: TriggerInput): Triggers {
   const meta = input.noteMeta ?? {}
@@ -250,7 +285,7 @@ export function extractTriggers(input: TriggerInput): Triggers {
   return {
     trigger_extensions: extractExtensions(meta, text, input.filePath),
     trigger_frameworks: extractFrameworks(meta, text, manifestFrameworks),
-    wake_keywords: extractWakeKeywords(meta, text),
+    wake_keywords: extractWakeKeywords(meta, text, input.filePath),
   }
 }
 
@@ -319,14 +354,22 @@ function extractFrameworks(
   return capColumn([...candidates], 'triggerFrameworks')
 }
 
-// Wake keywords in fixed source order: frontmatter keywords, the chunker's
-// "A > B > C" header-path first line, ATX headers, bold and emphasized
-// spans, then intent-marker words present in the text.
+// Wake keywords in fixed source order: frontmatter keywords, the note
+// file-name slug words, the chunker's "A > B > C" header-path first line,
+// ATX headers, bold and emphasized spans, then the non-generic
+// intent-marker words present in the text. The file-name slug carries the
+// author's own title words (memory_write slugs index_title into the
+// filename), so a chunk whose only wake signals were generic house-format
+// labels still surfaces its topic; without it, dropping the marker labels
+// would leave such chunks empty (TASK-001 pollution fix; see spec
+// §Pre-flight).
 function extractWakeKeywords(
   meta: Record<string, unknown>,
   text: string,
+  filePath: string,
 ): string[] {
   const keywords: string[] = frontmatterList(meta['keywords']).map(normalizePhrase)
+  keywords.push(...fileNameWords(filePath))
 
   const firstLine = text.slice(0, text.indexOf('\n') === -1 ? text.length : text.indexOf('\n'))
   if (!firstLine.trimStart().startsWith('#') && firstLine.includes(' > ')) {
@@ -350,6 +393,20 @@ function extractWakeKeywords(
 
   const usable = keywords.filter((keyword) => isUsableKeyword(keyword))
   return capColumn(dedupe(usable), 'wakeKeywords')
+}
+
+// Splits the note's file name (minus ".md") into alphanumeric words: the
+// title slug memory_write derived from index_title. Path directories and
+// the extension drop out; "server.ts" yields "server" and "ts". A word
+// still has to pass isUsableKeyword, so digit-led slug parts like "301"
+// in "route-normalizer-301" fall away like any other fragment.
+function fileNameWords(filePath: string): string[] {
+  const base = filePath.split('/').pop() ?? ''
+  const slug = /\.md$/i.test(base) ? base.slice(0, -3) : base
+  return slug
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((word) => word.toLowerCase())
+    .filter((word) => word !== '')
 }
 
 // Frontmatter list values arrive as YAML arrays, comma lists, or a single
@@ -396,13 +453,37 @@ function normalizePhrase(raw: string): string {
     .replace(KEYWORD_EDGES, '')
 }
 
-// A wake keyword must be at least 2 chars, at most the schema element
-// cap, and few enough words to behave like a keyword, not a sentence.
+// isUsableKeyword is the ONE legality gate every wake candidate passes,
+// whichever path harvested it (frontmatter, file name, header, emphasis,
+// intent marker). A keyword must be at least 2 chars, at most the schema
+// element cap, and few enough words to behave like a keyword, not a
+// sentence; must not be a generic house-format label (the TASK-001 audit
+// showed those dominating the corpus wake vocabulary); must open with a
+// letter, balance its parens/brackets/braces, and carry no internal
+// em dash, so digit- and symbol-led cut fragments cannot pass (the same
+// audit's tail: "0 of 54", "2/(k+1", "+ `field.field`", a 54-char
+// em-dashed sentence fragment).
 function isUsableKeyword(keyword: string): boolean {
   if (keyword.length < 2 || keyword.length > MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords) {
     return false
   }
-  return keyword.split(' ').length <= MAX_WAKE_KEYWORD_WORDS
+  if (keyword.split(' ').length > MAX_WAKE_KEYWORD_WORDS) {
+    return false
+  }
+  if (GENERIC_WAKE_TERMS.has(keyword)) {
+    return false
+  }
+  if (!LED_BY_LETTER.test(keyword)) {
+    return false
+  }
+  // normalizePhrase already trims em dashes at the edges; one surviving
+  // inside means two clauses were glued, i.e. a harvested cut.
+  if (keyword.includes('—')) {
+    return false
+  }
+  return BALANCED_PAIRS.every(
+    ([open, close]) => keyword.split(open).length === keyword.split(close).length,
+  )
 }
 
 function dedupe(values: readonly string[]): string[] {

@@ -7,9 +7,12 @@ import { extractTriggers, normalizeExtension } from '../src/triggers.ts'
  * fenced-block language and inline-path extension signals, frontmatter
  * overrides for extensions and frameworks, presence-gated framework
  * vocabulary plus manifest vocabulary, wake keywords from headers,
- * emphasis, frontmatter keywords, the chunker header-path line, and
- * intent markers, with dedupe, lowercasing, and the constants' capacity
- * caps.
+ * emphasis, frontmatter keywords, the note file-name slug, the chunker
+ * header-path line, and the non-generic intent markers, with dedupe,
+ * lowercasing, and the constants' capacity caps. Wake-key legality
+ * (TASK-014) drops the generic house-format labels (why, how to apply,
+ * bare interrogatives) and fragment shapes (digit- or symbol-led keys,
+ * unbalanced brackets, em-dash splices).
  */
 
 function ext(text: string, filePath = 'notes/a.md'): string[] {
@@ -115,7 +118,7 @@ describe('trigger_frameworks', () => {
 })
 
 describe('wake_keywords', () => {
-  it('collects frontmatter keywords, headers, bold, emphasis, and intent markers', () => {
+  it('collects frontmatter keywords, file words, headers, bold, emphasis, and kept intent markers', () => {
     const text = [
       '## Debugging crashes',
       '',
@@ -129,9 +132,75 @@ describe('wake_keywords', () => {
     expect(found).toContain('debugging crashes')
     expect(found).toContain('rate limiter')
     expect(found).toContain('token bucket')
-    expect(found).toContain('how')
+    expect(found).not.toContain('how')
     expect(found).toContain('debug')
     expect(new Set(found).size).toBe(found.length)
+  })
+
+  it('drops the house-format intent labels and bare interrogatives from every path', () => {
+    const text = [
+      '## Why',
+      '',
+      '**Why:** the gate needs wake keys.',
+      '**How to apply:** run the probe first, then decide when it is safe.',
+      'What this proves: where the rows die, who pays, how often, how deep.',
+    ].join('\n')
+
+    const found = keywords(text)
+
+    for (const generic of ['who', 'what', 'when', 'where', 'why', 'how', 'how to apply']) {
+      expect(found).not.toContain(generic)
+    }
+
+    // Frontmatter keywords run through the same legality filter.
+    const authored = keywords('plain prose here.', { keywords: ['how', 'why', 'billing'] })
+    expect(authored).not.toContain('how')
+    expect(authored).not.toContain('why')
+    expect(authored).toContain('billing')
+  })
+
+  it('keeps non-generic intent markers when the text names them', () => {
+    const found = keywords('investigate the flake, then troubleshoot it, and debug the runner')
+
+    expect(found).toContain('investigate')
+    expect(found).toContain('troubleshoot')
+    expect(found).toContain('debug')
+  })
+
+  it('bounds wake-key shape: no digit- or symbol-led keys, unbalanced brackets, or em-dash splices', () => {
+    const text = [
+      '**0 of 54** and **2/(k+1** and **+ `field.field`** are fragments.',
+      '**attendee chart cropping — resolved by t9b (2026-11-10** is a cut.',
+      '**dialog open flow (ordering** is unbalanced.',
+      'But **c++**, **node.js**, and **dsh-plugin** are terms.',
+    ].join('\n')
+
+    const found = keywords(text)
+
+    expect(found).not.toContain('0 of 54')
+    expect(found).not.toContain('2/(k+1')
+    expect(found.some((keyword) => keyword.includes('field.field'))).toBe(false)
+    expect(found.some((keyword) => keyword.includes('attendee chart cropping'))).toBe(false)
+    expect(found.some((keyword) => keyword.includes('dialog open flow'))).toBe(false)
+    expect(found.every((keyword) => /^\p{L}/u.test(keyword))).toBe(true)
+    expect(found.every((keyword) => !keyword.includes('—'))).toBe(true)
+    expect(found).toContain('c++')
+    expect(found).toContain('node.js')
+    expect(found).toContain('dsh-plugin')
+  })
+
+  it('takes wake words from the note file-name slug', () => {
+    const found = extractTriggers({
+      sectionText: 'plain prose with no header, bold, or emphasis at all.',
+      filePath: 'drupal/drupal-route-normalizer-301-on-ajax-subpaths.md',
+    }).wake_keywords
+
+    expect(found).toContain('drupal')
+    expect(found).toContain('route')
+    expect(found).toContain('normalizer')
+    expect(found).toContain('ajax')
+    expect(found).toContain('subpaths')
+    expect(found).not.toContain('301')
   })
 
   it('splits the chunker header-path first line into segments', () => {

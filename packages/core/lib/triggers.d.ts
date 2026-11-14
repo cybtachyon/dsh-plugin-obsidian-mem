@@ -25,7 +25,7 @@ export interface TriggerInput {
     noteMeta?: Record<string, unknown>;
     /** The chunk's stored text (chunk_text), header path line included. */
     sectionText: string;
-    /** Vault-relative source file path; its own name is an extension signal. */
+    /** Vault-relative source file path; its own name is an extension and wake-word signal. */
     filePath: string;
     /** Framework labels from the workspace manifest; applied only when the section text names them. */
     manifestVocabulary?: TriggerVocabulary;
@@ -47,8 +47,9 @@ export interface Triggers {
  * `trigger_frameworks:` replaces the heuristics for that field (the
  * author's explicit vocabulary beats detection). `keywords:` only
  * prepends; text signals still contribute wake keywords. Order is
- * deterministic: frontmatter first, then fence/inline/manifest/header/
- * emphasis/marker discovery order, deduplicated, lowercased, capped.
+ * deterministic: frontmatter and file-name words first, then
+ * fence/inline/manifest/header/emphasis/marker discovery order,
+ * deduplicated, lowercased, legality-filtered, capped.
  */
 export declare function extractTriggers(input: TriggerInput): Triggers;
 /**

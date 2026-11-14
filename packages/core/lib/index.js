@@ -3,7 +3,8 @@
  * constants and intent strings, VaultConfig and the vault registry model, the
  * memory-note Markdown format, the heading-aware Markdown chunker, workspace
  * manifest reading, chunk-id hashing, the git wrapper that versions shared
- * vaults, and the deterministic wake-keyword
+ * vaults, the git-history churn math with its default tunables, and the
+ * deterministic wake-keyword
  * extraction shared by the service, tools, and lifecycle hooks.
  *
  * The package is a plain library, never a mounted plugin row: cordis.patch.yml
@@ -15,6 +16,7 @@
 export * from './constants.js';
 export * from './budget.js';
 export * from './chunk.js';
+export * from './churn.js';
 export * from './idhash.js';
 export * from './manifest.js';
 export * from './memory-git.js';

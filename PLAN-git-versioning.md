@@ -55,7 +55,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 ### Phase A: core domain (pure, framework-free)
 
  - [x] [TASK-001-core-memory-git](docs/PLAN-git-versioning-TASK-001-core-memory-git.md)
- - [ ] [TASK-002-core-churn-constants](docs/PLAN-git-versioning-TASK-002-core-churn-constants.md)
+ - [x] [TASK-002-core-churn-constants](docs/PLAN-git-versioning-TASK-002-core-churn-constants.md)
  - [ ] [TASK-003-config-git-group](docs/PLAN-git-versioning-TASK-003-config-git-group.md)
 
 ### Phase B: service git seam

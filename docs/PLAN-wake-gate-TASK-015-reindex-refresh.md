@@ -22,6 +22,9 @@ the LIVE collection reflect the fix, then re-runs the Step 1.1 gate.
 3. Re-run `node docs/research/probes/wake-audit-probe.mjs` (read-only,
    range-split windows). Record the new FINAL (rows, empty rows, rate)
    and new TERMS top-20 in the spec doc §Pre-flight measurements.
+   Reconciliation from TASK-014: the vault replay counted 211 chunks vs
+   the collection's 210 rows (and TERMS `how` 91 vs 92); the fresh
+   post-reindex count is the truth, note the reconciled numbers.
 4. GATE: empty rate <= 5% AND markers no longer dominate TERMS. Not met
    -> report the residual distribution (which vaults/notes still empty)
    for a follow-on fix task; do NOT proceed to TASK-002 on a failing

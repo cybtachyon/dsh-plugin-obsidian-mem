@@ -78,6 +78,7 @@ pid 1091813 verified alive 2026-11-13).
 ### Phase A2: wake-extraction fix (spec Step 1.1 STOP consequence)
 
  - [x] [TASK-014-wake-extraction-fix](docs/PLAN-wake-gate-TASK-014-wake-extraction-fix.md)
+ - [ ] [TASK-016-thinkintercept-spec-repair](docs/PLAN-wake-gate-TASK-016-thinkintercept-spec-repair.md)
  - [ ] [TASK-015-reindex-refresh](docs/PLAN-wake-gate-TASK-015-reindex-refresh.md)
 
  TASK-014 result (2026-11-13, spec "Pre-flight measurements", commit
@@ -109,9 +110,12 @@ pid 1091813 verified alive 2026-11-13).
 
 ## Dependencies
 
-- TASK-001 fired its >5% STOP: TASK-014 (core wake-extraction fix) then
-  TASK-015 (reindex + re-audit ≤5%) now block everything downstream.
-  Phase B (TASK-004..008) stays frozen until TASK-015's gate passes.
+- TASK-014 done (commits 376108d + 57762e3). TASK-016 (repair the
+  pre-existing `4bf4f8f` test breakage) runs FIRST in the remaining
+  queue so every later task inherits a green `pnpm test`; then TASK-015
+  (reindex + re-audit ≤5%) is the live verdict and last blocker before
+  Phase B. TASK-016 and TASK-015 run SEQUENTIALLY: shared git index, no
+  concurrent subagent commits.
 - TASK-002 and TASK-003 run AFTER TASK-015: their inputs are the stored
   wake arrays the reindex rewrites, and the zh pin must sit on the
   post-reindex collection to be a valid TASK-011 control.
@@ -132,3 +136,13 @@ pid 1091813 verified alive 2026-11-13).
   is ignored. Full-enumeration probes must use chunk_id range-split
   windows (wake-audit-probe pattern); TASK-002 and any future
   row-enumerating harness code follows that pattern.
+- BEING FIXED (TASK-016): `packages/events/tests/thinkIntercept.spec.ts`
+  stale header assertions from sibling commit 4bf4f8f; full `pnpm test`
+  red at HEAD until it lands.
+- NOTED (out of scope): think-channel still treats when/what/etc as
+  recall trigger terms (INTENT_MARKERS shared with wake extraction);
+  separate hygiene fix if ever scheduled.
+- RECIPE for TASK-006 fixture edits (vault note
+  `dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig`):
+  after changing fixture shapes, typecheck the test trees with the
+  throwaway root tsconfig recipe and diff against the ~82-error baseline.

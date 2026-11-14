@@ -65,6 +65,10 @@ committed as part of TASK-001's baseline commit, unchanged.
  - [x] [TASK-006-dream-commit-and-churn-tunables](docs/PLAN-git-versioning-TASK-006-dream-commit-and-churn-tunables.md)
  - [x] [TASK-007-refactor-phase-ab](docs/PLAN-git-versioning-TASK-007-refactor-phase-ab.md)
 
+### Phase B2: prepared-prompt byte fidelity (follow-up to TASK-007)
+
+ - [ ] [TASK-015-buildformat-prompt-bytes](docs/PLAN-git-versioning-TASK-015-buildformat-prompt-bytes.md)
+
 ### Phase C: audit checkpoint view + churn surfacing
 
  - [ ] [TASK-008-audit-service-churn-checkpoint](docs/PLAN-git-versioning-TASK-008-audit-service-churn-checkpoint.md)
@@ -91,6 +95,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 - TASK-004 depends on 001, 002, 003; precedes 005, 006, 008.
 - TASK-005 depends on 004. TASK-006 depends on 004 (and 002/003).
 - TASK-007 reviews TASK-001..006.
+- TASK-015 follows TASK-007 (its build-format finding); precedes 008.
 - TASK-008 depends on 004, 006. TASK-009 depends on 008.
 - TASK-010 depends on nothing but lands after 009 (tool surface settled).
 - TASK-011 depends on 003 (config path names) and the Q4 answer.

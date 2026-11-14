@@ -354,7 +354,7 @@ describe('fileTokensOf (TASK-010)', () => {
   it('caps the token list', () => {
     const snippet = Array.from(
       { length: 40 },
-      (unused, n) => `import { mod${n} } from "./pkg${n}"`,
+      (_unused, n) => `import { mod${n} } from "./pkg${n}"`,
     ).join('\n')
     expect(fileTokensOf('/x/deep/File.ts', snippet).length).toBe(24)
   })

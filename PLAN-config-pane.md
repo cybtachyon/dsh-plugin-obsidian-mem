@@ -61,7 +61,7 @@ README/AGENTS docs.
  - [x] [TASK-003-card-settings-service-api](docs/PLAN-config-pane-TASK-003-card-settings-service-api.md)
  - [x] [TASK-004-live-apply-escalation](docs/PLAN-config-pane-TASK-004-live-apply-escalation.md)
  - [x] [TASK-005-refactor-phase-1](docs/PLAN-config-pane-TASK-005-refactor-phase-1.md)
- - [ ] [TASK-012-fix-test-tier-type-errors](docs/PLAN-config-pane-TASK-012-fix-test-tier-type-errors.md)
+ - [x] [TASK-012-fix-test-tier-type-errors](docs/PLAN-config-pane-TASK-012-fix-test-tier-type-errors.md)
 
 ### Phase 2: host routes
 

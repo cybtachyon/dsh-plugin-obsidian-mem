@@ -36,7 +36,11 @@ describe('registerMemoryPromptSection', () => {
   it('answers the section text verbatim (cross-tool timing only)', () => {
     const { scope, sections } = fakeScope()
     registerMemoryPromptSection(scope, () => undefined)
-    const text = (sections[0] as { text: () => string }).text(undefined as never)
+    const [registered] = sections
+    if (registered === undefined || typeof registered.text !== 'function') {
+      throw new Error('expected one registered function-text section')
+    }
+    const text = registered.text(undefined as never)
     expect(text).toMatchSnapshot()
     expect(text).toContain('memory_search')
     expect(text).toContain('completion checkpoint')

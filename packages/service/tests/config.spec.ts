@@ -43,6 +43,15 @@ function validate(value: unknown): ObsidianMemConfigValidation {
   return validateObsidianMemConfig(value)
 }
 
+/** unknownKeysOf returns the UNKNOWN_CONFIG_KEYS paths carried on a successful validation. */
+function unknownKeysOf(result: ObsidianMemConfigValidation): string[] {
+  if (!('value' in result)) {
+    throw new Error(`unexpected config issues: ${JSON.stringify(result.issues)}`)
+  }
+  // The validator attaches the paths as a non-enumerable symbol property.
+  return ((result.value as { [UNKNOWN_CONFIG_KEYS]?: string[] })[UNKNOWN_CONFIG_KEYS]) ?? []
+}
+
 function paths(issues: readonly ConfigIssue[]): string[] {
   return issues.map((issue) => issue.path.join('.'))
 }
@@ -78,7 +87,7 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
     })
 
     expect(issuesOf(result)).toEqual([])
-    const unknown = (result as { value: Record<symbol, unknown> }).value[UNKNOWN_CONFIG_KEYS] as string[]
+    const unknown = unknownKeysOf(result)
     expect(unknown).toContain('typoTop')
     expect(unknown).toContain('milvus.typoNested')
     expect(unknown).toContain('budgets.typoBudget')
@@ -241,7 +250,7 @@ describe('validateObsidianMemConfig: vault globalFile', () => {
     const result = validate({ vaults: [{ path: '/v', globalFile: 'G.md', typoVault: 1 }] })
 
     expect(issuesOf(result)).toEqual([])
-    const unknown = (result as { value: Record<symbol, unknown> }).value[UNKNOWN_CONFIG_KEYS] as string[]
+    const unknown = unknownKeysOf(result)
     expect(unknown).toEqual(['vaults.0.typoVault'])
   })
 })

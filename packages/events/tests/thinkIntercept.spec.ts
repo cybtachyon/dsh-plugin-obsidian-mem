@@ -578,7 +578,7 @@ describe('think query sentence scoping (TASK-006)', () => {
   })
 
   it('caps the joined sentences at THINK_QUERY_MAX_CHARS', () => {
-    const block = Array.from({ length: 30 }, (unused, n) => `debug line ${n} ${'x'.repeat(60)}.`).join('\n')
+    const block = Array.from({ length: 30 }, (_unused, n) => `debug line ${n} ${'x'.repeat(60)}.`).join('\n')
     expect(intentSentencesOf(block, ['debug']).length).toBe(THINK_QUERY_MAX_CHARS)
   })
 

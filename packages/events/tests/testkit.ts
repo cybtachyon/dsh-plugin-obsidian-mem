@@ -20,6 +20,7 @@ import type {
 import type {
   AgentCreatedPayload,
   AgentDisposedPayload,
+  AgentHostContext,
   AssistantStreamPayload,
   InjectedUserMessage,
   MemoryEventsScope,
@@ -198,6 +199,10 @@ export interface FakeAgentOptions {
 export interface FakeAgent {
   id: string
   session: { header: Record<string, unknown> }
+  /** The agent-ctx listener/effect registry, typed as the host slice. */
+  ctx: AgentHostContext
+  inject(message: InjectedUserMessage): void
+  steer(message: InjectedUserMessage): void
   injected: InjectedUserMessage[]
   steered: InjectedUserMessage[]
   agentHandlers: Map<string, Array<(payload: never, next?: never) => unknown>>
@@ -253,7 +258,7 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
     },
     inject: (message: InjectedUserMessage) => { injected.push(message) },
     steer: (message: InjectedUserMessage) => { steered.push(message) },
-    async emitPreStep(payload, inner) {
+    async emitPreStep(payload: PreStepPayload, inner: () => Promise<PreStepDecision>) {
       const decisions: PreStepDecision[] = []
       // Compose the registered listeners around the inner next(), the way
       // the cordis waterfall dispatch does (outermost listener first).
@@ -271,13 +276,13 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
       decisions.push(await next())
       return decisions
     },
-    emitAssistantStream(payload) {
+    emitAssistantStream(payload: AssistantStreamPayload) {
       // Emit dispatch: listeners run raw, in registration order.
       for (const listener of [...(agentHandlers.get('agent/assistant-stream') ?? [])]) {
         ;(listener as (p: AssistantStreamPayload) => void)(payload)
       }
     },
-    async emitTurnStopping(payload) {
+    async emitTurnStopping(payload: TurnStoppingPayload) {
       // Serial dispatch: awaited in registration order.
       for (const listener of [...(agentHandlers.get('agent/turn-stopping') ?? [])]) {
         await (listener as (p: TurnStoppingPayload) => unknown)(payload)
@@ -285,17 +290,19 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
     },
     asCreated: () => ({ agent: agent as never, source: 'startup' }),
     asDisposed: () => ({ agent: agent as never }),
-    asToolCaller: (name, args) => ({ name, arguments: args, agent: agent as never }),
+    asToolCaller: (name: string, args: unknown) => ({ name, arguments: args, agent: agent as never }),
   }
   return agent as unknown as FakeAgent
 }
 
 // ---------------------------------------------------------------------------
-// Assistant-stream fixtures (faithful to the live frame union).
+// Assistant-stream fixtures. The payloads carry exactly the fields the
+// host.ts frame mirror declares; the extra live-frame fields (start `step`,
+// end/chunk `index`, chunk `time`) are never read, so they stay out.
 
 /** One `start` frame for an attempt streaming in `turn`. */
 export function streamStart(attemptId = 'attempt-1', turn = 1): AssistantStreamPayload['frame'] {
-  return { type: 'start', attemptId, revision: 0, turn, step: 1 }
+  return { type: 'start', attemptId, revision: 0, turn }
 }
 
 /** One `end` frame; kind is the attempt outcome. */
@@ -303,15 +310,14 @@ export function streamEnd(
   attemptId = 'attempt-1',
   kind: 'committed' | 'abandoned' = 'committed',
 ): AssistantStreamPayload['frame'] {
-  return { type: 'end', attemptId, revision: 0, index: 99, outcome: { kind } }
+  return { type: 'end', attemptId, revision: 0, outcome: { kind } }
 }
 
 function chunkFrame(
   attemptId: string,
   chunk: StreamChunkMirror,
-  index = 0,
 ): AssistantStreamPayload['frame'] {
-  return { type: 'chunk', attemptId, revision: 0, index, time: 0, chunk }
+  return { type: 'chunk', attemptId, revision: 0, chunk }
 }
 
 /** A text-delta chunk frame carrying `text`. */
@@ -321,7 +327,7 @@ export function textDelta(text: string, attemptId = 'attempt-1'): AssistantStrea
 
 /** A native reasoning-delta chunk frame. */
 export function reasoningDelta(text: string, attemptId = 'attempt-1', index = 0): AssistantStreamPayload['frame'] {
-  return chunkFrame(attemptId, { type: 'reasoning-delta', index, text }, index)
+  return chunkFrame(attemptId, { type: 'reasoning-delta', index, text })
 }
 
 /** A reasoning block-end close frame; block text absent uses the deltas. */
@@ -329,7 +335,6 @@ export function reasoningEnd(text?: string, attemptId = 'attempt-1', index = 0):
   return chunkFrame(
     attemptId,
     { type: 'block-end', index, block: { type: 'reasoning', ...(text === undefined ? {} : { text }) } },
-    index,
   )
 }
 

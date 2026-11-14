@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { MILVUS_ARRAY_CAPACITIES, MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS } from '../../core/lib/index.js'
+import { GLOBAL_MEMORY_FILE_DEFAULT, MILVUS_ARRAY_CAPACITIES, MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
 import type { Embedder } from '../src/embedder.ts'
 import {
@@ -191,7 +191,7 @@ function makeFixture(overrides: {
   const writer = stubWriter(overrides.writerOptions)
   const listeners: WatchListener[] = []
   const indexer = new VaultIndexer({
-    vault: { path: '/vault', mode: 'shared' },
+    vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
     embedder: overrides.embedder ?? fakeEmbedder({ vectorDim: 8 }),
     writer: writer.writer,
     fs,
@@ -215,7 +215,7 @@ function makeFixtureShortPoll(pollIntervalMs: number): IndexerFixture {
   seedVault(fs)
   const writer = stubWriter()
   const indexer = new VaultIndexer({
-    vault: { path: '/vault', mode: 'shared' },
+    vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
     embedder: fakeEmbedder({ vectorDim: 8 }),
     writer: writer.writer,
     fs,
@@ -381,7 +381,7 @@ describe('offline and migration', () => {
     const before = writer.calls.length
 
     const swapped = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ modelId: 'other-model', vectorDim: 8 }),
       writer: writer.writer,
       fs,
@@ -508,6 +508,9 @@ describe('watcher triggers', () => {
 
 describe('LLM refinement', () => {
   const llmConfig = { enabled: true, baseUrl: 'https://llm.test/v1/', model: 'gpt-test', apiKeyEnv: 'MEM_LLM_KEY' }
+  // llmNoApiKey: the row with apiKeyEnv absent; exactOptionalPropertyTypes
+  // forbids the old `{ ...llmConfig, apiKeyEnv: undefined }` spelling.
+  const { apiKeyEnv: _apiKeyEnv, ...llmNoApiKey } = llmConfig
 
   it('merges LLM wake_keywords and frameworks onto the heuristics', async () => {
     const fetchCalls: Array<{ url: string; body: string; headers: Record<string, string> }> = []
@@ -604,7 +607,7 @@ describe('LLM refinement', () => {
       }),
     })
     const { writer, indexer } = makeFixture({
-      llm: { ...llmConfig, apiKeyEnv: undefined },
+      llm: llmNoApiKey,
       fetch: fetchImpl,
     })
 
@@ -645,7 +648,7 @@ describe('LLM refinement', () => {
       throw new Error('ECONNREFUSED')
     }
     const { writer, indexer } = makeFixture({
-      llm: { ...llmConfig, apiKeyEnv: undefined },
+      llm: llmNoApiKey,
       fetch: fetchImpl,
     })
 
@@ -664,7 +667,7 @@ describe('LLM refinement', () => {
       throw new Error('offline')
     }
     const { fs, indexer } = makeFixture({
-      llm: { ...llmConfig, apiKeyEnv: undefined },
+      llm: llmNoApiKey,
       fetch: fetchImpl,
     })
     fs.add('/vault/c.md', '# Gamma\n\n**gamma** signal.\n', 3)
@@ -719,7 +722,7 @@ describe('caps and manager', () => {
     }
     const writer = stubWriter()
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
       fs,
@@ -746,8 +749,8 @@ describe('caps and manager', () => {
     const writer = stubWriter()
     const manager = new IndexerManager({
       vaults: [
-        { path: '/vaults/one', mode: 'shared' },
-        { path: '/vaults/two', mode: 'read-only' },
+        { path: '/vaults/one', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+        { path: '/vaults/two', mode: 'read-only', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       ],
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
@@ -783,8 +786,8 @@ describe('caps and manager', () => {
     let closedWatches = 0
     const manager = new IndexerManager({
       vaults: [
-        { path: '/vaults/one', mode: 'shared' },
-        { path: '/vaults/two', mode: 'shared' },
+        { path: '/vaults/one', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
+        { path: '/vaults/two', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       ],
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
@@ -865,7 +868,7 @@ describe('insert clamps to the schema column widths', () => {
     fs.add('/vault/long.md', `---\ntype: global\n---\n# ${longHeader}\n\nbody text\n`, 1)
     const writer = stubWriter()
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
       fs,
@@ -943,7 +946,7 @@ describe('run-loop failure accounting', () => {
     }
     const logs: string[] = []
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: flaky,
       writer: writer.writer,
       fs,
@@ -985,7 +988,7 @@ describe('run-loop failure accounting', () => {
       },
     }
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer,
       fs: memFs,
@@ -1029,7 +1032,7 @@ describe('run-loop failure accounting', () => {
       },
     }
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer,
       fs: memFs,
@@ -1057,7 +1060,7 @@ describe('run-loop failure accounting', () => {
     seedVault(memFs)
     const writer = stubWriter()
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: embedderWrapper({ shortBy: true }),
       writer: writer.writer,
       fs: memFs,
@@ -1078,7 +1081,7 @@ describe('run-loop failure accounting', () => {
     fs.add('/vault/a.md', ALPHA_NOTE, 1)
     const writer = stubWriter()
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
       fs,
@@ -1105,7 +1108,7 @@ describe('run-loop failure accounting', () => {
     // for.
     const writer = stubWriter()
     const indexer = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
       fs,
@@ -1176,7 +1179,7 @@ describe('state file and path guards', () => {
     state.content = JSON.stringify({ ...parsed, version: 0 })
     const before = writer.calls.length
     const restarted = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
       fs,
@@ -1208,7 +1211,7 @@ describe('state file and path guards', () => {
     }, null, 2)}\n`, 5)
     const writer = stubWriter()
     const migrated = new VaultIndexer({
-      vault: { path: '/vault', mode: 'shared' },
+      vault: { path: '/vault', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT },
       embedder: fakeEmbedder({ vectorDim: 8 }),
       writer: writer.writer,
       fs,

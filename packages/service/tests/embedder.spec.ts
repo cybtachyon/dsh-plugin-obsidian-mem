@@ -161,7 +161,7 @@ describe('createEmbedder', () => {
     for (let index = 0; index < 256; index += 1) {
       // 8 decimals: the fake stores vectors in a Float32Array, so exact
       // float64 expectations only agree to ~1e-10.
-      expect(vector[index]).toBeCloseTo((index + 1) * expectedScale, 8)
+      expect(vector![index]).toBeCloseTo((index + 1) * expectedScale, 8)
     }
     expect(cosine(vector!, vector!)).toBeCloseTo(1, 6)
   })
@@ -228,7 +228,7 @@ describeLive('embedder live model smoke (RUN_LIVE=1)', () => {
       expect(embedder.dim).toBe(VECTOR_DIM_DEFAULT)
       for (const vector of [catPassage, carPassage, query]) {
         expect(vector).toHaveLength(VECTOR_DIM_DEFAULT)
-        expect(Math.hypot(...vector)).toBeCloseTo(1, 3)
+        expect(Math.hypot(...vector!)).toBeCloseTo(1, 3)
       }
       // findings §6.6: with the prefixes the correct passage ranks first;
       // without them the ranking flips. This is the regression pin.

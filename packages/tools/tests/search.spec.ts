@@ -18,25 +18,25 @@ import { createFakeService, matchesOutput } from './testkit.ts'
 function sectionRows(): MemorySearchResult[] {
   return [
     {
-      chunk_id: 'chunk-1',
+      chunk_id: 1,
       source_path: '/vaults/shared/deploys.md',
       section_header: 'Friday checklist',
       chunk_text: `${'release steps. '.repeat(10)}tail`,
       scope: 'global',
       vault: '/vaults/shared',
       mode: 'shared',
-      updated_at: '2026-11-01',
+      updated_at: Date.parse('2026-11-01'),
       score: 0.8125,
     },
     {
-      chunk_id: 'chunk-2',
+      chunk_id: 2,
       source_path: '/vaults/ro/legacy.md',
       section_header: 'Old host names',
       chunk_text: 'app.example.com fronts the API.',
       scope: 'reference',
       vault: '/vaults/ro',
       mode: 'read-only',
-      updated_at: '2026-10-01',
+      updated_at: Date.parse('2026-10-01'),
       score: 0.42,
     },
   ]

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 
 import {
@@ -25,7 +26,11 @@ import {
   UNKNOWN_CONFIG_KEYS,
   validateObsidianMemConfig,
 } from '../src/config.ts'
-import type { ObsidianMemConfig } from '../src/config.ts'
+import type {
+  ObsidianMemConfig,
+  ObsidianMemConfigValidation,
+  ResolvedObsidianMemConfig,
+} from '../src/config.ts'
 import { ObsidianMemService } from '../src/service.ts'
 import type {
   IndexerLike,
@@ -33,9 +38,17 @@ import type {
   ObsidianMemHooks,
   ServiceFs,
 } from '../src/service.ts'
-import type { MilvusLauncherOptions } from '../src/milvus/launcher.ts'
+import type { MilvusLauncherOptions, MilvusStartResult } from '../src/milvus/launcher.ts'
 import type { IndexerManagerOptions } from '../src/indexer.ts'
 import { fakeGateway } from './dream-testkit.ts'
+
+/** validValue unwraps a successful validation, throwing on issues. */
+function validValue(result: ObsidianMemConfigValidation): ResolvedObsidianMemConfig {
+  if (!('value' in result)) {
+    throw new Error(`unexpected config issues: ${JSON.stringify(result.issues)}`)
+  }
+  return result.value
+}
 
 /**
  * Service seam tests for TASK-030, mocked at every external seam (fs,
@@ -154,8 +167,8 @@ function fakeCtx(services: Record<string, unknown> = {}) {
 // Stub launcher / client / indexer, built fresh per harness.
 
 interface StubLauncher extends MilvusLauncherLike {
-  start: ReturnType<typeof vi.fn>
-  dispose: ReturnType<typeof vi.fn>
+  start: Mock<() => Promise<MilvusStartResult>>
+  dispose: Mock<() => Promise<void>>
   factoryOptions: MilvusLauncherOptions[]
   setDegraded(value: boolean): void
 }
@@ -166,7 +179,7 @@ function stubLauncher(failMessage?: string): StubLauncher {
     degraded: false,
     address: '127.0.0.1:19530',
     factoryOptions,
-    start: vi.fn(async () => {
+    start: vi.fn(async (): Promise<MilvusStartResult> => {
       if (failMessage !== undefined) {
         throw new Error(failMessage)
       }
@@ -180,7 +193,7 @@ function stubLauncher(failMessage?: string): StubLauncher {
   return launcher as unknown as StubLauncher
 }
 
-function stubClient(options: { existingDim?: number | null } = {}) {
+function stubClient(options: { existingDim?: number | null | undefined } = {}) {
   const calls: string[] = []
   const deletes: Array<Record<string, unknown>> = []
   const ok = { status: { error_code: 'Success', code: 0, reason: '' } }
@@ -210,7 +223,14 @@ function stubClient(options: { existingDim?: number | null } = {}) {
         },
       }
     },
-    async createCollection() { calls.push('createCollection'); dim = null; return ok },
+    async createCollection(request: Record<string, unknown>) {
+      calls.push('createCollection')
+      // Record the created dim like the real server so the next
+      // hasCollection reports the collection as existing.
+      const fields = (request['fields'] ?? []) as Array<{ name: string; params?: { dim?: number } }>
+      dim = fields.find((field) => field.name === 'dense_vector')?.params?.dim ?? VECTOR_DIM_DEFAULT
+      return ok
+    },
     async createIndex() { calls.push('createIndex'); return ok },
     async loadCollectionSync() { calls.push('loadCollectionSync'); return ok },
     async dropCollection() { calls.push('dropCollection'); dim = null; return ok },
@@ -218,11 +238,12 @@ function stubClient(options: { existingDim?: number | null } = {}) {
     async count() { calls.push('count'); return { ...ok, data: 1 } },
     async search(request: Record<string, unknown>) {
       calls.push('search')
-      // Route-aware row: the dense route gets a within-radius score, the
+      // Route-aware row: the dense route (MILVUS_FIELDS.denseVector, what
+      // search.ts sends as anns_field) gets a within-radius score, the
       // sparse route a negated-relevance score past the client-side floor.
       // One row surviving BOTH routes at rank 1 fuses to 2/61, the shape
       // the TASK-009 fallback agreement floor keeps.
-      const dense = request['anns_field'] === 'content_vector'
+      const dense = request['anns_field'] === 'dense_vector'
       return {
         ...ok,
         results: [{
@@ -242,10 +263,10 @@ function stubClient(options: { existingDim?: number | null } = {}) {
 }
 
 interface StubIndexer extends IndexerLike {
-  start: ReturnType<typeof vi.fn>
-  stop: ReturnType<typeof vi.fn>
-  indexFile: ReturnType<typeof vi.fn>
-  reindexAll: ReturnType<typeof vi.fn>
+  start: Mock<() => void>
+  stop: Mock<() => void>
+  indexFile: Mock<(vaultPath: string, relPath: string) => Promise<boolean>>
+  reindexAll: Mock<() => Promise<void>>
   builtWithOptions: IndexerManagerOptions[]
 }
 
@@ -253,10 +274,10 @@ function stubIndexer(): StubIndexer {
   const builtWithOptions: IndexerManagerOptions[] = []
   return {
     builtWithOptions,
-    start: vi.fn(),
-    stop: vi.fn(),
-    reindexAll: vi.fn(async () => {}),
-    indexFile: vi.fn(async () => true),
+    start: vi.fn<() => void>(),
+    stop: vi.fn<() => void>(),
+    reindexAll: vi.fn<() => Promise<void>>(async () => {}),
+    indexFile: vi.fn<(vaultPath: string, relPath: string) => Promise<boolean>>(async () => true),
     progress: () => ({ indexed: 3, pending: 0, errors: 0, llmErrors: 0 }),
   }
 }
@@ -367,14 +388,13 @@ describe('config schema', () => {
   }
 
   it('resolves {} (and undefined) to the complete default config', () => {
-    expect(validateObsidianMemConfig({}).value).toEqual(fullDefaults)
-    expect(validateObsidianMemConfig(undefined).value).toEqual(fullDefaults)
+    expect(validValue(validateObsidianMemConfig({}))).toEqual(fullDefaults)
+    expect(validValue(validateObsidianMemConfig(undefined))).toEqual(fullDefaults)
   })
 
   it('carries unknown keys onto a symbol, never into the resolved value', () => {
-    const result = validateObsidianMemConfig({ bogus: 1, milvus: { mode: 'spawn', extra: 2 } })
-    expect(result.issues).toBeUndefined()
-    const value = result.value as typeof result.value & { [UNKNOWN_CONFIG_KEYS]?: string[] }
+    const value = validValue(validateObsidianMemConfig({ bogus: 1, milvus: { mode: 'spawn', extra: 2 } })) as
+      ResolvedObsidianMemConfig & { [UNKNOWN_CONFIG_KEYS]?: string[] }
     expect(value).not.toHaveProperty('bogus')
     expect(value.milvus).not.toHaveProperty('extra')
     expect(value[UNKNOWN_CONFIG_KEYS]).toEqual(['bogus', 'milvus.extra'])
@@ -388,7 +408,7 @@ describe('config schema', () => {
   })
 
   it('accepts the vectorDim enum and rejects off-enum widths', () => {
-    expect(validateObsidianMemConfig({ vectorDim: 256 }).value?.vectorDim).toBe(256)
+    expect(validValue(validateObsidianMemConfig({ vectorDim: 256 })).vectorDim).toBe(256)
     expect(validateObsidianMemConfig({ vectorDim: 999 }).issues?.[0]?.message)
       .toMatch(/384 \(full width\).*128\/192\/256\/320/)
   })
@@ -415,7 +435,7 @@ describe('config schema', () => {
 
   it('defaults vault modes and globalFile and rejects bad ones with a path', () => {
     const ok = validateObsidianMemConfig({ vaults: [{ path: '/v' }] })
-    expect(ok.value?.vaults).toEqual([{ path: '/v', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT }])
+    expect(validValue(ok).vaults).toEqual([{ path: '/v', mode: 'shared', globalFile: GLOBAL_MEMORY_FILE_DEFAULT }])
     const bad = validateObsidianMemConfig({ vaults: [{ path: '/v', mode: 'rw' }] })
     expect(bad.issues?.[0]?.path).toEqual(['vaults', 0, 'mode'])
   })
@@ -427,23 +447,23 @@ describe('config schema', () => {
         { id: 'often', label: 'Often', everySeconds: 3600 },
       ] },
     })
-    expect(good.value?.dreaming.schedules).toHaveLength(2)
+    expect(validValue(good).dreaming.schedules).toHaveLength(2)
     const bad = validateObsidianMemConfig({
       dreaming: { schedules: [{ id: 'x', label: 'x' }] },
     })
     expect(bad.issues?.[0]?.message).toMatch(/exactly one of expression or everySeconds/)
   })
 
-  it('exposes the same standard-schema through the static Config', () => {
+  it('exposes the same standard-schema through the static Config', async () => {
     expect(ObsidianMemService.Config['~standard'].vendor).toBe('obsidian-mem')
-    expect(ObsidianMemService.Config['~standard'].validate({}).issues).toBeUndefined()
+    expect((await ObsidianMemService.Config['~standard'].validate({})).issues).toBeUndefined()
     expect(ObsidianMemConfigSchema).toBe(ObsidianMemService.Config)
   })
 
   it('resolveServiceConfig expands ~ and defaults dbPath from core dbDir', () => {
-    const resolved = validateObsidianMemConfig({
+    const resolved = validValue(validateObsidianMemConfig({
       vaults: [{ path: '~/notes' }, { path: '/abs' }],
-    }).value!
+    }))
     const final = resolveServiceConfig(resolved, HOME)
     expect(final.vaults.map((v) => v.path)).toEqual([`${HOME}/notes`, '/abs'])
     expect(final.milvus.dbPath).toBe(DB_PATH)
@@ -456,7 +476,7 @@ describe('config schema', () => {
 
   it('keeps the readiness timeout default at the G13 budget', () => {
     expect(DEFAULT_READINESS_TIMEOUT_MS).toBe(600_000)
-    expect(validateObsidianMemConfig({}).value?.milvus.readinessTimeoutMs).toBe(600_000)
+    expect(validValue(validateObsidianMemConfig({})).milvus.readinessTimeoutMs).toBe(600_000)
   })
 })
 

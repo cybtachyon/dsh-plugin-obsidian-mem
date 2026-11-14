@@ -53,10 +53,10 @@ function makeRegistry(
   return new SessionRegistry({
     file,
     thinkShotsPerTurn: options.thinkShotsPerTurn ?? 3,
-    now: options.now,
-    maxSessions: options.maxSessions,
     debounceMs: 0,
-    log: options.log,
+    ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.maxSessions === undefined ? {} : { maxSessions: options.maxSessions }),
+    ...(options.log === undefined ? {} : { log: options.log }),
   })
 }
 

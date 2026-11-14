@@ -2,18 +2,22 @@ import type { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 
 import {
+  DEFAULT_MODEL_ID,
+  DREAM_NEAR_DUPLICATE_THRESHOLD,
   defaultVaultPath,
   GLOBAL_MEMORY_FILE_DEFAULT,
   INTENT_MARKERS,
   INTENTS_FILE,
+  isOverGlobalBudget,
   modelCacheDir,
   renderIntentsFile,
   serializeNoteWithRaw,
+  VECTOR_DIM_DEFAULT,
 } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import { inventoryVault, nodeAuditFs, runStoreAudit } from '../src/audit.ts'
 import type { AuditFs, AuditReport, CollectionProbeResult } from '../src/audit.ts'
-import { resolveServiceConfig, validateObsidianMemConfig } from '../src/config.ts'
+import { DEFAULT_READINESS_TIMEOUT_MS, resolveServiceConfig, validateObsidianMemConfig } from '../src/config.ts'
 import type { ObsidianMemConfig } from '../src/config.ts'
 import { STATE_FILE_NAME } from '../src/indexer.ts'
 import { ObsidianMemService } from '../src/service.ts'
@@ -141,7 +145,7 @@ function parentOf(path: string): string {
 
 function configFixture(overrides: ObsidianMemConfig = {}) {
   const validated = validateObsidianMemConfig(overrides)
-  if (validated.value === undefined) {
+  if (!('value' in validated)) {
     throw new Error(`bad fixture config: ${JSON.stringify(validated.issues)}`)
   }
   return resolveServiceConfig(validated.value, HOME)
@@ -150,7 +154,20 @@ function configFixture(overrides: ObsidianMemConfig = {}) {
 function statusFixture(over: Partial<ObsidianMemStatus> = {}): ObsidianMemStatus {
   const base: ObsidianMemStatus = {
     state: 'ready',
-    milvus: { mode: 'spawn', dbPath: DB, address: '127.0.0.1:19530', version: 'milvus_lite-3.2.2', error: '' },
+    notice: null,
+    defaultVaultPath: null,
+    vaults: [],
+    vectorDim: VECTOR_DIM_DEFAULT,
+    model: { id: DEFAULT_MODEL_ID, dtype: 'q8' },
+    milvus: {
+      mode: 'spawn',
+      dbPath: DB,
+      address: '127.0.0.1:19530',
+      version: 'milvus_lite-3.2.2',
+      degraded: false,
+      error: '',
+      readinessTimeoutMs: DEFAULT_READINESS_TIMEOUT_MS,
+    },
     indexer: { indexed: 4, pending: 0, errors: 0, llmErrors: 0 },
     budgets: {
       turnStartRecallTokens: 1200,
@@ -160,8 +177,8 @@ function statusFixture(over: Partial<ObsidianMemStatus> = {}): ObsidianMemStatus
       searchTopK: 6,
       thinkShotsPerTurn: 3,
     },
-    dreaming: { schedules: [] },
-    notice: null,
+    dreaming: { schedules: [], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD },
+    dream: { state: 'idle', blocked: null, lastDreamAt: null, lastRun: null },
   }
   return { ...base, ...over }
 }
@@ -173,7 +190,9 @@ function globalIndexFixture(over: { budgetTokens?: number, usedTokens?: number, 
     budgetTokens,
     usedTokens,
     remainingTokens: budgetTokens - usedTokens,
-    ...(over.overBudget === undefined ? {} : { overBudget: over.overBudget }),
+    // The audit engine's own fallback for a missing overBudget; computing it
+    // here keeps the fixture runtime-identical to the old omitted field.
+    overBudget: over.overBudget ?? isOverGlobalBudget(usedTokens, budgetTokens),
   }
 }
 
@@ -365,7 +384,7 @@ describe('runStoreAudit: vault problems', () => {
 
 describe('runStoreAudit: index pipeline', () => {
   it('degraded reports an ISSUE with the error echoed quoted', async () => {
-    const report = await run({ fs: seedHealthy(), status: { state: 'degraded', milvus: { mode: 'spawn', dbPath: DB, address: '', version: '', error: 'uvx exited with 1' } }, collection: null })
+    const report = await run({ fs: seedHealthy(), status: { state: 'degraded', milvus: { mode: 'spawn', dbPath: DB, address: '', version: '', degraded: false, error: 'uvx exited with 1', readinessTimeoutMs: DEFAULT_READINESS_TIMEOUT_MS } }, collection: null })
     const degraded = findIssue(report, 'index.degraded')
     expect(degraded?.severity).toBe('ISSUE')
     expect(degraded?.detail).toContain('"uvx exited with 1"')
@@ -376,7 +395,7 @@ describe('runStoreAudit: index pipeline', () => {
     let probeCalls = 0
     const report = await run({
       fs: seedHealthy(),
-      status: { state: 'inactive', indexer: null, milvus: { mode: 'spawn', dbPath: DB, address: '', version: '', error: '' } },
+      status: { state: 'inactive', indexer: null, milvus: { mode: 'spawn', dbPath: DB, address: '', version: '', degraded: false, error: '', readinessTimeoutMs: DEFAULT_READINESS_TIMEOUT_MS } },
       collection: async () => {
         probeCalls += 1
         return { reachable: true, exists: true, dim: 384, count: 0, error: null }
@@ -564,7 +583,7 @@ describe('runStoreAudit: model cache and dreaming lines', () => {
     fs.files.set(`${DB}/state/state.json`, JSON.stringify({ lastDreamAt: 1730000000000 }))
     const report = await run({
       fs,
-      status: { dreaming: { schedules: [{ id: 'nightly', label: 'Nightly compact', expression: '0 3 * * *' }] } },
+      status: { dreaming: { schedules: [{ id: 'nightly', label: 'Nightly compact', expression: '0 3 * * *' }], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD } },
     })
     expect(report.stats.lastDreamAt).toBe(1730000000000)
     expect(findIssue(report, 'dream.last')?.detail).toContain('2024-10-27')

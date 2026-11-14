@@ -9,7 +9,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // probe paths; TASK-060 keeps this the spy tier (the real gRPC stack is
 // live-only, milvus-live.spec).
 const constructed: Record<string, unknown>[] = []
-const spy = {
+// Scripted SDK answers: the real client resolves error statuses instead of
+// rejecting (G1), so the scriptable slots carry loose record shapes and a
+// test can swap in `{ error_code, reason }` failure payloads.
+const spy: {
+  health: () => Promise<Record<string, unknown>>
+  version: () => Promise<Record<string, unknown>>
+  connect: () => Promise<void>
+  closedCount: number
+} = {
   health: async () => ({ isHealthy: true, status: 'Online', inHealthy: true, status_name: '' }),
   version: async () => ({ version: 'milvus_lite-3.2.2' }),
   connect: () => Promise.resolve(),

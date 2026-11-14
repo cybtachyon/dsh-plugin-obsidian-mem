@@ -69,7 +69,7 @@ README/AGENTS docs.
 
 ### Phase 3: client card
 
- - [ ] [TASK-007-client-api-config](docs/PLAN-config-pane-TASK-007-client-api-config.md)
+ - [x] [TASK-007-client-api-config](docs/PLAN-config-pane-TASK-007-client-api-config.md)
  - [ ] [TASK-008-configuration-section](docs/PLAN-config-pane-TASK-008-configuration-section.md)
  - [ ] [TASK-009-refactor-phase-2-3](docs/PLAN-config-pane-TASK-009-refactor-phase-2-3.md)
 

@@ -16,6 +16,7 @@ import {
   deleteSchedule,
   errorText,
   fetchAudit,
+  fetchCardSettings,
   fetchDreamPlan,
   fetchDreamState,
   fetchSchedules,
@@ -23,8 +24,10 @@ import {
   isApiError,
   probeSearch,
   removeVault,
+  resetCardSettings,
   routeExists,
   runDream,
+  updateCardSettings,
   upsertSchedule,
 } from '../src/api.ts'
 
@@ -130,6 +133,62 @@ describe('addVaultPayload globalFile omission', () => {
       mode: 'shared',
       globalFile: 'GLOBAL.md',
     })
+  })
+})
+
+/**
+ * TASK-007 settings wire rules: the wrappers hit /obsidian-mem/settings with
+ * their documented methods; `unset` travels ONLY when non-empty (the same
+ * omission discipline addVaultPayload applies to globalFile); the reset
+ * DELETE carries a `{}` JSON body because defineRoute reads a body for every
+ * non-GET method (a body-less DELETE answers 400 invalid_json_body); the
+ * busy/invalid envelopes surface as codes the section branches on.
+ */
+describe('card settings endpoints', () => {
+  const view = { settings: { vectorDim: 384 }, overrides: {}, restartPending: [] }
+
+  it('fetchCardSettings GETs the settings view', async () => {
+    const calls = stubFetch([{ status: 200, body: view }])
+    await expect(fetchCardSettings()).resolves.toEqual(view)
+    expect(calls[0]!.url).toBe('/obsidian-mem/settings')
+    expect(calls[0]!.init?.method).toBe('GET')
+  })
+
+  it('updateCardSettings POSTs set, with unset only when non-empty', async () => {
+    const calls = stubFetch([{ status: 200, body: view }])
+    await updateCardSettings({ budgets: { searchTopK: 8 } }, ['llm.model'])
+    await updateCardSettings({ vectorDim: 512 }, [])
+    expect(calls[0]!.url).toBe('/obsidian-mem/settings')
+    expect(calls[0]!.init?.method).toBe('POST')
+    expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({
+      set: { budgets: { searchTopK: 8 } },
+      unset: ['llm.model'],
+    })
+    expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({ set: { vectorDim: 512 } })
+  })
+
+  it('resetCardSettings DELETEs with a {} JSON body and content type', async () => {
+    const calls = stubFetch([{ status: 200, body: view }])
+    await expect(resetCardSettings()).resolves.toEqual(view)
+    expect(calls[0]!.url).toBe('/obsidian-mem/settings')
+    expect(calls[0]!.init).toMatchObject({
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+  })
+
+  it('surfaces rejected applies as ApiErrors with the settings codes', async () => {
+    stubFetch([{ status: 409, body: { error: { code: 'settings_busy', message: 'another settings apply is in flight' } } }])
+    const busy = await updateCardSettings({}, []).catch((caught: unknown) => caught)
+    expect(busy).toBeInstanceOf(ApiError)
+    expect((busy as ApiError).status).toBe(409)
+    expect((busy as ApiError).code).toBe('settings_busy')
+
+    stubFetch([{ status: 400, body: { error: { code: 'settings_invalid', message: 'vectorDim: expected a positive integer' } } }])
+    const invalid = await resetCardSettings().catch((caught: unknown) => caught)
+    expect((invalid as ApiError).code).toBe('settings_invalid')
+    expect((invalid as ApiError).message).toBe('vectorDim: expected a positive integer')
   })
 })
 

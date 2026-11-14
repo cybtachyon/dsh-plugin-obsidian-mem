@@ -21,6 +21,7 @@ export declare const PATH_DREAM_RUN = "/obsidian-mem/dream/run";
 export declare const PATH_DREAM_STATE = "/obsidian-mem/dream/state";
 export declare const PATH_SCHEDULES = "/obsidian-mem/dreaming/schedules";
 export declare const PATH_SEARCH = "/obsidian-mem/search";
+export declare const PATH_SETTINGS = "/obsidian-mem/settings";
 /**
  * ALL_CARD_ROUTES lists every route use the card performs. The contract test
  * proves each entry exists in the ui ROUTES table and that the ui table

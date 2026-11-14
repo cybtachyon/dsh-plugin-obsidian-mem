@@ -9,13 +9,13 @@
  * sections render `error.message` directly (React escapes text, so vault
  * paths and host hints reach the card exactly as written) and branch on
  * `error.code` only where behavior differs (an offline search probe, a busy
- * dream run, a missing schedule service).
+ * dream run, a missing schedule service, an in-flight settings apply).
  *
  * The payload types are type-only imports of the host packages, so they erase
  * at bundle time; the shapes they describe are the routes' own answers.
  * @module dsh-plugin-obsidian-mem/client/api
  */
-import { PATH_AUDIT, PATH_DREAM_PLAN, PATH_DREAM_RUN, PATH_DREAM_STATE, PATH_SCHEDULES, PATH_SEARCH, PATH_STATUS, PATH_VAULTS, } from './routes.js';
+import { PATH_AUDIT, PATH_DREAM_PLAN, PATH_DREAM_RUN, PATH_DREAM_STATE, PATH_SCHEDULES, PATH_SEARCH, PATH_SETTINGS, PATH_STATUS, PATH_VAULTS, } from './routes.js';
 /**
  * ERROR_CODES mirrors the ROUTE_ERROR_CODES entries the card branches on
  * (a subset; tests/api.spec.ts asserts every value exists in the ui
@@ -25,6 +25,8 @@ export const ERROR_CODES = {
     vaultInvalid: 'vault_invalid',
     vaultConflict: 'vault_conflict',
     vaultProtected: 'vault_protected',
+    settingsInvalid: 'settings_invalid',
+    settingsBusy: 'settings_busy',
     dreamUnavailable: 'dream_unavailable',
     dreamBusy: 'dream_busy',
     scheduleUnavailable: 'schedule_unavailable',
@@ -137,5 +139,32 @@ export function probeSearch(query, topK) {
     const bounded = Math.min(10, Math.max(1, Math.trunc(topK)));
     const path = `${PATH_SEARCH}?q=${encodeURIComponent(query)}&topK=${String(bounded)}`;
     return request('GET', path);
+}
+/** FetchCardSettings reads the Configuration pane view (persisted values, the card's overrides, restart-pending paths). */
+export function fetchCardSettings() {
+    return request('GET', PATH_SETTINGS);
+}
+/**
+ * UpdateCardSettings applies one patch (set leaves override; unset dot-paths
+ * drop back to the profile row) and resolves to the fresh view. `unset`
+ * travels ONLY when non-empty, the same omission discipline addVaultPayload
+ * applies to globalFile. Rejections: 400 settings_invalid (bad key or value,
+ * escalation failure, message verbatim); 409 settings_busy (an apply is
+ * still in flight; keep the controls disabled, do not flash the banner).
+ */
+export function updateCardSettings(set, unset) {
+    return request('POST', PATH_SETTINGS, {
+        set,
+        ...(unset.length === 0 ? {} : { unset }),
+    });
+}
+/**
+ * ResetCardSettings clears every card override ("Reset all to profile
+ * settings") and resolves to the fresh view. The `{}` body is load-bearing:
+ * defineRoute reads a JSON body for every non-GET method, so a body-less
+ * DELETE answers 400 invalid_json_body.
+ */
+export function resetCardSettings() {
+    return request('DELETE', PATH_SETTINGS, {});
 }
 //# sourceMappingURL=api.js.map

@@ -9,7 +9,7 @@
  * sections render `error.message` directly (React escapes text, so vault
  * paths and host hints reach the card exactly as written) and branch on
  * `error.code` only where behavior differs (an offline search probe, a busy
- * dream run, a missing schedule service).
+ * dream run, a missing schedule service, an in-flight settings apply).
  *
  * The payload types are type-only imports of the host packages, so they erase
  * at bundle time; the shapes they describe are the routes' own answers.
@@ -21,7 +21,7 @@ import type { VaultMode } from '../../core/lib/index.js'
 import type { AuditReport, AuditView } from '../../service/lib/audit.js'
 import type { DreamPlan } from '../../service/lib/dream.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
-import type { VaultEntry } from '../../service/lib/index.js'
+import type { CardEditablePartial, CardSettingsView, VaultEntry } from '../../service/lib/index.js'
 import {
   PATH_AUDIT,
   PATH_DREAM_PLAN,
@@ -29,6 +29,7 @@ import {
   PATH_DREAM_STATE,
   PATH_SCHEDULES,
   PATH_SEARCH,
+  PATH_SETTINGS,
   PATH_STATUS,
   PATH_VAULTS,
 } from './routes.js'
@@ -42,6 +43,8 @@ export const ERROR_CODES = {
   vaultInvalid: 'vault_invalid',
   vaultConflict: 'vault_conflict',
   vaultProtected: 'vault_protected',
+  settingsInvalid: 'settings_invalid',
+  settingsBusy: 'settings_busy',
   dreamUnavailable: 'dream_unavailable',
   dreamBusy: 'dream_busy',
   scheduleUnavailable: 'schedule_unavailable',
@@ -126,6 +129,16 @@ export interface SearchPayload {
   query: string
   topK: number
 }
+
+/**
+ * CardSettingsPayload answers GET /obsidian-mem/settings, and the POST /
+ * DELETE answers re-carry it: a successful apply's answer IS the fresh view,
+ * so no follow-up GET is needed.
+ */
+export type CardSettingsPayload = CardSettingsView
+
+/** CardEditablePatch is an apply's `set`: whitelisted leaves in nested shape; a present leaf overrides, an absent key falls back to the profile row. */
+export type CardEditablePatch = CardEditablePartial
 
 /** ScheduleUpsertRequest is the POST /obsidian-mem/dreaming/schedules body: exactly one of expression / everySeconds. */
 export interface ScheduleUpsertRequest {
@@ -234,4 +247,34 @@ export function probeSearch(query: string, topK: number): Promise<SearchPayload>
   const bounded = Math.min(10, Math.max(1, Math.trunc(topK)))
   const path = `${PATH_SEARCH}?q=${encodeURIComponent(query)}&topK=${String(bounded)}`
   return request<SearchPayload>('GET', path)
+}
+
+/** FetchCardSettings reads the Configuration pane view (persisted values, the card's overrides, restart-pending paths). */
+export function fetchCardSettings(): Promise<CardSettingsPayload> {
+  return request<CardSettingsPayload>('GET', PATH_SETTINGS)
+}
+
+/**
+ * UpdateCardSettings applies one patch (set leaves override; unset dot-paths
+ * drop back to the profile row) and resolves to the fresh view. `unset`
+ * travels ONLY when non-empty, the same omission discipline addVaultPayload
+ * applies to globalFile. Rejections: 400 settings_invalid (bad key or value,
+ * escalation failure, message verbatim); 409 settings_busy (an apply is
+ * still in flight; keep the controls disabled, do not flash the banner).
+ */
+export function updateCardSettings(set: CardEditablePatch, unset: string[]): Promise<CardSettingsPayload> {
+  return request<CardSettingsPayload>('POST', PATH_SETTINGS, {
+    set,
+    ...(unset.length === 0 ? {} : { unset }),
+  })
+}
+
+/**
+ * ResetCardSettings clears every card override ("Reset all to profile
+ * settings") and resolves to the fresh view. The `{}` body is load-bearing:
+ * defineRoute reads a JSON body for every non-GET method, so a body-less
+ * DELETE answers 400 invalid_json_body.
+ */
+export function resetCardSettings(): Promise<CardSettingsPayload> {
+  return request<CardSettingsPayload>('DELETE', PATH_SETTINGS, {})
 }

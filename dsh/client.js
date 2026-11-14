@@ -48,6 +48,8 @@ var ERROR_CODES = {
   vaultInvalid: "vault_invalid",
   vaultConflict: "vault_conflict",
   vaultProtected: "vault_protected",
+  settingsInvalid: "settings_invalid",
+  settingsBusy: "settings_busy",
   dreamUnavailable: "dream_unavailable",
   dreamBusy: "dream_busy",
   scheduleUnavailable: "schedule_unavailable",

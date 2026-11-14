@@ -15,6 +15,7 @@ export const PATH_DREAM_RUN = '/obsidian-mem/dream/run';
 export const PATH_DREAM_STATE = '/obsidian-mem/dream/state';
 export const PATH_SCHEDULES = '/obsidian-mem/dreaming/schedules';
 export const PATH_SEARCH = '/obsidian-mem/search';
+export const PATH_SETTINGS = '/obsidian-mem/settings';
 /**
  * ALL_CARD_ROUTES lists every route use the card performs. The contract test
  * proves each entry exists in the ui ROUTES table and that the ui table
@@ -32,5 +33,8 @@ export const ALL_CARD_ROUTES = [
     { method: 'POST', path: PATH_SCHEDULES },
     { method: 'DELETE', path: PATH_SCHEDULES },
     { method: 'GET', path: PATH_SEARCH },
+    { method: 'GET', path: PATH_SETTINGS },
+    { method: 'POST', path: PATH_SETTINGS },
+    { method: 'DELETE', path: PATH_SETTINGS },
 ];
 //# sourceMappingURL=routes.js.map

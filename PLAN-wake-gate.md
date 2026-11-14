@@ -64,9 +64,16 @@ pid 1091813 verified alive 2026-11-13).
 
 ### Phase A: pre-flight measurements (spec Step 1, read-only, blocking)
 
- - [ ] [TASK-001-empty-wake-audit](docs/PLAN-wake-gate-TASK-001-empty-wake-audit.md)
+ - [x] [TASK-001-empty-wake-audit](docs/PLAN-wake-gate-TASK-001-empty-wake-audit.md)
  - [ ] [TASK-002-expected-kill-check](docs/PLAN-wake-gate-TASK-002-expected-kill-check.md)
  - [ ] [TASK-003-zh-baseline-pin](docs/PLAN-wake-gate-TASK-003-zh-baseline-pin.md)
+
+ TASK-001 result (2026-11-13, spec "Pre-flight measurements", commit
+ 0285a65): 39/210 rows (18.571%) carry empty wake arrays, above the 5%
+ ceiling, so the >5% STOP fired: Phase B stays blocked until the
+ wake-keyword extraction fix lands in core and the probe re-runs to
+ ≤5%. TASK-002/003 are deferred: their inputs are the wake arrays the
+ fix rewrites.
 
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 

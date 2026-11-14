@@ -37,12 +37,12 @@ Or add from the DSH Plugin Marketplace.
  - **Automatic RAG recall.** Lifecycle hooks inject relevant notes at turn start.
    When the agent encounters highly-relevant files or thinking keywords, that
    context (capped to a reasonable amount) is also injected.
-   At turn-end, a reminder tells the agent what is worth saving.
  - **Five agent tools.**
    - `memory_read`: open a memory note from a vault by path.
    - `memory_search`: hybrid vector + keyword recall across your vaults.
    - `memory_write`: save a memory note (shared vaults only).
-   - `memory_audit`: report vault size, index state, and over-budget warnings.
+   - `memory_audit`: report vault size, index state, git churn, and
+     over-budget warnings; its `checkpoint` view is the end-of-work pass.
    - `memory_dream`: run the split-compaction pass that merges and prunes notes.
  - **Works out of the box.** Whether you have dozens of vaults, or just one or
    two AGENTS.md bullets that should be shared, you can configure your own shared
@@ -56,6 +56,16 @@ Or add from the DSH Plugin Marketplace.
    these up for you in DSH Creator mode too!
  - **Global memory file.** Vaults support a configurable, editable global memory
    file. They're added at session start within the global memory budget.
+
+## Usage
+
+The agent-facing end-of-work pass is the completion checkpoint: run
+`memory_audit` with `view: "checkpoint"` to get the full note rows plus
+the completion-checkpoint instructions, the pass where the agent promotes
+what the session settled and retires what was transient. The turn-end
+save/audit reminder that used to fire at the end of every agent turn was
+removed; the internal memory-tool usage watch is all that stays at turn
+end.
 
 ## Why another agentic memory project?
 
@@ -111,6 +121,9 @@ same key in the profile row; "Reset all to profile settings" clears them.
 | `budgets.readSectionTokens` | `350` | Token budget each injected Read-tool section may spend. |
 | `budgets.searchTopK` | `6` | Result count `memory_search` returns when the call omits `limit`. |
 | `budgets.thinkShotsPerTurn` | `3` | Most keyword-extraction shots one turn may spend. |
+| `git.enabled` | `true` | Card checkbox "Use Git to version shared vaults": shared vaults are git repositories and the plugin commits them (see Git versioning below). |
+| `git.churnThresholdPercent` | `50` | Churn bar in whole percent: a note touched in more than this share of the recent commit window is a `memory_dream` stressor (see Git versioning below). |
+| `git.churnWindowCommits` | `8` | How many of the most recent commits the churn share is measured over (see Git versioning below). |
 
 Everything except `milvus.dbPath` applies to the running process on
 Apply: budgets and the keyword LLM take effect on the next call, and a
@@ -123,6 +136,33 @@ row, blank the overridden text field: blanking deletes the override key
 and the profile value returns. A blank number field sends nothing, and a
 cleared override never writes an empty string, because an empty string
 is the built-in default for a path knob.
+
+### Git versioning
+
+While `git.enabled` is on, every shared vault is a git repository
+(`read-only` vaults are never versioned). The plugin adopts each shared
+vault on the `main` branch with one initial commit recording whatever
+notes the vault already holds. From then on every successful
+`memory_write` commits the vault it touched (one commit per write,
+serialized per vault), and a finished `memory_dream` run closes with one
+commit pass over every shared vault. A git failure logs and never
+unwinds a write: the memory files are the source of truth and the
+history is only the book.
+
+A managed `.gitignore` at the vault root keeps the plugin's
+`.obsidian-mem/` sidecar (indexer state, the `DREAMS.md` diary) out of
+the history; `.git` itself never enters it.
+
+Churn is read from git history: a note's churn is the share of the last
+`git.churnWindowCommits` (default 8) commits that touched it, and a note
+touched in over `git.churnThresholdPercent` (default 50)% of them is a
+stressor under the dream agent's Step 4 rule. `memory_audit` reports the
+per-note churn and a per-shared-vault git rollup.
+
+A remote is optional and stays plain git you manage yourself
+(`git remote add origin …` inside the vault); the plugin never creates
+remotes or handles credentials. When a remote exists, the dream agent's
+Step 0 pre-sync uses it before the run touches any memory.
 
 ## Technical Background
 

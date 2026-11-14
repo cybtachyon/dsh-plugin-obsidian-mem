@@ -34,6 +34,15 @@
     `isOverGlobalBudget` gate plus the shared remedy fragments
     (`MANUAL_COMPACTION_RECIPE`, `MANUAL_COMPACTION_APPROVAL`,
     `DREAM_RUN_SUGGESTION`) every over-budget surface composes verbatim
+  - The git boundary `memory-git.ts`: one `MemoryGit` per vault root
+    speaks argv-only git over an injectable `GitRunner`, covering vault
+    adoption (`init -b main` plus the initial commit), the managed
+    vault-root `.gitignore`, the `obsidian-mem:` commit-message
+    convention, and the status/log/remote calls
+  - The one churn formula `churn.ts`: `churnByPath` maps a path to the
+    share of the most recent commits that touched it and
+    `churnStressors` filters that map through a threshold; the
+    `DEFAULT_CHURN_*` constants seed the `git.*` config defaults only
 - **service** is the `ctx.obsidianMem` Cordis service:
   - `ensureMemoryAccess()`: the idempotent lazy-provisioning seam. The first
     tool call or lifecycle hook that touches memory provisions the default
@@ -44,6 +53,13 @@
     `query:` prefixes, `vectorDim` knob), Milvus-Lite lifecycle (uv/uvx
     auto-spawn, localhost port), indexer manager, hybrid search, and the
     audit/dream compaction engine.
+  - `VaultGitManager` (`vault-git.ts`): one `MemoryGit` per registered
+    SHARED vault behind the live `git.enabled` gate and a serial queue
+    per vault; it adopts shared vaults on `main` and commits once per
+    successful `applyWrite` (the `memory_write` tool and card-write
+    path) and once when a dream run finishes. Every git failure
+    warn-don't-dies to a settled `null` and never unwinds a memory
+    write. The audit reads churn through the same manager.
   - Card settings overrides: `CARD_SETTINGS_KEYS` (`config.ts`) whitelists
     the card-editable config paths, the values persist to `settings.json`
     under the fixed core `stateDir`, and the store merges them over the
@@ -56,11 +72,15 @@
   state, audit/dream state.
 - **tools** registers the five model-facing tools:
   - `memory_read`, `memory_search`, `memory_write`, `memory_dream`,
-    `memory_audit`, plus the system-prompt section that tells the agent when
-    to reach for them.
+    `memory_audit` (its `checkpoint` view appends the
+    completion-checkpoint instructions the agent runs at the end of real
+    work), plus the system-prompt section that tells the agent when to
+    reach for them.
 - **events** carries the lifecycle hooks: turn-start recall injection, the
-  Read-tool intercept, the Think-stream keyword intercept, the turn-end
-  save/audit reminder, and the global per-session recall budget.
+  Read-tool intercept, the Think-stream keyword intercept, the memory-tool
+  watch (the plugin-ctx `tools/result` observer flagging per-turn
+  `memory_*` usage; the old turn-end save/audit reminder steer is gone),
+  and the global per-session recall budget.
 - **client** is the browser card source:
   - `packages/client` is the source private workspace package
   - ESBuild bundles to lazy-CJS artifact `dsh/client.js` (required since
@@ -141,9 +161,13 @@
   `turn/end` exists only as a *session-log* event type under `session/event`.
 - Turn-start recall rides `agent/pre-step` (waterfall: a listener that does not
   own the decision MUST return `next()`, spreading the decision object).
-- The turn-end save/audit reminder rides `agent/turn-stopping` (serial) and
-  delivers via `agent.steer(...)`; the steer keeps the turn open, so a
-  once-per-turn guard is mandatory or the turn loops forever.
+- Turn-end work rides `agent/turn-stopping` (serial) and delivers via
+  `agent.steer(...)`; the steer keeps the turn open, so a once-per-turn
+  guard is mandatory or the turn loops forever. This plugin no longer
+  rides it: the turn-end save/audit reminder was removed (TASK-010), the
+  completion checkpoint rides the `memory_audit` `checkpoint` view
+  instead, and the memory-tool watch (a plugin-ctx `tools/result`
+  observer) is all that remains at turn end.
 - Agent-scoped events (`this: Scoped<Agent>`: `agent/pre-step`,
   `agent/assistant-stream`, `agent/turn-stopping`) fire on the AGENT's own
   context: register from an `agent/created` handler on `agent.ctx` (wrap in

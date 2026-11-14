@@ -59,6 +59,10 @@ pid 1091813 verified alive 2026-11-13).
 - Q3: on a FAIL decision, Option 4 proceeds automatically under this
   plan's authority (snapshot `~/.dsh/obsidian-mem-db` first; old
   collection stays alive until the Option-4 A/B completes).
+- Q4 (2026-11-13 user answer, after TASK-003 found the Han wake-key
+  gap): fix wake extraction to emit Han wake keys FIRST (TASK-017),
+  then wire the gate per the spec unchanged. Option 4 stays the FAIL-
+  only opener; the zh-carry-out alternative was rejected.
 
 ## Tasks
 
@@ -137,6 +141,10 @@ pid 1091813 verified alive 2026-11-13).
  post-audit vault notes indexed by the host's watchers). GATE PASS:
  Phase B unblocked; TASK-002/003 inputs are now the post-reindex
  wake arrays.
+
+### Phase A3: Han wake-key harvest (Q4 answer; last blocker)
+
+ - [ ] [TASK-017-han-wake-keys](docs/PLAN-wake-gate-TASK-017-han-wake-keys.md)
 
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 

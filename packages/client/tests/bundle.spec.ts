@@ -56,5 +56,8 @@ describe('dsh/client.js ModuleLoader contract', () => {
     expect(artifact).toContain('Global memory relative file path e.g. GLOBAL.md')
     // TASK-004: the failed-last-run banner copy must survive bundling.
     expect(artifact).toContain('Last dream run failed')
+    // TASK-011: the Git pane copy must survive bundling.
+    expect(artifact).toContain('Use Git to version shared vaults')
+    expect(artifact).toContain('Churn threshold percent')
   })
 })

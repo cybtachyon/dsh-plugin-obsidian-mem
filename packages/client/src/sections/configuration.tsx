@@ -191,6 +191,29 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     placeholder: 'OPENAI_API_KEY',
     gatedBy: 'llm.enabled',
   },
+  {
+    path: 'git.enabled',
+    group: 'Git',
+    label: 'Use Git to version shared vaults',
+    kind: 'toggle',
+    tooltip: 'When on, memory_write and memory_dream commit each shared vault to git; when off, the plugin never touches git',
+  },
+  {
+    path: 'git.churnThresholdPercent',
+    group: 'Git',
+    label: 'Churn threshold percent',
+    kind: 'number',
+    tooltip: 'A note edited in over this share of the last churn window commits is a dream Step 4 stressor',
+    placeholder: '50',
+  },
+  {
+    path: 'git.churnWindowCommits',
+    group: 'Git',
+    label: 'Churn window commits',
+    kind: 'number',
+    tooltip: 'How many of the most recent commits the churn window inspects for dream Step 4 stressors',
+    placeholder: '8',
+  },
 ]
 
 const VECTOR_DIM_OPTIONS: readonly SegmentedOption<string>[] = [
@@ -201,7 +224,8 @@ const VECTOR_DIM_OPTIONS: readonly SegmentedOption<string>[] = [
   { value: '128', label: '128 lossy' },
 ]
 
-const LLM_OPTIONS: readonly SegmentedOption<string>[] = [
+// The segmented vocabulary every `toggle` row renders through (llm and git).
+const OFF_ON_OPTIONS: readonly SegmentedOption<string>[] = [
   { value: 'off', label: 'Off' },
   { value: 'on', label: 'On' },
 ]
@@ -222,7 +246,8 @@ function pickFieldPath(source: unknown, path: string): unknown {
 }
 
 // FormatFieldSeed renders one stored value as its draft string: numbers and
-// strings verbatim, the llm toggle as the segmented off/on vocabulary.
+// strings verbatim, the llm and git toggles as the segmented off/on
+// vocabulary.
 function formatFieldSeed(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'on' : 'off'
   return String(value ?? '')
@@ -421,7 +446,7 @@ export function ConfigurationSection(): ReactNode {
         id: `obsidian-mem-config-${spec.path}`,
         label: spec.label,
         value: draft,
-        options: spec.kind === 'dim' ? VECTOR_DIM_OPTIONS : LLM_OPTIONS,
+        options: spec.kind === 'dim' ? VECTOR_DIM_OPTIONS : OFF_ON_OPTIONS,
         disabled,
         onChange: (next) => setField(spec.path, next),
       })

@@ -741,6 +741,29 @@ var CONFIG_FIELDS = [
     tooltip: "Name of the environment variable holding the key; never the key itself",
     placeholder: "OPENAI_API_KEY",
     gatedBy: "llm.enabled"
+  },
+  {
+    path: "git.enabled",
+    group: "Git",
+    label: "Use Git to version shared vaults",
+    kind: "toggle",
+    tooltip: "When on, memory_write and memory_dream commit each shared vault to git; when off, the plugin never touches git"
+  },
+  {
+    path: "git.churnThresholdPercent",
+    group: "Git",
+    label: "Churn threshold percent",
+    kind: "number",
+    tooltip: "A note edited in over this share of the last churn window commits is a dream Step 4 stressor",
+    placeholder: "50"
+  },
+  {
+    path: "git.churnWindowCommits",
+    group: "Git",
+    label: "Churn window commits",
+    kind: "number",
+    tooltip: "How many of the most recent commits the churn window inspects for dream Step 4 stressors",
+    placeholder: "8"
   }
 ];
 var VECTOR_DIM_OPTIONS = [
@@ -750,7 +773,7 @@ var VECTOR_DIM_OPTIONS = [
   { value: "192", label: "192 lossy" },
   { value: "128", label: "128 lossy" }
 ];
-var LLM_OPTIONS = [
+var OFF_ON_OPTIONS = [
   { value: "off", label: "Off" },
   { value: "on", label: "On" }
 ];
@@ -899,7 +922,7 @@ function ConfigurationSection() {
       id: `obsidian-mem-config-${spec.path}`,
       label: spec.label,
       value: draft,
-      options: spec.kind === "dim" ? VECTOR_DIM_OPTIONS : LLM_OPTIONS,
+      options: spec.kind === "dim" ? VECTOR_DIM_OPTIONS : OFF_ON_OPTIONS,
       disabled,
       onChange: (next) => setField(spec.path, next)
     }) : renderInput({

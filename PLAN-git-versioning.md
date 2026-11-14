@@ -80,7 +80,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 
 ### Phase E: card + docs
 
- - [ ] [TASK-011-client-git-toggle](docs/PLAN-git-versioning-TASK-011-client-git-toggle.md)
+ - [x] [TASK-011-client-git-toggle](docs/PLAN-git-versioning-TASK-011-client-git-toggle.md)
  - [ ] [TASK-012-docs-readme-agents](docs/PLAN-git-versioning-TASK-012-docs-readme-agents.md)
  - [ ] [TASK-013-refactor-phase-cde](docs/PLAN-git-versioning-TASK-013-refactor-phase-cde.md)
 

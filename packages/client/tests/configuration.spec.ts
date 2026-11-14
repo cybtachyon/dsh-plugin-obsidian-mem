@@ -4,16 +4,23 @@
  * answer seeds the drafts, overridden knobs carry the "custom" badge, the
  * blank-field rules hold (a blank number sends nothing; a blanked custom
  * text field unsets its override), the keyword-LLM rows gate on the toggle,
- * reset is two-step and DELETEs, and restartPending renders the chip plus
- * the banner. The fake react runs effects with the real one's dependency
- * comparison, so the mount fetch stays a one-shot and the toast timer is
- * reachable through the effect cleanup on dispose.
+ * the git toggle seeds from the resolved config, reset is two-step and
+ * DELETEs, and restartPending renders the chip plus the banner. The fake
+ * react runs effects with the real one's dependency comparison, so the
+ * mount fetch stays a one-shot and the toast timer is reachable through
+ * the effect cleanup on dispose.
  * @module dsh-plugin-obsidian-mem/client/tests/configuration
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { DEFAULT_MODEL_ID, dbDir, modelCacheDir } from '../../core/lib/index.js'
+import {
+  DEFAULT_CHURN_THRESHOLD_PERCENT,
+  DEFAULT_CHURN_WINDOW_COMMITS,
+  DEFAULT_MODEL_ID,
+  dbDir,
+  modelCacheDir,
+} from '../../core/lib/index.js'
 import type { CardEditableConfig, CardSettingsView } from '../../service/lib/index.js'
 import { CARD_SETTINGS_KEYS, DEFAULT_BUDGETS } from '../../service/lib/index.js'
 import type { CardSettingsPayload } from '../src/api.ts'
@@ -155,6 +162,7 @@ const SETTINGS: CardEditableConfig = {
     thinkShotsPerTurn: 3,
   },
   llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
+  git: { enabled: true, churnThresholdPercent: 50, churnWindowCommits: 8 },
 }
 
 function view(overrides: Partial<CardSettingsView> = {}): CardSettingsPayload {
@@ -191,10 +199,36 @@ describe('whitelist and field table', () => {
     expect(placeholder('model.id')).toBe(DEFAULT_MODEL_ID)
     expect(placeholder('model.cacheDir')).toBe(modelCacheDir('~'))
     expect(placeholder('milvus.dbPath')).toBe(dbDir('~'))
+    expect(placeholder('git.churnThresholdPercent')).toBe(String(DEFAULT_CHURN_THRESHOLD_PERCENT))
+    expect(placeholder('git.churnWindowCommits')).toBe(String(DEFAULT_CHURN_WINDOW_COMMITS))
+  })
+
+  // The Git pane copy is requirement-locked (TASK-011): the checkbox
+  // wording and the dream Step 4 stressor rule the tunables explain.
+  it('names the Git rows with the requirement copy', () => {
+    const row = (path: string): unknown => CONFIG_FIELDS.find((field) => field.path === path)
+    expect(row('git.enabled')).toMatchObject({
+      group: 'Git',
+      kind: 'toggle',
+      label: 'Use Git to version shared vaults',
+      tooltip: 'When on, memory_write and memory_dream commit each shared vault to git; when off, the plugin never touches git',
+    })
+    expect(row('git.churnThresholdPercent')).toMatchObject({
+      group: 'Git',
+      kind: 'number',
+      label: 'Churn threshold percent',
+      tooltip: 'A note edited in over this share of the last churn window commits is a dream Step 4 stressor',
+    })
+    expect(row('git.churnWindowCommits')).toMatchObject({
+      group: 'Git',
+      kind: 'number',
+      label: 'Churn window commits',
+      tooltip: 'How many of the most recent commits the churn window inspects for dream Step 4 stressors',
+    })
   })
 
   it('gives no placeholder to the segmented controls', () => {
-    for (const path of ['vectorDim', 'llm.enabled']) {
+    for (const path of ['vectorDim', 'llm.enabled', 'git.enabled']) {
       expect(CONFIG_FIELDS.find((field) => field.path === path)?.placeholder).toBeUndefined()
     }
   })
@@ -218,11 +252,13 @@ describe('buildSettingsPatch', () => {
       draft({ path: 'budgets.globalMemoryTokens', kind: 'number', baseline: '1500', draft: ' 2000 ' }),
       draft({ path: 'llm.enabled', kind: 'toggle', baseline: 'off', draft: 'on' }),
       draft({ path: 'llm.apiKeyEnv', kind: 'text', baseline: '', draft: ' MY_KEY ' }),
+      draft({ path: 'git.enabled', kind: 'toggle', baseline: 'on', draft: 'off' }),
     ])).toEqual({
       set: {
         vectorDim: 256,
         budgets: { globalMemoryTokens: 2000 },
         llm: { enabled: true, apiKeyEnv: 'MY_KEY' },
+        git: { enabled: false },
       },
       unset: [],
     })
@@ -280,6 +316,16 @@ describe('seeded rendering', () => {
     expect(inputByTitle(root, BASE_URL_TITLE).props['disabled']).toBe(false)
     // The toggle flip alone is dirty: Apply unlocks.
     expect(buttonByLabel(root, 'Apply changes').props['disabled']).toBe(false)
+  })
+
+  it('seeds the git toggle from the resolved config (on in an unmodified install)', async () => {
+    const { render } = await mount({ get: ok() })
+    const root = render()
+    expect(divTexts(root)).toContain('Git')
+    expect(selectByLabel(root, 'Use Git to version shared vaults').props['value']).toBe('on')
+    setInput(selectByLabel(root, 'Use Git to version shared vaults'), 'off')
+    // The same toggle machinery applies: an off draft unlocks Apply alone.
+    expect(buttonByLabel(render(), 'Apply changes').props['disabled']).toBe(false)
   })
 })
 

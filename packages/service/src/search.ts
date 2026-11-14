@@ -18,9 +18,12 @@
  * docs/research/milvus-transformers-findings.md §3/§4 with the G10
  * addendum plus radius-tuning-findings: metric_type rides EVERY search
  * (lite rejects sparse without it, G3); the shared filter expression
- * repeats in both searches' `expr` (the §4.2 per-route filter shape);
- * COSINE survivors satisfy `radius < score <= range_filter` with the
- * radius EXCLUSIVE, so the 0.78 floor keeps scores strictly above 0.78
+ * repeats in both searches' `expr` (the §4.2 per-route filter shape), the
+ * sparse `expr` additionally carrying the wake-gate clause while
+ * SPARSE_WAKE_GATE_ENABLED (docs/research/sparse-wake-gate-spec.md
+ * §"Gate definition"); COSINE survivors satisfy `radius < score <=
+ * range_filter` with the radius EXCLUSIVE, so the 0.78 floor keeps
+ * scores strictly above 0.78
  * (radius-tuning-findings §2); BM25 returns NEGATED relevance scores
  * best-first (G7, radius-tuning-findings §3), so its floor applies
  * client-side on `-score` and a raw BM25 score is never thresholded
@@ -48,6 +51,7 @@ import { eng, removeStopwords, zho } from 'stopword'
 import {
   approxCharsForTokens,
   clampInt,
+  MILVUS_ARRAY_ELEMENT_MAX_LENGTHS,
   MILVUS_COLLECTION,
   MILVUS_CONSISTENCY_LEVEL,
   MILVUS_FIELDS,
@@ -283,6 +287,34 @@ const SPARSE_QUERY_STOPWORDS: readonly string[] = [...eng, ...zho]
 const SPARSE_TOKEN_RUN = /[\p{Script=Han}]+|(?:(?![\p{Script=Han}])[\p{L}\p{N}_])+/gu
 
 /**
+ * SPARSE_WAKE_GATE_ENABLED is the kill switch for the sparse-route wake
+ * gate (docs/research/sparse-wake-gate-spec.md §"Gate definition"): the
+ * BM25 route of every dispatchRoutes call only answers rows whose
+ * STORED wake_keywords intersect the stripped query tokens. While false,
+ * every sparse expr is exactly the base expr again (the pre-gate shape).
+ *
+ * Evidence (2026-11-13 route attribution, docs/research/eval-split-
+ * strip-on-d078-s50-k60-m016129.json, class x route over the 17 labeled
+ * queries): the sparse leg's UNIQUE contribution is negative, 0
+ * relevant-only rows against 6 forbidden-only collision rows carried by
+ * BM25 alone. Gating the leg on the wake-keyword intersection removes
+ * that collision vocabulary; the expected-kill check over the same
+ * artifact's 6 collision rows (spec §Step 1.2) predicted 5 die, 1
+ * survives. Set false and the sparse route is ungated verbatim.
+ */
+export const SPARSE_WAKE_GATE_ENABLED = true
+
+/**
+ * SPARSE_WAKE_GATE_MAX_TOKENS caps the gate clause's token list, an
+ * expression-length guard (spec §"Gate definition"): every token is a
+ * quoted literal inside one ARRAY_CONTAINS_ANY list. First-seen order is
+ * kept (sparseQueryTokens is already query-order); a typical query's
+ * stripped token count sits far under the cap, so the cut only bounds
+ * pathological inputs.
+ */
+export const SPARSE_WAKE_GATE_MAX_TOKENS = 64
+
+/**
  * FUSED_SCORE_FLOOR is the default FUSED-score floor hybridSearch applies
  * when the request carries no minScore (TASK-009 rule, TASK-014 reach,
  * TASK-007 value). THE authoritative statement of the hybridSearch floor
@@ -384,15 +416,13 @@ export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
 }
 
 /**
- * SparseQueryText renders the query text the BM25 route receives: tokens
- * split on non-word chars (SPARSE_TOKEN_RUN; Han as maximal runs), the
- * {@link SPARSE_QUERY_STOPWORDS} list applied via stopword's
- * case-insensitive match (nothing re-cased here), survivors re-joined with
- * single spaces. Its ONE application point is dispatchRoutes' sparse
- * `data`, covering both hybridSearch and searchExactSections; the dense
- * route keeps the FULL query (the callers embed before dispatch).
- * Fail-open: an all-stop-word or symbols-only query returns the ORIGINAL
- * text; an empty BM25 data string must never reach lite.
+ * SparseQueryText renders the query text the BM25 route receives: the
+ * single-space join of {@link sparseQueryTokens}. Its ONE application
+ * point is dispatchRoutes' sparse `data`, covering both hybridSearch and
+ * searchExactSections; the dense route keeps the FULL query (the callers
+ * embed before dispatch). Fail-open: an all-stop-word or symbols-only
+ * query returns the ORIGINAL text; an empty BM25 data string must never
+ * reach lite.
  *
  * A Han run is removed only when the WHOLE run is a stop-word entry, so
  * standalone single-character function-word runs (的, 和, 时) still drop
@@ -411,9 +441,85 @@ export function buildFilterExpr(criteria: FilterCriteria): string | undefined {
  * the shipped module (TASK-004).
  */
 export function sparseQueryText(query: string): string {
+  const tokens = sparseQueryTokens(query)
+  return tokens.length === 0 ? query : tokens.join(' ')
+}
+
+/**
+ * SparseQueryTokens lists the query tokens the BM25 route reads: the
+ * SPARSE_TOKEN_RUN split (Han as maximal runs, the rule home is
+ * {@link sparseQueryText}) minus {@link SPARSE_QUERY_STOPWORDS}, in
+ * order, original casing kept. Fail-open mirrors the text form: when
+ * stripping empties the list, the ORIGINAL tokens come back; only a
+ * query with no word runs at all (symbols, empty) lists nothing. This is
+ * the ONE home for the token list; sparseQueryText joins it and the wake
+ * gate filters it, so BM25 data and gate tokens can never disagree
+ * (docs/research/sparse-wake-gate-spec.md §"Gate definition").
+ *
+ * Exported so the wake gate and scripts/eval gate the route on exactly
+ * the tokens BM25 reads.
+ */
+export function sparseQueryTokens(query: string): string[] {
   const tokens = query.match(SPARSE_TOKEN_RUN) ?? []
-  const stripped = removeStopwords(tokens, [...SPARSE_QUERY_STOPWORDS]).join(' ')
-  return stripped === '' ? query : stripped
+  const stripped = removeStopwords(tokens, [...SPARSE_QUERY_STOPWORDS])
+  return stripped.length === 0 ? tokens : stripped
+}
+
+/**
+ * SparseWakeFilterTokens turns a token list into the wake gate's filter
+ * tokens: trimmed, lower-cased, shorter-than-2 and longer-than-the
+ * wakeKeywords element cap dropped (the legality floor/ceiling mirrors
+ * core/triggers.ts's isUsableKeyword bounds against
+ * MILVUS_ARRAY_ELEMENT_MAX_LENGTHS: imported, never restated; the
+ * shape rules cannot reject a SPARSE_TOKEN_RUN token anyway), deduped,
+ * and capped at {@link SPARSE_WAKE_GATE_MAX_TOKENS} in first-seen order.
+ * Pure.
+ */
+export function sparseWakeFilterTokens(tokens: readonly string[]): string[] {
+  const usable: string[] = []
+  const seen = new Set<string>()
+  for (const token of tokens) {
+    const word = token.trim().toLowerCase()
+    if (word.length < 2 || word.length > MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords) {
+      continue
+    }
+    if (seen.has(word)) {
+      continue
+    }
+    seen.add(word)
+    usable.push(word)
+    if (usable.length === SPARSE_WAKE_GATE_MAX_TOKENS) {
+      break
+    }
+  }
+  return usable
+}
+
+/**
+ * SparseWakeGateExpr merges the wake gate into a route's base scalar
+ * filter: ARRAY_CONTAINS_ANY(wake_keywords, [...]) over
+ * sparseWakeFilterTokens(sparseQueryTokens(queryText)), joined after the
+ * base expr with ` and ` exactly like buildFilterExpr joins its
+ * wake_keywords clause (the listLiteral/quoteExpr escaping). Fail-open:
+ * `enabled` false, or no usable token after legality, returns the base
+ * expr unchanged, clause absent. `enabled` is a parameter so the unit
+ * spec drives the disabled shape without mutating a module constant;
+ * dispatchRoutes is the ONE caller and passes SPARSE_WAKE_GATE_ENABLED.
+ * Pure.
+ */
+export function sparseWakeGateExpr(
+  baseExpr: string | undefined,
+  queryText: string,
+  enabled: boolean,
+): string | undefined {
+  if (!enabled) {
+    return baseExpr
+  }
+  const gate = buildFilterExpr({ wakeKeywords: sparseWakeFilterTokens(sparseQueryTokens(queryText)) })
+  if (gate === undefined) {
+    return baseExpr
+  }
+  return baseExpr === undefined ? gate : `${baseExpr} and ${gate}`
 }
 
 /**
@@ -554,7 +660,9 @@ function fallbackFilterExpr(
 // client-side in sparseSurvivors. The BM25 `data` is the strip's single
 // application point (sparseQueryText, TASK-002); queryText itself stays
 // untouched because the caller already embedded the FULL text for the
-// dense route.
+// dense route. The SPARSE route's expr is the base expr merged with the
+// wake gate (sparseWakeGateExpr at SPARSE_WAKE_GATE_ENABLED); the dense
+// route never carries the gate clause.
 async function dispatchRoutes(
   deps: SearchDependencies,
   queryText: string,
@@ -565,15 +673,16 @@ async function dispatchRoutes(
   const shared = {
     collection_name: collectionOf(deps),
     limit: candidateLimit,
-    ...(expr === undefined ? {} : { expr }),
     output_fields: [...SEARCH_OUTPUT_FIELDS],
     // The collection declares the same level at create (schema.ts) and lite
     // writes are read-back immediate; asking per read keeps it explicit.
     consistency_level: MILVUS_CONSISTENCY_LEVEL,
   }
+  const sparseExpr = sparseWakeGateExpr(expr, queryText, SPARSE_WAKE_GATE_ENABLED)
   const [denseHits, sparseHits] = await Promise.all([
     callMilvus('search', () => deps.client.search({
       ...shared,
+      ...(expr === undefined ? {} : { expr }),
       anns_field: MILVUS_FIELDS.denseVector,
       data: [denseVector],
       metric_type: MetricType.COSINE,
@@ -585,6 +694,7 @@ async function dispatchRoutes(
     })),
     callMilvus('search', () => deps.client.search({
       ...shared,
+      ...(sparseExpr === undefined ? {} : { expr: sparseExpr }),
       anns_field: MILVUS_FIELDS.sparseVector,
       data: [sparseQueryText(queryText)],
       metric_type: MetricType.BM25,

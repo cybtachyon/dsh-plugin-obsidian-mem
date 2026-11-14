@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
-import { MILVUS_FIELDS } from '../../core/lib/index.js'
+import { MILVUS_ARRAY_ELEMENT_MAX_LENGTHS, MILVUS_FIELDS } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
 import {
   IndexOfflineError,
+  SPARSE_WAKE_GATE_ENABLED,
+  SPARSE_WAKE_GATE_MAX_TOKENS,
   SEARCH_OUTPUT_FIELDS,
   buildFilterExpr,
   hybridSearch,
   searchExactSections,
   sparseQueryText,
+  sparseQueryTokens,
+  sparseWakeFilterTokens,
+  sparseWakeGateExpr,
 } from '../src/search.ts'
 import type { SearchMilvus, SearchRouteDispatch } from '../src/search.ts'
 import type { SearchDependencies } from '../src/search.ts'
@@ -24,9 +29,11 @@ import type { SearchDependencies } from '../src/search.ts'
  * filtering, explicit 0 disables, explicit override), dedupe/token
  * budgets/mode resolution, the exact-section fallback with its fused
  * floor (exact-file leg unfloored, TASK-014), the typed offline
- * degradation, and the stop-word strip: sparseQueryText tokenizer-table
+ * degradation, the stop-word strip: sparseQueryText tokenizer-table
  * goldens plus the stripped BM25 `data` on both dispatch seams with the
- * dense legs proven to carry the FULL query's vector (TASK-003).
+ * dense legs proven to carry the FULL query's vector (TASK-003), and the
+ * sparse-leg wake gate (TASK-004, docs/research/sparse-wake-gate-spec.md:
+ * filter-token legality, clause merge shape, fail-open, disabled seam).
  */
 
 interface Recorded {
@@ -189,10 +196,14 @@ describe('two-route search dispatch', () => {
     for (const dispatch of [dense!, sparse!]) {
       expect(dispatch.collection_name).toBe('obsidian_mem')
       expect(dispatch.limit).toBe(8)
-      expect(dispatch.expr).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
       expect(dispatch.output_fields).toEqual([...SEARCH_OUTPUT_FIELDS])
       expect(dispatch.consistency_level).toBe('Strong')
     }
+    // The base filter rides both routes; only the SPARSE route carries
+    // the merged wake gate ('how do i' strips to rate limit).
+    expect(dense!.expr).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
+    expect(sparse!.expr)
+      .toBe('ARRAY_CONTAINS(trigger_extensions, ".ts") and ARRAY_CONTAINS_ANY(wake_keywords, ["rate", "limit"])')
     expect(dense!.anns_field).toBe(MILVUS_FIELDS.denseVector)
     expect(dense!.metric_type).toBe('COSINE')
     expect(Array.isArray(dense!.data[0])).toBe(true)
@@ -294,6 +305,123 @@ describe('sparseQueryText tokenizer table (shipped behavior)', () => {
     ['returns empty input unchanged (identity via fail-open)', '', ''],
   ])('%s', (_label, query, expected) => {
     expect(sparseQueryText(query)).toBe(expected)
+  })
+})
+
+describe('sparse-leg wake gate (TASK-004, docs/research/sparse-wake-gate-spec.md)', () => {
+  // Kill switch pinned true: the module-level const cannot be flipped
+  // per test, so the disabled shape is driven through the `enabled`
+  // parameter of the pure sparseWakeGateExpr seam below, the same call
+  // dispatchRoutes makes with SPARSE_WAKE_GATE_ENABLED.
+  it('exports the kill switch true and the expression-length cap', () => {
+    expect(SPARSE_WAKE_GATE_ENABLED).toBe(true)
+    expect(SPARSE_WAKE_GATE_MAX_TOKENS).toBe(64)
+  })
+
+  describe('sparseWakeFilterTokens legality (mirrors isUsableKeyword bounds without restating them)', () => {
+    it('trims and lower-cases every token', () => {
+      expect(sparseWakeFilterTokens([' Rate ', 'LIMIT', 'MiLvUs'])).toEqual(['rate', 'limit', 'milvus'])
+    })
+
+    it('drops tokens shorter than 2 chars and longer than the wakeKeywords element cap', () => {
+      const cap = MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords
+      expect(sparseWakeFilterTokens(['x', 'ab', 'k'.repeat(cap), 'k'.repeat(cap + 1)]))
+        .toEqual(['ab', 'k'.repeat(cap)])
+    })
+
+    it('dedupes case- and space-variants in first-seen order', () => {
+      expect(sparseWakeFilterTokens(['Rate', 'rate', ' rate ', 'limit'])).toEqual(['rate', 'limit'])
+    })
+
+    it('caps a 66-distinct-token input at SPARSE_WAKE_GATE_MAX_TOKENS, first-seen order', () => {
+      const tokens = Array.from({ length: 66 }, (_unused, index) => `tok${index}`)
+      const filtered = sparseWakeFilterTokens(tokens)
+      expect(filtered).toHaveLength(SPARSE_WAKE_GATE_MAX_TOKENS)
+      expect(filtered[0]).toBe('tok0')
+      expect(filtered[SPARSE_WAKE_GATE_MAX_TOKENS - 1]).toBe(`tok${SPARSE_WAKE_GATE_MAX_TOKENS - 1}`)
+      expect(new Set(filtered).size).toBe(SPARSE_WAKE_GATE_MAX_TOKENS)
+    })
+  })
+
+  describe('sparseWakeGateExpr pure seam (the dispatchRoutes wiring, driven by parameter)', () => {
+    it('takes gate tokens from sparseQueryTokens, so BM25 data and gate read the SAME list', () => {
+      // 'how do i' strips before legality; the tokens below are exactly
+      // the list the BM25 route joins (golden in the strip pins above).
+      expect(sparseQueryTokens('how do i rate limit')).toEqual(['rate', 'limit'])
+      expect(sparseWakeFilterTokens(sparseQueryTokens('how do i rate limit'))).toEqual(['rate', 'limit'])
+    })
+
+    it('merges the gate clause after the base expr with and (golden string)', () => {
+      expect(sparseWakeGateExpr('source_path == "notes/a.md"', 'rate limit', true))
+        .toBe('source_path == "notes/a.md" and ARRAY_CONTAINS_ANY(wake_keywords, ["rate", "limit"])')
+    })
+
+    it('emits ONLY the gate clause when no base expr applies', () => {
+      expect(sparseWakeGateExpr(undefined, 'rate limit', true))
+        .toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["rate", "limit"])')
+    })
+
+    it('fail-opens to exactly the base expr when no usable token survives (stop-words too short, or no word runs)', () => {
+      // 'a b c x': the fail-open token list is all 1-char, legality drops
+      // every one. '?! ... @#': SPARSE_TOKEN_RUN matches nothing at all.
+      expect(sparseWakeGateExpr('scope IN ["global"]', 'a b c x', true)).toBe('scope IN ["global"]')
+      expect(sparseWakeGateExpr(undefined, 'a b c x', true)).toBeUndefined()
+      expect(sparseWakeGateExpr('scope IN ["global"]', '?! ... @#', true)).toBe('scope IN ["global"]')
+    })
+
+    it('returns the base expr untouched when disabled', () => {
+      expect(sparseWakeGateExpr('source_path == "notes/a.md"', 'rate limit', false))
+        .toBe('source_path == "notes/a.md"')
+      expect(sparseWakeGateExpr(undefined, 'rate limit', false)).toBeUndefined()
+    })
+  })
+
+  describe('wake gate on the SPARSE route through dispatchRoutes (kill switch ON)', () => {
+    it('merges the gate clause into the sparse expr; the dense expr stays the ungated base expr', async () => {
+      const { client, calls } = stubMilvus({ results: [row()] })
+
+      await hybridSearch(deps(client), { query: 'how do i rate limit', ext: '.ts', topK: 4 })
+
+      const [dense, sparse] = searchDispatches(calls)
+      expect(dense!.expr).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
+      expect(sparse!.expr)
+        .toBe('ARRAY_CONTAINS(trigger_extensions, ".ts") and ARRAY_CONTAINS_ANY(wake_keywords, ["rate", "limit"])')
+    })
+
+    it('carries ONLY the gate clause on sparse when no base filter applies; dense carries none', async () => {
+      const { client, calls } = stubMilvus({ results: [row()] })
+
+      await hybridSearch(deps(client), { query: 'rate limit' })
+
+      const [dense, sparse] = searchDispatches(calls)
+      expect(dense!.expr).toBeUndefined()
+      expect(sparse!.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["rate", "limit"])')
+    })
+
+    it('fail-opens the sparse expr to exactly the base expr when no token is usable', async () => {
+      const { client, calls } = stubMilvus({ results: [row()] })
+
+      await hybridSearch(deps(client), { query: 'a b c x', ext: '.ts' })
+
+      const [dense, sparse] = searchDispatches(calls)
+      expect(dense!.expr).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
+      expect(sparse!.expr).toBe('ARRAY_CONTAINS(trigger_extensions, ".ts")')
+    })
+
+    it('gates every dispatchRoutes caller: the exact-file sparse route merges the clause too', async () => {
+      const { client, calls } = stubMilvus({ results: [row({ [MILVUS_FIELDS.sourcePath]: 'src/app.tsx' })] })
+
+      await searchExactSections(deps(client), {
+        filePath: 'src/app.tsx',
+        ext: '.tsx',
+        snippet: 'rate limit',
+      })
+
+      const [dense, sparse] = searchDispatches(calls)
+      expect(dense!.expr).toBe('source_path == "src/app.tsx"')
+      expect(sparse!.expr)
+        .toBe('source_path == "src/app.tsx" and ARRAY_CONTAINS_ANY(wake_keywords, ["rate", "limit"])')
+    })
   })
 })
 
@@ -647,14 +775,18 @@ describe('searchExactSections', () => {
       snippet: 'export function App',
     })
 
-    const dispatches = searchDispatches(calls)
-    expect(dispatches).toHaveLength(2)
+    const [dense, sparse] = searchDispatches(calls)
+    expect(searchDispatches(calls)).toHaveLength(2)
     expect(results).toHaveLength(1)
-    for (const dispatch of dispatches) {
-      expect(dispatch.expr).toBe('source_path == "src/app.tsx"')
+    for (const dispatch of [dense!, sparse!]) {
       // k defaults to RECALL_READ_MAX_SECTIONS (2), candidates are k*2.
       expect(dispatch.limit).toBe(4)
     }
+    // Exact-file leg gated too (every dispatchRoutes caller): the snippet
+    // 'export function App' strips whole, lower-cased into the clause.
+    expect(dense!.expr).toBe('source_path == "src/app.tsx"')
+    expect(sparse!.expr)
+      .toBe('source_path == "src/app.tsx" and ARRAY_CONTAINS_ANY(wake_keywords, ["export", "function", "app"])')
   })
 
   it('falls back to ext + framework filters when the exact file has no chunks', async () => {
@@ -670,13 +802,15 @@ describe('searchExactSections', () => {
     expect(results).toHaveLength(1)
     const dispatches = searchDispatches(calls)
     expect(dispatches).toHaveLength(4)
-    for (const dispatch of dispatches.slice(0, 2)) {
-      expect(dispatch.expr).toBe('source_path == "src/widget.tsx"')
-    }
-    for (const dispatch of dispatches.slice(2)) {
-      expect(dispatch.expr)
-        .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["widget", "src"])')
-    }
+    // Snippet 'widget lifecycle' is the gate token source on BOTH pairs;
+    // the dense legs keep the ungated base exprs (TASK-006 goldens).
+    expect(dispatches[0]!.expr).toBe('source_path == "src/widget.tsx"')
+    expect(dispatches[1]!.expr)
+      .toBe('source_path == "src/widget.tsx" and ARRAY_CONTAINS_ANY(wake_keywords, ["widget", "lifecycle"])')
+    expect(dispatches[2]!.expr)
+      .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["widget", "src"])')
+    expect(dispatches[3]!.expr)
+      .toBe('ARRAY_CONTAINS(trigger_extensions, ".tsx") and ARRAY_CONTAINS_ANY(trigger_frameworks, ["react"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["widget", "src"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["widget", "lifecycle"])')
   })
 
   it('always carries the fileTokens wake-keyword clause (TASK-008)', async () => {
@@ -690,11 +824,12 @@ describe('searchExactSections', () => {
 
     const dispatches = searchDispatches(calls)
     expect(dispatches).toHaveLength(4)
-    for (const dispatch of dispatches.slice(2)) {
-      // Trailing separators are trimmed; the clause is no longer gated on
-      // "nothing else narrows" (TASK-008).
-      expect(dispatch.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"])')
-    }
+    // Trailing separators are trimmed; the clause is no longer gated on
+    // "nothing else narrows" (TASK-008). Snippet 'deployment notes'
+    // merges the wake gate onto the fallback's sparse expr only.
+    expect(dispatches[2]!.expr).toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"])')
+    expect(dispatches[3]!.expr)
+      .toBe('ARRAY_CONTAINS_ANY(wake_keywords, ["src", "app"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["deployment", "notes"])')
   })
 
   it('joins the wake-keyword clause with framework filters (TASK-008)', async () => {
@@ -707,10 +842,14 @@ describe('searchExactSections', () => {
       snippet: 'ops notes',
     })
 
-    for (const dispatch of searchDispatches(calls).slice(2)) {
-      expect(dispatch.expr)
-        .toBe('ARRAY_CONTAINS_ANY(trigger_frameworks, ["milvus"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["notes"])')
-    }
+    const dispatches = searchDispatches(calls)
+    // The gated sparse expr stacks the wake gate behind the caller's own
+    // wake_keywords clause: both intersections must hold (snippet 'ops
+    // notes' is the gate token source).
+    expect(dispatches[2]!.expr)
+      .toBe('ARRAY_CONTAINS_ANY(trigger_frameworks, ["milvus"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["notes"])')
+    expect(dispatches[3]!.expr)
+      .toBe('ARRAY_CONTAINS_ANY(trigger_frameworks, ["milvus"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["notes"]) and ARRAY_CONTAINS_ANY(wake_keywords, ["ops", "notes"])')
   })
 
   it('skips the fallback without fileTokens that could intersect (TASK-008)', async () => {

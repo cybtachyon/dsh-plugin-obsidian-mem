@@ -43,7 +43,19 @@
  * strip from search.ts's emitted module, TASK-002) in every dispatch,
  * matching production. --keep-stopwords sends the RAW query on the sparse
  * route instead, the baseline half of the strip A/B (TASK-004/005); the
- * choice is echoed in the artifact config block.
+ * choice is echoed in the artifact config block. --wake-gate (PLAN-wake-
+ * gate, docs/research/sparse-wake-gate-spec.md) merges the production
+ * sparse-leg wake gate into the split-rrf sparse route's scalar filter:
+ * ARRAY_CONTAINS_ANY(wake_keywords, [<stripped query tokens>]) computed
+ * from the SAME lib pieces dispatchRoutes uses
+ * (sparseQueryTokens/sparseWakeFilterTokens/buildFilterExpr, honoring
+ * the imported SPARSE_WAKE_GATE_ENABLED kill switch), fail-open when no
+ * token survives. routeMembership's sparse probe mirrors the expr so the
+ * route flags describe the gated route. The legacy-hybrid BM25 route
+ * lives inside one hybridSearch that cannot carry a per-route filter, so
+ * --wake-gate --mode legacy-hybrid is rejected. split-rrf sparse route
+ * only; the dense route never carries the gate clause. Echoed in the
+ * artifact config block and the aggregates line.
  *
  * Embeddings come from the production embedder itself:
  * packages/service/lib/embedder.js createEmbedder() loads standalone
@@ -90,7 +102,11 @@ const {
   RRF_RANKER_K,
   DENSE_SEARCH_EF,
   CANDIDATE_OVERSAMPLE,
+  SPARSE_WAKE_GATE_ENABLED,
+  buildFilterExpr,
   sparseQueryText,
+  sparseQueryTokens,
+  sparseWakeFilterTokens,
 } = await import('../../packages/service/lib/search.js')
 const { assertOk } = await import('../../packages/service/lib/milvus/ok.js')
 const {
@@ -120,6 +136,7 @@ Usage:
   --dense-range  N     dense range_filter; INCLUSIVE upper bound (split-rrf only)
   --sparse-radius N    client-side BM25 floor: keep hits with -score >= N (split-rrf only)
   --keep-stopwords     send the RAW query to the BM25 route, skipping the production sparseQueryText stop-word strip (A/B baseline)
+  --wake-gate          gate the BM25 route on stored wake_keywords intersecting the stripped query tokens (production SPARSE_WAKE_GATE parity); split-rrf sparse route only
   --rrf-k N            RRF fusion k (default ${RRF_RANKER_K}, imported from search.ts); RRFRanker(k) in legacy-hybrid
   --min-score N        floor on FUSED scores before the top-k cut (default: none)
   --top-k N            page size (default ${SEARCH_DEFAULT_TOP_K})
@@ -136,6 +153,7 @@ function parseArgs(argv) {
     denseRange: undefined,
     sparseRadius: undefined,
     keepStopwords: false,
+    wakeGate: false,
     rrfK: RRF_RANKER_K,
     minScore: undefined,
     topK: SEARCH_DEFAULT_TOP_K,
@@ -171,6 +189,9 @@ function parseArgs(argv) {
         break
       case '--keep-stopwords':
         opts.keepStopwords = true
+        break
+      case '--wake-gate':
+        opts.wakeGate = true
         break
       case '--rrf-k':
         opts.rrfK = number(arg, argv[++i])
@@ -235,6 +256,22 @@ function sparseText(query, opts) {
   return opts.keepStopwords ? query : sparseQueryText(query)
 }
 
+// wakeGateExpr merges the production sparse-leg wake gate into a
+// sparse route's base filter expr exactly as search.ts dispatchRoutes
+// does (docs/research/sparse-wake-gate-spec.md §"Gate definition"):
+// clause = buildFilterExpr({ wakeKeywords: sparseWakeFilterTokens
+// (sparseQueryTokens(query)) }) joined after the base with ` and `.
+// Fail-open: flag off, the imported SPARSE_WAKE_GATE_ENABLED kill switch
+// false (mirrors production; main() notes it once), or no usable token
+// surviving legality → base expr unchanged, clause absent.
+function wakeGateExpr(baseExpr, query, opts) {
+  if (!opts.wakeGate || !SPARSE_WAKE_GATE_ENABLED) {
+    return baseExpr
+  }
+  const gate = buildFilterExpr({ wakeKeywords: sparseWakeFilterTokens(sparseQueryTokens(query)) })
+  return gate === undefined ? baseExpr : (baseExpr === undefined ? gate : `${baseExpr} and ${gate}`)
+}
+
 // legacyHybrid replays the retired pre-split dispatchHybrid shape: one
 // hybridSearch, per-route metric_type (G3), ef on the dense route only,
 // RRFRanker(k), route AND page limit = candidateLimit, G10 projection.
@@ -285,8 +322,12 @@ async function routeMembership(client, embedder, query, opts, candidateLimit) {
     output_fields: [MILVUS_FIELDS.chunkId],
     consistency_level: MILVUS_CONSISTENCY_LEVEL,
   }), 'search(dense route membership)')
+  const sparseMembershipExpr = wakeGateExpr(undefined, query, opts)
   const sparseRes = assertOk(await client.search({
     collection_name: MILVUS_COLLECTION,
+    // Gated membership so route flags describe the gated route (the
+    // dense membership search never carries the gate clause).
+    ...(sparseMembershipExpr === undefined ? {} : { expr: sparseMembershipExpr }),
     anns_field: MILVUS_FIELDS.sparseVector,
     data: [sparseText(query, opts)],
     limit: candidateLimit,
@@ -328,8 +369,12 @@ async function splitRrf(client, embedder, query, opts, candidateLimit) {
     output_fields: [...SEARCH_OUTPUT_FIELDS],
     consistency_level: MILVUS_CONSISTENCY_LEVEL,
   }), 'search(dense)')
+  const sparseExpr = wakeGateExpr(undefined, query, opts)
   const sparseRes = assertOk(await client.search({
     collection_name: MILVUS_COLLECTION,
+    // split-rrf sparse route only: the wake gate rides the scalar
+    // filter, the dense search above keeps the ungated (absent) expr.
+    ...(sparseExpr === undefined ? {} : { expr: sparseExpr }),
     anns_field: MILVUS_FIELDS.sparseVector,
     data: [sparseText(query, opts)],
     limit: candidateLimit,
@@ -465,6 +510,12 @@ async function main() {
     && (opts.denseRadius !== undefined || opts.denseRange !== undefined || opts.sparseRadius !== undefined)) {
     progress('note: radius knobs are split-rrf only; lite ignores per-route radii inside hybridSearch (findings §4), so they are dropped in legacy-hybrid')
   }
+  if (opts.wakeGate && opts.mode === 'legacy-hybrid') {
+    throw new Error('--wake-gate is split-rrf only: the legacy-hybrid BM25 route lives inside one hybridSearch and cannot carry a per-route filter (gate the split-rrf sparse route instead)')
+  }
+  if (opts.wakeGate && !SPARSE_WAKE_GATE_ENABLED) {
+    progress('note: SPARSE_WAKE_GATE_ENABLED is false in the shipped lib; --wake-gate is a no-op, mirroring the production kill switch')
+  }
 
   const { port, pid } = JSON.parse(readFileSync(PORT_FILE, 'utf8'))
   progress(`attaching to live milvus-lite pid ${pid} port ${port} (read-only)`)
@@ -566,7 +617,8 @@ async function main() {
     `\n=== AGGREGATES mode=${opts.mode} topK=${opts.topK} oversample=${opts.oversample}`
     + ` rrfK=${opts.rrfK} minScore=${opts.minScore ?? 'none'}`
     + ` denseRadius=${opts.denseRadius ?? 'none'} denseRange=${opts.denseRange ?? 'none'}`
-    + ` sparseRadius=${opts.sparseRadius ?? 'none'} keepStopwords=${opts.keepStopwords}`,
+    + ` sparseRadius=${opts.sparseRadius ?? 'none'} keepStopwords=${opts.keepStopwords}`
+    + ` wakeGate=${opts.wakeGate}`,
   )
   console.log(
     `  queries=${aggregates.queries} returned=${aggregates.returned}`
@@ -596,6 +648,7 @@ async function main() {
       denseRange: opts.denseRange ?? null,
       sparseRadius: opts.sparseRadius ?? null,
       keepStopwords: opts.keepStopwords,
+      wakeGate: opts.wakeGate,
       denseEf: DENSE_SEARCH_EF,
       embedder: embedder.modelId,
       embedCalls: denseEmbedCalls,

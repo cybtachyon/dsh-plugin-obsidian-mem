@@ -35,7 +35,16 @@
  * CHUNKS depend on live collection content (2026-11-13: exactly two
  * Han-bearing chunks).
  *
- * Run: node docs/research/probes/zh-analyzer-probe.mjs
+ * Run: node docs/research/probes/zh-analyzer-probe.mjs [--wake-gate]
+ * WITHOUT --wake-gate (default OFF) the output is byte-identical to the
+ * TASK-003 pin. WITH --wake-gate every SEARCH carries the production
+ * sparse-leg wake gate as its scalar expr, built the way dispatchRoutes
+ * builds it (ARRAY_CONTAINS_ANY(wake_keywords, [sparseWakeFilterTokens
+ * (sparseQueryTokens(text))]) via buildFilterExpr, fail-open to no expr
+ * when no token survives; the imported SPARSE_WAKE_GATE_ENABLED kill
+ * switch is honored, --wake-gate then a noted no-op), and the SEARCH
+ * lines echo that expr. This is the TASK-010/011 zh comparison form
+ * (PLAN-wake-gate TASK-007).
  * Output: one JSON object per line on stdout (BOOT, two LOCATE context
  * lines, one SEARCH line per pinned text with its surviving
  * {chunk_id, source_path, score} digest, then a SUMMARY roll-up);
@@ -58,7 +67,41 @@ const {
   MILVUS_CONSISTENCY_LEVEL,
   MILVUS_FIELDS,
 } = await import('../../../packages/core/lib/index.js')
-const { sparseQueryText } = await import('../../../packages/service/lib/search.js')
+const {
+  SPARSE_WAKE_GATE_ENABLED,
+  buildFilterExpr,
+  sparseQueryText,
+  sparseQueryTokens,
+  sparseWakeFilterTokens,
+} = await import('../../../packages/service/lib/search.js')
+
+// --wake-gate is the only accepted flag; default OFF keeps the output
+// byte-identical to the TASK-003 pin. Parse errors surface through
+// main()'s FATAL path (called there, not at module load).
+function parseWakeGate(argv) {
+  let wakeGate = false
+  for (const arg of argv) {
+    if (arg !== '--wake-gate') {
+      throw new Error(`unknown argument "${arg}" (only --wake-gate is accepted)`)
+    }
+    wakeGate = true
+  }
+  return wakeGate
+}
+
+// wakeGateExpr builds the production sparse-leg wake gate for one probe
+// text exactly as search.ts dispatchRoutes merges it
+// (docs/research/sparse-wake-gate-spec.md §"Gate definition"): the
+// clause is buildFilterExpr({ wakeKeywords }) over
+// sparseWakeFilterTokens(sparseQueryTokens(text)) with the shipped
+// quoteExpr/listLiteral escaping. There is no base expr here (the probe
+// dispatches ungated otherwise), and fail-open is the same shape: no
+// usable token survives legality → no clause → the search keeps today's
+// no-expr form (single-codepoint texts gate empty, exactly the
+// spec §Step 1.3 reading).
+function wakeGateExpr(text) {
+  return buildFilterExpr({ wakeKeywords: sparseWakeFilterTokens(sparseQueryTokens(text)) })
+}
 
 const PORT_FILE = process.env.MEMLITE_JSON
   ?? '/home/derek/.dsh/obsidian-mem-db/.memlite.json'
@@ -116,6 +159,11 @@ function searchHits(response) {
 }
 
 async function main() {
+  let wakeGate = parseWakeGate(process.argv.slice(2))
+  if (wakeGate && !SPARSE_WAKE_GATE_ENABLED) {
+    progress('note: SPARSE_WAKE_GATE_ENABLED is false in the shipped lib; --wake-gate is a no-op, mirroring the production kill switch')
+    wakeGate = false
+  }
   const { port, pid } = JSON.parse(readFileSync(PORT_FILE, 'utf8'))
   progress(`attaching to live milvus-lite pid ${pid} port ${port} (read-only)`)
   const client = new MilvusClient({
@@ -135,7 +183,7 @@ async function main() {
   await client.connectPromise
   const version = await client.getVersion()
   const rowCount = Number((await client.count({ collection_name: MILVUS_COLLECTION })).data ?? 0)
-  log({ probe: 'BOOT', version, rowCount })
+  log({ probe: 'BOOT', version, rowCount, ...(wakeGate ? { wakeGate: true } : {}) })
   if (rowCount === 0) {
     throw new Error(`${MILVUS_COLLECTION} is empty; the probe answers nothing (not a server fault)`)
   }
@@ -177,8 +225,12 @@ async function main() {
       log({ probe: id, text, note, skipped: 'empty after strip; production fail-open would send the original' })
       continue
     }
+    // Production-merged gate expr per SEARCH when --wake-gate (default
+    // OFF: expr undefined, request and output byte-identical to today).
+    const expr = wakeGate ? wakeGateExpr(text) : undefined
     const response = await client.search({
       collection_name: MILVUS_COLLECTION,
+      ...(expr === undefined ? {} : { expr }),
       anns_field: MILVUS_FIELDS.sparseVector,
       data: [text],
       limit: SEARCH_LIMIT,
@@ -189,7 +241,7 @@ async function main() {
     })
     const digest = digestHits(searchHits(response))
     searches.push({ probe: id, text, hits: digest })
-    log({ probe: id, text, note, n: digest.length, digest })
+    log({ probe: id, text, note, ...(expr === undefined ? {} : { expr }), n: digest.length, digest })
   }
 
   log({

@@ -27,6 +27,9 @@ AGENTS.md:
   tools: `memory_audit` checkpoint view; events: turn-end reminder row
   replaced by "the memory-tool watch only" (the DSH Event Facts
   `turn/end` bullet keeps its fact, the plugin-usage sentence updates).
+- If AGENTS.md still cites the release-prep artifact count ("232"),
+  refresh it to the current `verify-emit` count (264 as of TASK-015) or
+  phrase it without a number.
 - Dev Environment Tips: nothing new unless the build changed (it did not).
 
 Do not touch the prepared prompt constants.

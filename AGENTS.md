@@ -99,7 +99,10 @@
     the emitted lib artifacts (`.js`, `.d.ts`, `.js.map`, and `.d.ts.map` in
     `dsh` and every `packages/*/lib`) so the build leaves the tree clean.
   - Then `node scripts/verify-emit.mjs` fails the build when any expected
-    `lib` artifact, `dsh/host.js`, or `dsh/client.js` is missing or emptied.
+    `lib` artifact, `dsh/host.js`, or `dsh/client.js` is missing or emptied,
+    when a prepared prompt lib carrier drifts from its src bytes, or when a
+    `packages/*/lib` file has no `src` sibling (a stale leftover of a deleted
+    source, which must be `git rm`'d).
   - `react` and `@deepseek-ai/dsh-client-ui-primitives` are esbuild externals:
     they stay out of the bundle and resolve at runtime through the DSH's
     frozen platform module table with `require` calls.
@@ -253,7 +256,8 @@ Fetch these docs to answer questions about their covered topic.
   artifact, then
   `node scripts/build-format.mjs`, then `node scripts/verify-emit.mjs` which
   fails the build when any expected `lib` artifact, `dsh/host.js`, or
-  `dsh/client.js` is missing or emptied).
+  `dsh/client.js` is missing or emptied, or when a `packages/*/lib` file
+  has no `src` sibling).
 - Run the full test suite with `pnpm test` (runs `vitest run`).
 - Run coverage with `pnpm test:coverage`; the suite must clear the thresholds
   in `vitest.config.ts` (TASK-060 raised them to the project bar: lines 85 /

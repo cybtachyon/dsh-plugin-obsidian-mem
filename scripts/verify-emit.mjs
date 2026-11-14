@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-// VerifyEmit asserts every tsc-expected artifact exists and is non-empty.
+// VerifyEmit asserts every tsc-expected artifact exists and is non-empty,
+// and that no lib file lacks a src sibling.
 // Runs last in `pnpm build`: a truncated or missing lib output must fail the
 // build here, not later as a runtime ESM link error in the dsh host. The
 // corruption this guards (see the dsh-plugin-local-infer release of 0.1.4)
@@ -138,6 +139,49 @@ function expectedOutputs(pkgDir) {
     return expected;
 }
 
+// packageDirs lists the package directories under packages/ that carry a
+// tsconfig (the compiled half of the workspace; the bundle meta-package
+// has none and is not part of the tsc emit contract).
+function packageDirs(rootDir) {
+    return fs.readdirSync(path.join(rootDir, PACKAGE_JSON), { withFileTypes: true })
+        .filter(entry => entry.isDirectory()
+            && fs.existsSync(path.join(rootDir, PACKAGE_JSON, entry.name, 'tsconfig.json')))
+        .map(entry => path.join(rootDir, PACKAGE_JSON, entry.name));
+}
+
+// staleLibArtifacts lists, per package, files under the configured outDir
+// carrying an EMITTED extension that no file in rootDir emits: leftovers of
+// deleted or renamed sources. tsc -b prunes only outputs it still tracks in
+// tsbuildinfo, so a git rm'd source (events/lib/budget.* in TASK-010) can
+// leave tracked lib files behind that ship forever and shadow nothing but
+// mislead installs. Failing the build here keeps the stale-lib check of
+// the verification gate mechanical; the fix is `git rm <file>`.
+export function staleLibArtifacts(rootDir) {
+    const stale = [];
+    for (const pkgDir of packageDirs(rootDir)) {
+        const tsconfig = readTsConfig(pkgDir);
+        const srcDir = path.join(pkgDir, tsconfig.compilerOptions.rootDir ?? 'src');
+        const outDir = path.join(pkgDir, tsconfig.compilerOptions.outDir ?? 'lib');
+        if (!fs.existsSync(outDir)) {
+            continue;
+        }
+        for (const emitted of fs.readdirSync(outDir, { recursive: true })) {
+            const emittedPath = path.join(outDir, emitted);
+            if (!fs.statSync(emittedPath).isFile()) {
+                continue;
+            }
+            if (!EMITTED.some(ext => emitted.endsWith(`.${ext}`))) {
+                continue;
+            }
+            const stem = emitted.replace(/\.(js\.map|d\.ts\.map|js|d\.ts)$/, '');
+            if (!SOURCE_EXTENSIONS.some(ext => fs.existsSync(path.join(srcDir, stem + ext)))) {
+                stale.push(`${path.relative(rootDir, emittedPath)}: no "${stem}.ts(x)" source sibling`);
+            }
+        }
+    }
+    return stale;
+}
+
 function inspectArtifacts(expected) {
     const broken = [];
     for (const file of expected) {
@@ -160,10 +204,7 @@ function inspectArtifacts(expected) {
 
 // main runs the checks and exits non-zero on any breakage.
 function main() {
-    const packages = fs.readdirSync(path.join(ROOT, PACKAGE_JSON), { withFileTypes: true })
-        .filter(entry => entry.isDirectory()
-            && fs.existsSync(path.join(ROOT, PACKAGE_JSON, entry.name, 'tsconfig.json')))
-        .map(entry => path.join(ROOT, PACKAGE_JSON, entry.name));
+    const packages = packageDirs(ROOT);
 
     // One derivation per package, shared by the broken check and the total, so
     // the reported count and the verified set can never disagree.
@@ -189,12 +230,26 @@ function main() {
     // Byte fidelity of the prepared prompt constants in their lib carriers.
     broken.push(...promptConstantDrifts(ROOT));
 
-    if (broken.length > 0) {
-        console.error(`verify-emit: ${broken.length} broken artifact(s):`);
-        for (const item of broken) {
-            console.error(`  ${item}`);
+    // lib files with no src sibling: leftovers of a deleted source that must
+    // be git rm'd rather than left to ship. Separately reported because the
+    // fix (git rm) differs from a truncated emit's (rebuild).
+    const orphans = staleLibArtifacts(ROOT);
+
+    if (broken.length > 0 || orphans.length > 0) {
+        if (broken.length > 0) {
+            console.error(`verify-emit: ${broken.length} broken artifact(s):`);
+            for (const item of broken) {
+                console.error(`  ${item}`);
+            }
+            console.error('Delete packages/*/tsconfig.tsbuildinfo and rerun the build.');
         }
-        console.error('Delete packages/*/tsconfig.tsbuildinfo and rerun the build.');
+        if (orphans.length > 0) {
+            console.error(`verify-emit: ${orphans.length} stale lib artifact(s):`);
+            for (const item of orphans) {
+                console.error(`  ${item}`);
+            }
+            console.error('Remove them with git rm <file>.');
+        }
         process.exit(1);
     }
 

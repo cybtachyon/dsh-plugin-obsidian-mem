@@ -89,11 +89,12 @@ defaults track `search.ts` without restating its values. The strip helper
 node scripts/eval/recall-eval.mjs --mode legacy-hybrid
 
 # a split-rrf point at the shipped production knobs (the values
-# search.ts exports today; --min-score = FUSED_SCORE_FLOOR 1/(k+2)):
-node scripts/eval/recall-eval.mjs --mode split-rrf \
-  --dense-radius 0.78 --dense-range 1.0 --sparse-radius 5.0 \
+# search.ts exports today, gate ON per SPARSE_WAKE_GATE_ENABLED;
+# --min-score = FUSED_SCORE_FLOOR 1/(k+2)):
+node scripts/eval/recall-eval.mjs --mode split-rrf --wake-gate \
+  --dense-radius 0.78 --dense-range 1.0 --sparse-radius 4.75 \
   --rrf-k 60 --min-score 0.016129 --top-k 6 --oversample 2 \
-  --label split-d078-s50-k60-m016129
+  --label split-d078-s475-k60-m016129-wakegate
 
 # commit-ready artifact at an explicit path:
 node scripts/eval/recall-eval.mjs --mode legacy-hybrid --out docs/research/eval-baseline-legacy.json

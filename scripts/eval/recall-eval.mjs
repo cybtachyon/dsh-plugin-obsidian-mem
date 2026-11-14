@@ -74,11 +74,12 @@
  * scripts/eval/results/<label>.json):
  *   node scripts/eval/recall-eval.mjs --mode legacy-hybrid
  *   # split-rrf at the shipped production knobs (the values search.ts
- *   # exports; --min-score = FUSED_SCORE_FLOOR 1/(k+2)):
- *   node scripts/eval/recall-eval.mjs --mode split-rrf \
- *     --dense-radius 0.78 --dense-range 1.0 --sparse-radius 5.0 \
+ *   # exports, gate ON per SPARSE_WAKE_GATE_ENABLED; --min-score =
+ *   # FUSED_SCORE_FLOOR 1/(k+2)):
+ *   node scripts/eval/recall-eval.mjs --mode split-rrf --wake-gate \
+ *     --dense-radius 0.78 --dense-range 1.0 --sparse-radius 4.75 \
  *     --rrf-k 60 --min-score 0.016129 --top-k 6 --oversample 2 \
- *     --label split-d078-s50-k60-m016129
+ *     --label split-d078-s475-k60-m016129-wakegate
  * See scripts/eval/README.md for every knob and the label caveats.
  * @module scripts/eval/recall-eval
  */

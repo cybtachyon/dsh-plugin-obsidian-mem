@@ -63,6 +63,11 @@ pid 1091813 verified alive 2026-11-13).
   gap): fix wake extraction to emit Han wake keys FIRST (TASK-017),
   then wire the gate per the spec unchanged. Option 4 stays the FAIL-
   only opener; the zh-carry-out alternative was rejected.
+- Q5 (2026-11-13 user answer, after the Step 3 FAIL): route the FAIL
+  through a gate-parity SPARSE_SEARCH_RADIUS re-sweep FIRST (TASK-006
+  precedent). If it recovers relevant-of-labeled to >= baseline with
+  forbidden and zh held, ship gate + retuned floor (TASK-019) and
+  resume Phase D; Option 4 stays open, unspent, if the sweep fails.
 
 ## Tasks
 
@@ -244,9 +249,23 @@ pid 1091813 verified alive 2026-11-13).
  TASK-013 (Phase D live confirmation) is superseded: the gate does
  not ship on a FAIL.
 
+### Phase C2: gated-parity floor re-sweep (Q5 answer)
+
+ - [ ] [TASK-018-gated-floor-sweep](docs/PLAN-wake-gate-TASK-018-gated-floor-sweep.md)
+ - [ ] [TASK-019-ship-retuned-floor](docs/PLAN-wake-gate-TASK-019-ship-retuned-floor.md)
+
 ### Phase D: live confirmation (spec Step 4, sequencing per Q1 answer)
 
  - [ ] [TASK-013-live-confirmation-or-handoff](docs/PLAN-wake-gate-TASK-013-live-confirmation-or-handoff.md)
+
+  Status: superseded while the FAIL stands; un-superseded iff TASK-018
+  recovers and TASK-019 ships the retuned shape.
+
+## Dependencies (tail)
+
+- Q5 routing: TASK-018 (gated floor sweep, read-only) -> TASK-019
+  (ship retuned floor, conditional YES) -> TASK-013. Sweep NO
+  escalates Option 4 vs plan-close to the user.
 
 ## Dependencies
 

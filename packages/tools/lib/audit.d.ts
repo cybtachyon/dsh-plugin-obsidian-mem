@@ -10,6 +10,7 @@
  * store path, so the tool adds no further fencing.
  * @module dsh-plugin-obsidian-mem/tools/audit
  */
+import type { VaultConfig } from '../../core/lib/index.js';
 import type { AuditView } from '../../service/lib/audit.js';
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js';
 import type { BudgetSectionValue } from './toolkit.js';
@@ -92,22 +93,16 @@ export declare function executeAudit(service: MemoryService, args: unknown): Pro
  * FirstSharedVaultPath answers the first registered shared vault's path,
  * falling back to the default vault path (which provisioning registers as
  * shared) when no shared vault is registered. Pure: reads only the vault
- * list handed to it. Mirrors the events turn-end pick; TASK-010 retires
- * that copy.
+ * list handed to it, and the pick itself is the one core
+ * {@link firstSharedVault} definition.
  */
-export declare function firstSharedVaultPath(vaults: readonly {
-    path: string;
-    mode: string;
-}[], homedirValue?: string): string;
+export declare function firstSharedVaultPath(vaults: readonly VaultConfig[], homedirValue?: string): string;
 /**
  * RenderAudit is the model-facing rendering of one memory_audit value.
  * `vaults` only supplies the first shared vault the `checkpoint` view's
  * appended instructions point at; every other section ignores it.
  */
-export declare function renderAudit(value: AuditValue, vaults?: readonly {
-    path: string;
-    mode: string;
-}[]): string;
+export declare function renderAudit(value: AuditValue, vaults?: readonly VaultConfig[]): string;
 /** Build the memory_audit definition for one service seam. */
 export declare function createAuditTool(service: MemoryService): ToolDefinition;
 //# sourceMappingURL=audit.d.ts.map

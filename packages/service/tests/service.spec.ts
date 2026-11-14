@@ -1679,7 +1679,7 @@ describe('vault git wiring', () => {
   }
 
   /** CommitMessages lists the -m message of every recorded `commit` call. */
-  function commitMessages(git: ReturnType<typeof recordingGit>): string[] {
+  function commitMessages(git: ReturnType<typeof recordingGit>): Array<string | undefined> {
     return git.calls
       .filter((call) => call.argv.includes('commit'))
       .map((call) => call.argv[call.argv.indexOf('-m') + 1])

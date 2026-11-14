@@ -16,11 +16,12 @@ import {
   AUDIT_DEFAULT_LIMIT,
   AUDIT_MAX_LIMIT,
   defaultVaultPath,
+  firstSharedVault,
   MANUAL_COMPACTION_APPROVAL,
   MANUAL_COMPACTION_RECIPE,
   TOOL_MEMORY_AUDIT,
-  VAULT_MODE_SHARED,
 } from '../../core/lib/index.js'
+import type { VaultConfig } from '../../core/lib/index.js'
 import { AUDIT_VIEWS } from '../../service/lib/audit.js'
 import type { AuditReport, AuditRequest, AuditView } from '../../service/lib/audit.js'
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js'
@@ -350,24 +351,27 @@ function mapReport(report: AuditReport): AuditValue {
  * FirstSharedVaultPath answers the first registered shared vault's path,
  * falling back to the default vault path (which provisioning registers as
  * shared) when no shared vault is registered. Pure: reads only the vault
- * list handed to it. Mirrors the events turn-end pick; TASK-010 retires
- * that copy.
+ * list handed to it, and the pick itself is the one core
+ * {@link firstSharedVault} definition.
  */
 export function firstSharedVaultPath(
-  vaults: readonly { path: string, mode: string }[],
+  vaults: readonly VaultConfig[],
   homedirValue: string = homedir(),
 ): string {
-  const shared = vaults.find((entry) => entry.mode === VAULT_MODE_SHARED)
-  return shared?.path ?? defaultVaultPath(homedirValue)
+  return firstSharedVault(vaults)?.path ?? defaultVaultPath(homedirValue)
 }
 
 // CheckpointSection fills the prepared instructions' {{FIRST_SHARED_VAULT}}
 // hole; the constant itself stays byte-identical (pinned by the TASK-015
 // carrier suite).
-function checkpointSection(vaults: readonly { path: string, mode: string }[]): string {
+function checkpointSection(vaults: readonly VaultConfig[]): string {
   const vaultPath = firstSharedVaultPath(vaults)
   return AUDIT_CHECKPOINT_PROMPT_SECTION_TEXT.replace('{{FIRST_SHARED_VAULT}}', () => vaultPath)
 }
+
+// The rollup prints a head hash at git's default short-form width; the
+// full 40 chars add nothing a `git log` at the vault cannot print.
+const GIT_HEAD_ABBREV = 7
 
 /**
  * RenderAudit is the model-facing rendering of one memory_audit value.
@@ -376,7 +380,7 @@ function checkpointSection(vaults: readonly { path: string, mode: string }[]): s
  */
 export function renderAudit(
   value: AuditValue,
-  vaults: readonly { path: string, mode: string }[] = [],
+  vaults: readonly VaultConfig[] = [],
 ): string {
   if (value.kind === 'failed') {
     return value.message
@@ -429,7 +433,7 @@ export function renderAudit(
     lines.push('')
     for (const entry of value.stats.git) {
       const state = entry.error !== null || entry.clean === null ? 'unavailable' : entry.clean ? 'clean' : 'dirty'
-      const head = entry.head_hash === null ? '' : ` [head ${entry.head_hash.slice(0, 7)}]`
+      const head = entry.head_hash === null ? '' : ` [head ${entry.head_hash.slice(0, GIT_HEAD_ABBREV)}]`
       lines.push(`Git (${entry.vault}): ${state}${head}`)
     }
   }

@@ -82,7 +82,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 
  - [x] [TASK-011-client-git-toggle](docs/PLAN-git-versioning-TASK-011-client-git-toggle.md)
  - [x] [TASK-012-docs-readme-agents](docs/PLAN-git-versioning-TASK-012-docs-readme-agents.md)
- - [ ] [TASK-013-refactor-phase-cde](docs/PLAN-git-versioning-TASK-013-refactor-phase-cde.md)
+ - [x] [TASK-013-refactor-phase-cde](docs/PLAN-git-versioning-TASK-013-refactor-phase-cde.md)
 
 ### Phase F: whole-repo verification
 

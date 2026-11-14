@@ -717,7 +717,11 @@ export class ObsidianMemService extends Service {
     // git ever being contacted. On an adopted vault a null accessor answer
     // means the git command itself failed (the manager logged the cause),
     // which degrades that vault's entry to its error instead of failing the
-    // audit (the reference auditGit degradation).
+    // audit (the reference auditGit degradation). The error wording stays
+    // generic by adjudication (TASK-013): logShared/statusShared are NOT
+    // widened to carry git's message into AuditGitFacts, because the
+    // manager log is the one home of the command error and the model-facing
+    // report keeps raw git stderr (paths, locale text) out of its tokens.
     async gitAuditFacts(vaults) {
         if (!this.config.git.enabled) {
             return [];

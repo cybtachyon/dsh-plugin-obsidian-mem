@@ -338,6 +338,63 @@ const ECHO_TEXT_CAP = 200
 // Parse errors echoed into one malformed-notes issue detail line.
 const MALFORMED_ERROR_ECHO_CAP = 3
 
+// The one remediation both git INFO families (git-error, git-not-adopted)
+// answer: the card's Use Git toggle owns the vault's git state.
+const GIT_INFO_REMEDIATION = 'check the vault\'s git state; the Obsidian Mem card owns the Use Git toggle'
+
+/**
+ * GitVersioningSection joins the injected git facts onto the shared
+ * inventories (TASK-008): the per-vault churn maps the rows read from, the
+ * shared-registry-order rollup, and the git INFO family (git-error ahead
+ * of git-not-adopted per vault). A vault the reader answered nothing for
+ * is skipped; a disabled git gate answers no facts, so everything here
+ * stays empty.
+ */
+function gitVersioningSection(
+  shared: readonly VaultInventory[],
+  gitFacts: readonly AuditGitFacts[],
+  churnWindowCommits: number,
+): {
+  churnByVault: Map<string, Map<string, number>>
+  rollup: AuditReport['stats']['git']
+  issues: AuditIssue[]
+} {
+  const factByVault = new Map(gitFacts.map((fact) => [fact.vaultPath, fact]))
+  const churnByVault = new Map<string, Map<string, number>>()
+  const rollup: AuditReport['stats']['git'] = []
+  const issues: AuditIssue[] = []
+  for (const inventory of shared) {
+    const fact = factByVault.get(inventory.vault.path)
+    if (fact === undefined) {
+      continue
+    }
+    churnByVault.set(inventory.vault.path, churnByPath(fact.commits, churnWindowCommits))
+    rollup.push({
+      vault: inventory.vault.path,
+      initialized: fact.initialized,
+      clean: fact.clean,
+      headHash: fact.headHash,
+      error: fact.error,
+    })
+    if (fact.error !== null) {
+      issues.push({
+        id: 'git-error',
+        severity: 'INFO',
+        detail: `git reads failed for shared vault ${quoted(inventory.vault.path, ECHO_PATH_CAP)}: ${quoted(fact.error, ECHO_TEXT_CAP)}`,
+        remediation: GIT_INFO_REMEDIATION,
+      })
+    } else if (!fact.initialized) {
+      issues.push({
+        id: 'git-not-adopted',
+        severity: 'INFO',
+        detail: `shared vault ${quoted(inventory.vault.path, ECHO_PATH_CAP)} is registered with git enabled but the plugin does not manage a git repository for it`,
+        remediation: GIT_INFO_REMEDIATION,
+      })
+    }
+  }
+  return { churnByVault, rollup, issues }
+}
+
 /**
  * InventoryVault walks one vault read-only: the root note tree (the vault
  * root IS the note root; size-before-read, read cap, reserved placement,
@@ -924,34 +981,11 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
   }
 
   // 9. Git versioning (TASK-008): the per-shared-vault rollup joined onto
-  // the shared registry (a read-only vault never appears, and a disabled
-  // git gate answers no facts, so the rollup and both INFO families stay
-  // empty), plus the per-vault churn maps the rows read from.
-  const gitFacts = await deps.gitHistory()
-  const factByVault = new Map(gitFacts.map((fact) => [fact.vaultPath, fact]))
-  const churnByVault = new Map<string, Map<string, number>>()
-  const gitRollup: AuditReport['stats']['git'] = []
-  for (const inventory of shared) {
-    const fact = factByVault.get(inventory.vault.path)
-    if (fact === undefined) {
-      continue
-    }
-    churnByVault.set(inventory.vault.path, churnByPath(fact.commits, deps.config.git.churnWindowCommits))
-    gitRollup.push({
-      vault: inventory.vault.path,
-      initialized: fact.initialized,
-      clean: fact.clean,
-      headHash: fact.headHash,
-      error: fact.error,
-    })
-    if (fact.error !== null) {
-      issue('git-error', 'INFO', `git reads failed for shared vault ${quoted(inventory.vault.path, ECHO_PATH_CAP)}: ${quoted(fact.error, ECHO_TEXT_CAP)}`,
-        'check the vault\'s git state; the Obsidian Mem card owns the Use Git toggle')
-    } else if (!fact.initialized) {
-      issue('git-not-adopted', 'INFO', `shared vault ${quoted(inventory.vault.path, ECHO_PATH_CAP)} is registered with git enabled but the plugin does not manage a git repository for it`,
-        'check the vault\'s git state; the Obsidian Mem card owns the Use Git toggle')
-    }
-  }
+  // the shared registry plus the per-vault churn maps the rows read from
+  // (a read-only vault never appears; a disabled git gate answers no
+  // facts, so the rollup and both INFO families stay empty).
+  const git = gitVersioningSection(shared, await deps.gitHistory(), deps.config.git.churnWindowCommits)
+  issues.push(...git.issues)
 
   // 10. Rows: bounded view; rollups above covered the whole store.
   // `checkpoint` keeps `full`'s eligibility and ordering by design.
@@ -983,7 +1017,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
     indexed: note.indexed,
     flaggedNotRead: note.flaggedNotRead,
     oversized: !note.flaggedNotRead && note.sizeBytes > NOTE_TIMELINE_BYTES,
-    churn: churnByVault.get(note.vaultPath)?.get(note.rel) ?? 0,
+    churn: git.churnByVault.get(note.vaultPath)?.get(note.rel) ?? 0,
   }))
 
   issues.sort((a, b) => {
@@ -1018,7 +1052,7 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
       expectedChunks,
       lastDreamAt,
       dreamingSchedules: schedules.length,
-      git: gitRollup,
+      git: git.rollup,
     },
     rows,
     totalRows: sorted.length,

@@ -279,11 +279,11 @@ describe('memory_audit definition', () => {
 
 describe('firstSharedVaultPath', () => {
   it('picks the first shared vault and falls back to the default vault path', () => {
-    expect(firstSharedVaultPath([
+    expect(firstSharedVaultPath(vaultEntries(
       { path: '/ro', mode: 'read-only' },
       { path: '/s1', mode: 'shared' },
       { path: '/s2', mode: 'shared' },
-    ])).toBe('/s1')
+    ))).toBe('/s1')
     expect(firstSharedVaultPath([], '/home/u')).toBe(defaultVaultPath('/home/u'))
   })
 })

@@ -39,6 +39,10 @@ contract tests green.
   controls disabled instead of flashing a red banner.
 - `restartPending` in the payload is `[]` or `['milvus.dbPath']`; type it
   `string[]` anyway (the host owns the vocabulary).
+- The reset DELETE MUST carry `Content-Type: application/json` with a `{}`
+  body through the existing `request` helper (pass `{}`, like `runDream`
+  does); a body-less DELETE answers 400 invalid_json_body (defineRoute
+  reads a body for every non-GET method).
 
 ## Definition of Done
 

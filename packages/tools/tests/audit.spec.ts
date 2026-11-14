@@ -40,10 +40,11 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
       expectedChunks: 7,
       lastDreamAt: null,
       dreamingSchedules: 0,
+      git: [],
     },
     rows: [
-      { path: '/v/a.md', sizeBytes: 2048, mtimeMs: 1700000000000, readCount: 3, lastReadAt: '2026-11-01', archived: false, indexed: true, flaggedNotRead: false, oversized: false },
-      { path: '/v/unread.md', sizeBytes: 512, mtimeMs: 1700000000000, readCount: 0, lastReadAt: '', archived: false, indexed: false, flaggedNotRead: false, oversized: false },
+      { path: '/v/a.md', sizeBytes: 2048, mtimeMs: 1700000000000, readCount: 3, lastReadAt: '2026-11-01', archived: false, indexed: true, flaggedNotRead: false, oversized: false, churn: 0 },
+      { path: '/v/unread.md', sizeBytes: 512, mtimeMs: 1700000000000, readCount: 0, lastReadAt: '', archived: false, indexed: false, flaggedNotRead: false, oversized: false, churn: 0 },
     ],
     totalRows: 2,
     budget: {

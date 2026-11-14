@@ -465,11 +465,14 @@ export declare class ObsidianMemService extends Service {
     /**
      * Audit drives the read-only doctor pass (TASK-034). It never provisions
      * and never writes: the registry comes from the sync read path, the
-     * filesystem walk goes through the read-only AuditFs seam, and a live
+     * filesystem walk goes through the read-only AuditFs seam, a live
      * collection is contacted only through one probe (describe + statistics)
-     * when the index already reports ready.
+     * when the index already reports ready, and the git facts come from
+     * {@link ObsidianMemService.gitAuditFacts} (log/status reads only,
+     * never adoption).
      */
     audit(request?: AuditRequest): Promise<AuditReport>;
+    private gitAuditFacts;
     private probeCollection;
     /**
      * Dream drives the compaction orchestrator (TASK-035). `plan` answers the

@@ -107,7 +107,7 @@ export const ROUTES: readonly RouteContract[] = [
   {
     method: 'GET',
     path: '/obsidian-mem/audit',
-    description: 'Runs the read-only audit pass with the query params view ("full" | "topStale" | "oldestUnread") and limit (clamped to 500) and answers { report } (service.audit(); never writes, never provisions).',
+    description: 'Runs the read-only audit pass with the query params view ("full" | "topStale" | "oldestUnread" | "checkpoint") and limit (clamped to 500) and answers { report } (service.audit(); never writes, never provisions).',
   },
   {
     method: 'GET',

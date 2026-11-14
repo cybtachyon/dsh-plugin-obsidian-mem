@@ -71,7 +71,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 
 ### Phase C: audit checkpoint view + churn surfacing
 
- - [ ] [TASK-008-audit-service-churn-checkpoint](docs/PLAN-git-versioning-TASK-008-audit-service-churn-checkpoint.md)
+ - [x] [TASK-008-audit-service-churn-checkpoint](docs/PLAN-git-versioning-TASK-008-audit-service-churn-checkpoint.md)
  - [ ] [TASK-009-audit-tool-checkpoint](docs/PLAN-git-versioning-TASK-009-audit-tool-checkpoint.md)
 
 ### Phase D: events

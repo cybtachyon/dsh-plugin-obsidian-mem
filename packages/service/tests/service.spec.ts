@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,7 @@ import {
   metadataDir,
   modelCacheDir,
   parseNote,
+  serializeNoteWithRaw,
   stateDir,
 } from '../../core/lib/index.js'
 import type { GitRunner, NoteMeta } from '../../core/lib/index.js'
@@ -1791,6 +1792,86 @@ describe('vault git wiring', () => {
     await expect(h.service.applyWrite(join(readOnly, 'x.md'), testMeta(), 'b'))
       .rejects.toThrow(/read-only vault/)
     expect(git.calls.filter((call) => call.root === readOnly)).toEqual([])
+  })
+
+  // Audit seam (TASK-008): git facts reach the report only through the
+  // manager's read-only accessors; the audit never adopts and never mutates.
+
+  /**
+   * AuditGitRunner: a healthy adopted repo answering the adoption probes,
+   * a two-commit log (newest first, both touching alpha.md, the older one
+   * also beta.md), and a clean status.
+   */
+  function auditGitRunner() {
+    const calls: Array<{ root: string; argv: string[] }> = []
+    const logRecord = (hash: string, paths: string[]): string =>
+      `\u001e${hash}\u001f2026-11-10T00:00:00+00:00\u001fobsidian-mem: memory_write\n${paths.join('\n')}\n`
+    const gitRunner = (root: string): GitRunner => async (argv) => {
+      calls.push({ root, argv })
+      if (argv.includes('log')) {
+        return {
+          code: 0,
+          stdout: `${logRecord('e'.repeat(40), ['alpha.md'])}${logRecord('d'.repeat(40), ['alpha.md', 'beta.md'])}`,
+          stderr: '',
+        }
+      }
+      if (argv.includes('status')) {
+        return { code: 0, stdout: '', stderr: '' }
+      }
+      return { code: 0, stdout: `${'f'.repeat(40)}\n`, stderr: '' }
+    }
+    return { calls, gitRunner }
+  }
+
+  it('audit never adopts: an unmanaged shared vault answers initialized false with zero git calls', async () => {
+    const vault = gitTempDir()
+    const git = recordingGit()
+    const h = harness({
+      gitEnabled: true,
+      seedDirs: [vault],
+      config: { vaults: [{ path: vault }] },
+      gitRunner: git.gitRunner,
+    })
+
+    const report = await h.service.audit()
+
+    expect(git.calls).toEqual([])
+    expect(report.stats.git).toEqual([{ vault, initialized: false, clean: null, headHash: null, error: null }])
+    expect(report.issues.filter((entry) => entry.id === 'git-not-adopted').map((entry) => entry.severity))
+      .toEqual(['INFO'])
+    expect(report.rows.every((row) => row.churn === 0)).toBe(true)
+  })
+
+  it('audit reads churn and the rollup from an adopted vault behind the window knob', async () => {
+    const vault = gitTempDir()
+    // Real note files: the service audit walks the auditFs default (the
+    // real disk), so the rows exist only where nodeAuditFs can see them.
+    writeFileSync(join(vault, 'alpha.md'), serializeNoteWithRaw({ meta: testMeta({ index_title: 'Alpha: one' }), body: 'fact\n' }), 'utf8')
+    writeFileSync(join(vault, 'beta.md'), serializeNoteWithRaw({ meta: testMeta({ index_title: 'Beta: two' }), body: 'fact\n' }), 'utf8')
+    const git = auditGitRunner()
+    const h = harness({
+      gitEnabled: true,
+      seedDirs: [vault],
+      config: { vaults: [{ path: vault }] },
+      gitRunner: git.gitRunner,
+    })
+    // The live group swap a card churnWindowCommits patch performs.
+    h.service.config.git = { ...h.service.config.git, churnWindowCommits: 1 }
+
+    await h.service.ensureMemoryAccess()
+    const report = await h.service.audit()
+
+    expect(report.stats.git).toEqual([
+      { vault, initialized: true, clean: true, headHash: 'e'.repeat(40), error: null },
+    ])
+    const logWindowArgs = git.calls
+      .filter((call) => call.argv.includes('log'))
+      .map((call) => call.argv.find((arg) => arg.startsWith('--max-count=')))
+    expect(logWindowArgs).toEqual(['--max-count=1'])
+    // The window is one commit wide: alpha sits in all of it, beta in none.
+    expect(report.rows.find((row) => row.path === join(vault, 'alpha.md'))?.churn).toBe(1)
+    expect(report.rows.find((row) => row.path === join(vault, 'beta.md'))?.churn).toBe(0)
+    expect(git.calls.some((call) => call.argv.includes('init'))).toBe(false)
   })
 
   // Dream-commit seam (TASK-006): the dream ok path closes with one

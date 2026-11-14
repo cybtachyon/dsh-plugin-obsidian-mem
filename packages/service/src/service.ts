@@ -100,7 +100,7 @@ import {
   validateMergedCardSettings,
 } from './card-settings.js'
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js'
-import type { AuditFs, AuditReport, AuditRequest, CollectionProbeResult, VaultInventory } from './audit.js'
+import type { AuditFs, AuditGitFacts, AuditReport, AuditRequest, CollectionProbeResult, VaultInventory } from './audit.js'
 import { DreamOrchestrator } from './dream.js'
 import type { DreamAgentsGateway, DreamDefaultModelGateway, DreamEngineResult, DreamRequest, DreamRunSummary, DreamVectorTarget } from './dream.js'
 import { createEmbedder } from './embedder.js'
@@ -1097,23 +1097,78 @@ export class ObsidianMemService extends Service {
   /**
    * Audit drives the read-only doctor pass (TASK-034). It never provisions
    * and never writes: the registry comes from the sync read path, the
-   * filesystem walk goes through the read-only AuditFs seam, and a live
+   * filesystem walk goes through the read-only AuditFs seam, a live
    * collection is contacted only through one probe (describe + statistics)
-   * when the index already reports ready.
+   * when the index already reports ready, and the git facts come from
+   * {@link ObsidianMemService.gitAuditFacts} (log/status reads only,
+   * never adoption).
    */
   async audit(request: AuditRequest = {}): Promise<AuditReport> {
     const collection = this.client === null
       ? null
       : async (): Promise<CollectionProbeResult> => await this.probeCollection()
+    const vaults = this.listVaults()
     return await runStoreAudit({
-      vaults: this.listVaults(),
+      vaults,
       status: this.status(),
       config: this.config,
       globalIndex: this.globalMemoryIndex(),
       homedir: this.homedir(),
       fs: this.auditFs,
       collection,
+      gitHistory: async () => await this.gitAuditFacts(vaults),
     }, request)
+  }
+
+  // GitAuditFacts feeds the audit's churn rows and per-vault git rollup
+  // (TASK-008) through the manager's read-only accessors, so no audit path
+  // can adopt, provision, or mutate. A disabled gate answers the empty
+  // list; an unadopted shared vault answers initialized:false without
+  // git ever being contacted. On an adopted vault a null accessor answer
+  // means the git command itself failed (the manager logged the cause),
+  // which degrades that vault's entry to its error instead of failing the
+  // audit (the reference auditGit degradation).
+  private async gitAuditFacts(vaults: readonly VaultEntry[]): Promise<AuditGitFacts[]> {
+    if (!this.config.git.enabled) {
+      return []
+    }
+    const window = this.config.git.churnWindowCommits
+    const adopted = new Set(this.vaultGit.adoptedRoots())
+    const facts: AuditGitFacts[] = []
+    for (const entry of vaults) {
+      if (entry.mode !== VAULT_MODE_SHARED) {
+        continue
+      }
+      if (!adopted.has(entry.path)) {
+        facts.push({ vaultPath: entry.path, initialized: false, clean: null, headHash: null, error: null, commits: [] })
+        continue
+      }
+      const commits = await this.vaultGit.logShared(entry.path, window)
+      const status = await this.vaultGit.statusShared(entry.path)
+      if (commits === null || status === null) {
+        const failed = [commits === null ? 'log' : '', status === null ? 'status' : '']
+          .filter((name) => name !== '')
+          .join(' and ')
+        facts.push({
+          vaultPath: entry.path,
+          initialized: true,
+          clean: null,
+          headHash: null,
+          error: `git ${failed} failed for this vault; see the plugin log for the command error`,
+          commits: commits ?? [],
+        })
+        continue
+      }
+      facts.push({
+        vaultPath: entry.path,
+        initialized: true,
+        clean: status.clean,
+        headHash: commits[0]?.hash ?? null,
+        error: null,
+        commits,
+      })
+    }
+    return facts
   }
 
   // One describe + one statistics read; every Milvus failure comes back as

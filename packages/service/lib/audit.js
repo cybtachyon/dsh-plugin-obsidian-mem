@@ -1,10 +1,11 @@
 /**
  * The read-only store audit engine (TASK-034, the service side of
- * `memory_audit`). It merges four sources the way the engramory doctor and
+ * `memory_audit`). It merges five sources the way the engramory doctor and
  * the engramory-ext audit canon do: the vault filesystem (stat-only walk),
  * the per-vault indexer state files, the live Milvus collection (one
- * describe + one statistics call through an injected probe), and the
- * service status/global-budget echo.
+ * describe + one statistics call through an injected probe), the service
+ * status/global-budget echo, and the shared vaults' git history through an
+ * injected read-only reader (TASK-008: note churn plus the per-vault rollup).
  *
  * Nothing here writes: the seam it reads through ({@link AuditFs}) has no
  * mutating method to call, no read stat is bumped, and no provisioning is
@@ -19,11 +20,15 @@
  */
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, clampInt, dbStateDir, DREAM_STATE_FILE, DREAMS_FILE, defaultVaultPath, globalFilePath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isOverGlobalBudget, isReservedNonIndexed, MANUAL_COMPACTION_APPROVAL, MANUAL_COMPACTION_RECIPE, metadataDir, NOTE_TIMELINE_BYTES, parseNote, PLUGIN_METADATA_REL, SCOPE_GLOBAL, VAULT_MODE_READ_ONLY, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
+import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, AUDIT_NOTE_READ_CAP_BYTES, churnByPath, clampInt, dbStateDir, DREAM_STATE_FILE, DREAMS_FILE, defaultVaultPath, globalFilePath, INTENT_HINTS, INTENT_MARKERS, INTENTS_FILE, isIntentMarker, isOverGlobalBudget, isReservedNonIndexed, MANUAL_COMPACTION_APPROVAL, MANUAL_COMPACTION_RECIPE, metadataDir, NOTE_TIMELINE_BYTES, parseNote, PLUGIN_METADATA_REL, SCOPE_GLOBAL, VAULT_MODE_READ_ONLY, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { indexStatePath, MAX_FILES_PER_VAULT } from './indexer.js';
-/** The bounded row list a `memory_audit` call shows. */
-export const AUDIT_VIEWS = ['full', 'topStale', 'oldestUnread'];
+/**
+ * The bounded row list a `memory_audit` call shows. `checkpoint` carries
+ * exactly `full`'s rows and ordering; the name exists so the tool layer can
+ * append the completion-checkpoint instructions (TASK-008/TASK-009).
+ */
+export const AUDIT_VIEWS = ['full', 'topStale', 'oldestUnread', 'checkpoint'];
 /** Node implementation of {@link AuditFs} over node:fs. */
 export const nodeAuditFs = {
     exists: (path) => existsSync(path),
@@ -432,7 +437,8 @@ function stalenessKey(note) {
  * given) is one describe plus one statistics read.
  */
 export async function runStoreAudit(deps, request = {}) {
-    const view = request.view === 'topStale' || request.view === 'oldestUnread' ? request.view : 'full';
+    const requested = request.view;
+    const view = requested !== undefined && AUDIT_VIEWS.includes(requested) ? requested : 'full';
     const limit = clampInt(Math.trunc(request.limit ?? AUDIT_DEFAULT_LIMIT), 1, AUDIT_MAX_LIMIT);
     const issues = [];
     const issue = (id, severity, detail, remediation) => {
@@ -591,7 +597,36 @@ export async function runStoreAudit(deps, request = {}) {
     if (budget.overBudget) {
         issue('budget.over', 'ISSUE', `global memory injection is over budget: ${String(budget.usedTokens)} of ${String(budget.budgetTokens)} tokens used, injected since the last successful dream or host restart`, budgetOverRemediation(budget, limit));
     }
-    // 9. Rows: bounded view; rollups above covered the whole store.
+    // 9. Git versioning (TASK-008): the per-shared-vault rollup joined onto
+    // the shared registry (a read-only vault never appears, and a disabled
+    // git gate answers no facts, so the rollup and both INFO families stay
+    // empty), plus the per-vault churn maps the rows read from.
+    const gitFacts = await deps.gitHistory();
+    const factByVault = new Map(gitFacts.map((fact) => [fact.vaultPath, fact]));
+    const churnByVault = new Map();
+    const gitRollup = [];
+    for (const inventory of shared) {
+        const fact = factByVault.get(inventory.vault.path);
+        if (fact === undefined) {
+            continue;
+        }
+        churnByVault.set(inventory.vault.path, churnByPath(fact.commits, deps.config.git.churnWindowCommits));
+        gitRollup.push({
+            vault: inventory.vault.path,
+            initialized: fact.initialized,
+            clean: fact.clean,
+            headHash: fact.headHash,
+            error: fact.error,
+        });
+        if (fact.error !== null) {
+            issue('git-error', 'INFO', `git reads failed for shared vault ${quoted(inventory.vault.path, ECHO_PATH_CAP)}: ${quoted(fact.error, ECHO_TEXT_CAP)}`, 'check the vault\'s git state; the Obsidian Mem card owns the Use Git toggle');
+        }
+        else if (!fact.initialized) {
+            issue('git-not-adopted', 'INFO', `shared vault ${quoted(inventory.vault.path, ECHO_PATH_CAP)} is registered with git enabled but the plugin does not manage a git repository for it`, 'check the vault\'s git state; the Obsidian Mem card owns the Use Git toggle');
+        }
+    }
+    // 10. Rows: bounded view; rollups above covered the whole store.
+    // `checkpoint` keeps `full`'s eligibility and ordering by design.
     const live = allNotes.filter((note) => note.meta?.archive !== true);
     let eligible = allNotes;
     if (view === 'topStale') {
@@ -621,6 +656,7 @@ export async function runStoreAudit(deps, request = {}) {
         indexed: note.indexed,
         flaggedNotRead: note.flaggedNotRead,
         oversized: !note.flaggedNotRead && note.sizeBytes > NOTE_TIMELINE_BYTES,
+        churn: churnByVault.get(note.vaultPath)?.get(note.rel) ?? 0,
     }));
     issues.sort((a, b) => {
         if (a.severity !== b.severity) {
@@ -653,6 +689,7 @@ export async function runStoreAudit(deps, request = {}) {
             expectedChunks,
             lastDreamAt,
             dreamingSchedules: schedules.length,
+            git: gitRollup,
         },
         rows,
         totalRows: sorted.length,

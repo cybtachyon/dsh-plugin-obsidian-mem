@@ -14,9 +14,9 @@ import {
   serializeNoteWithRaw,
   VECTOR_DIM_DEFAULT,
 } from '../../core/lib/index.js'
-import type { NoteMeta } from '../../core/lib/index.js'
+import type { MemoryGitCommit, NoteMeta } from '../../core/lib/index.js'
 import { inventoryVault, nodeAuditFs, runStoreAudit } from '../src/audit.ts'
-import type { AuditFs, AuditReport, CollectionProbeResult } from '../src/audit.ts'
+import type { AuditFs, AuditGitFacts, AuditReport, CollectionProbeResult } from '../src/audit.ts'
 import { DEFAULT_READINESS_TIMEOUT_MS, resolveServiceConfig, validateObsidianMemConfig } from '../src/config.ts'
 import type { ObsidianMemConfig } from '../src/config.ts'
 import { STATE_FILE_NAME } from '../src/indexer.ts'
@@ -217,6 +217,24 @@ function vault(path: string, mode: 'shared' | 'read-only' = 'shared', globalFile
   return { path, mode, globalFile, source: 'settings' }
 }
 
+/** GitCommitFixture: one scripted commit for the injected git reader. */
+function gitCommit(hash: string, paths: string[]): MemoryGitCommit {
+  return { hash, date: '2026-11-10T00:00:00+00:00', message: 'obsidian-mem: memory_write', paths }
+}
+
+/** GitFactFixture: one healthy adopted shared vault's git facts record. */
+function gitFact(vaultPath: string, over: Partial<AuditGitFacts> = {}): AuditGitFacts {
+  return {
+    vaultPath,
+    initialized: true,
+    clean: true,
+    headHash: 'f'.repeat(40),
+    error: null,
+    commits: [],
+    ...over,
+  }
+}
+
 /** A healthy shared vault: layout, .INTENTS.md, two notes, state file. */
 function healthyVault(path = '/vault/notes'): { dirs: string[], files: Record<string, string> } {
   const files: Record<string, string> = {
@@ -256,6 +274,8 @@ interface DepsOptions {
   globalIndex?: ReturnType<typeof globalIndexFixture>
   collection?: (() => Promise<CollectionProbeResult>) | null
   config?: ObsidianMemConfig
+  /** Git facts the injected reader answers (default: git answers nothing). */
+  gitFacts?: AuditGitFacts[]
 }
 
 function run(deps: DepsOptions, request = {}) {
@@ -270,6 +290,7 @@ function run(deps: DepsOptions, request = {}) {
     homedir: HOME,
     fs: deps.fs,
     collection: deps.collection === undefined ? READY_PROBE : deps.collection,
+    gitHistory: async () => deps.gitFacts ?? [],
   }, request)
 }
 
@@ -746,6 +767,15 @@ describe('runStoreAudit: bounded views', () => {
     const report = await run({ fs, collection: null, vaults: [vault('/v')] }, { view: 'oldestUnread' })
     expect(report.rows.map((row) => row.path)).toEqual(['/v/never.md', '/v/old-unread.md'])
   })
+
+  it('checkpoint lists exactly the full rows, order, and totals', async () => {
+    const full = await run({ fs: viewFs(), collection: null, vaults: [vault('/v')] }, { limit: 3 })
+    const checkpoint = await run({ fs: viewFs(), collection: null, vaults: [vault('/v')] }, { view: 'checkpoint', limit: 3 })
+    expect(checkpoint.view).toBe('checkpoint')
+    expect(checkpoint.rows).toEqual(full.rows)
+    expect(checkpoint.totalRows).toBe(full.totalRows)
+    expect(checkpoint.rows.length).toBe(3)
+  })
 })
 
 describe('runStoreAudit: rollups and walk', () => {
@@ -760,6 +790,133 @@ describe('runStoreAudit: rollups and walk', () => {
     expect(report.stats.vaultUsage).toEqual([{ vault: '/vault/notes', notes: 2, bytes: notesBytes }])
   })
 })
+
+// ---------------------------------------------------------------------------
+
+describe('runStoreAudit: git churn and the git rollups (TASK-008)', () => {
+  /** Two-vault seed: /v1 and /v2 each own a note at the rel `alpha.md`. */
+  function twoVaultFs(): MemAuditFs {
+    return new MemAuditFs({
+      dirs: ['/v1', '/v1/.obsidian-mem/metadata', '/v2', '/v2/.obsidian-mem/metadata'],
+      files: {
+        '/v1/alpha.md': noteFixture({ index_title: 'Alpha: one' }),
+        '/v2/alpha.md': noteFixture({ index_title: 'Alpha: two' }),
+        // Seeded intents keep intents.missing from deciding report.ok in
+        // the degradation pins, so ok reflects git influence only.
+        [`/v1/${INTENTS_FILE}`]: renderIntentsFile(),
+      },
+    })
+  }
+
+  it('rows carry churn fractions measured over the young store', async () => {
+    const report = await run({
+      fs: seedHealthy(),
+      gitFacts: [gitFact('/vault/notes', {
+        headHash: 'c1',
+        commits: [
+          gitCommit('c1', ['alpha.md', 'beta.md']),
+          gitCommit('c2', ['alpha.md', 'notes/gamma.md']),
+        ],
+      })],
+    })
+    // Two commits in a young store: the denominator is the store's own length.
+    const alpha = report.rows.find((row) => row.path === '/vault/notes/alpha.md')
+    const beta = report.rows.find((row) => row.path === '/vault/notes/beta.md')
+    expect(alpha?.churn).toBe(1)
+    expect(beta?.churn).toBe(0.5)
+    expect(report.stats.git).toEqual([
+      { vault: '/vault/notes', initialized: true, clean: true, headHash: 'c1', error: null },
+    ])
+    expect(issueIds(report).filter((id) => id.startsWith('git-'))).toEqual([])
+    expect(report.ok).toBe(true)
+  })
+
+  it('keys churn by (vaultPath, rel): an unadopted vault note churns 0', async () => {
+    const report = await run({
+      fs: twoVaultFs(),
+      collection: null,
+      vaults: [vault('/v1'), vault('/v2')],
+      gitFacts: [gitFact('/v1', { commits: [gitCommit('c1', ['alpha.md'])] })],
+    })
+    expect(report.rows.find((row) => row.path === '/v1/alpha.md')?.churn).toBe(1)
+    expect(report.rows.find((row) => row.path === '/v2/alpha.md')?.churn).toBe(0)
+    // A shared vault the reader says nothing about stays out of the rollup.
+    expect(report.stats.git.map((entry) => entry.vault)).toEqual(['/v1'])
+  })
+
+  it('degrades one failed vault to its error without failing the audit', async () => {
+    const report = await run({
+      fs: twoVaultFs(),
+      collection: null,
+      vaults: [vault('/v1'), vault('/v2')],
+      gitFacts: [
+        gitFact('/v1', { commits: [gitCommit('c1', ['alpha.md'])] }),
+        gitFact('/v2', {
+          clean: null,
+          headHash: null,
+          error: 'git log failed for this vault; see the plugin log for the command error',
+          commits: [],
+        }),
+      ],
+    })
+    expect(report.stats.git[1]).toEqual({
+      vault: '/v2',
+      initialized: true,
+      clean: null,
+      headHash: null,
+      error: 'git log failed for this vault; see the plugin log for the command error',
+    })
+    expect(report.rows.find((row) => row.path === '/v2/alpha.md')?.churn).toBe(0)
+    const error = findIssue(report, 'git-error')
+    expect(error?.severity).toBe('INFO')
+    expect(error?.detail).toContain('/v2')
+    expect(error?.detail).toContain('git log failed')
+    expect(error?.remediation).toBe('check the vault\'s git state; the Obsidian Mem card owns the Use Git toggle')
+    expect(issueIds(report)).not.toContain('git-not-adopted')
+    expect(report.ok).toBe(true)
+  })
+
+  it('reports a shared vault with no repository as git-not-adopted INFO', async () => {
+    const report = await run({
+      fs: seedHealthy(),
+      gitFacts: [gitFact('/vault/notes', { initialized: false, clean: null, headHash: null })],
+    })
+    const notAdopted = findIssue(report, 'git-not-adopted')
+    expect(notAdopted?.severity).toBe('INFO')
+    expect(notAdopted?.detail).toContain('/vault/notes')
+    expect(notAdopted?.remediation).toContain('Use Git toggle')
+    expect(report.stats.git[0]?.initialized).toBe(false)
+    expect(report.rows.every((row) => row.churn === 0)).toBe(true)
+    expect(issueIds(report)).not.toContain('git-error')
+    expect(report.ok).toBe(true)
+  })
+
+  it('a disabled git gate answers the empty list: churn 0 everywhere, empty rollup', async () => {
+    const report = await run({ fs: seedHealthy() })
+    expect(report.stats.git).toEqual([])
+    expect(report.rows.every((row) => row.churn === 0)).toBe(true)
+    expect(issueIds(report).filter((id) => id.startsWith('git-'))).toEqual([])
+  })
+
+  it('read-only vaults never appear in the git rollup and never churn', async () => {
+    const report = await run({
+      fs: twoVaultFs(),
+      collection: null,
+      vaults: [vault('/v1'), vault('/v2', 'read-only')],
+      // A reader that wrongly hands facts for the read-only vault: the
+      // engine still refuses it a rollup line and a churn map.
+      gitFacts: [
+        gitFact('/v1', { commits: [gitCommit('c1', ['alpha.md'])] }),
+        gitFact('/v2', { commits: [gitCommit('c1', ['alpha.md'])] }),
+      ],
+    })
+    expect(report.stats.git.map((entry) => entry.vault)).toEqual(['/v1'])
+    expect(report.rows.find((row) => row.path === '/v2/alpha.md')?.churn).toBe(0)
+    expect(report.rows.find((row) => row.path === '/v1/alpha.md')?.churn).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
 
 describe('inventoryVault + seam shape', () => {
   it('the audit fs seam exposes no write method at all', () => {

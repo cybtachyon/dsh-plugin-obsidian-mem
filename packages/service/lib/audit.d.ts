@@ -1,10 +1,11 @@
 /**
  * The read-only store audit engine (TASK-034, the service side of
- * `memory_audit`). It merges four sources the way the engramory doctor and
+ * `memory_audit`). It merges five sources the way the engramory doctor and
  * the engramory-ext audit canon do: the vault filesystem (stat-only walk),
  * the per-vault indexer state files, the live Milvus collection (one
- * describe + one statistics call through an injected probe), and the
- * service status/global-budget echo.
+ * describe + one statistics call through an injected probe), the service
+ * status/global-budget echo, and the shared vaults' git history through an
+ * injected read-only reader (TASK-008: note churn plus the per-vault rollup).
  *
  * Nothing here writes: the seam it reads through ({@link AuditFs}) has no
  * mutating method to call, no read stat is bumped, and no provisioning is
@@ -17,7 +18,7 @@
  * while the row list is bounded by `limit`.
  * @module dsh-plugin-obsidian-mem/service/audit
  */
-import type { NoteMeta, VaultConfig } from '../../core/lib/index.js';
+import type { MemoryGitCommit, NoteMeta, VaultConfig } from '../../core/lib/index.js';
 import type { ResolvedObsidianMemConfig } from './config.js';
 import type { IndexProgress } from './indexer.js';
 import type { GlobalMemoryIndex, ObsidianMemStatus, VaultEntry } from './service.js';
@@ -30,8 +31,12 @@ export interface AuditIssue {
     detail: string;
     remediation: string;
 }
-/** The bounded row list a `memory_audit` call shows. */
-export declare const AUDIT_VIEWS: readonly ["full", "topStale", "oldestUnread"];
+/**
+ * The bounded row list a `memory_audit` call shows. `checkpoint` carries
+ * exactly `full`'s rows and ordering; the name exists so the tool layer can
+ * append the completion-checkpoint instructions (TASK-008/TASK-009).
+ */
+export declare const AUDIT_VIEWS: readonly ["full", "topStale", "oldestUnread", "checkpoint"];
 /** One of the {@link AUDIT_VIEWS} note-row orders. */
 export type AuditView = typeof AUDIT_VIEWS[number];
 /** Request knobs of one audit pass; rollups are unbounded, rows are not. */
@@ -103,6 +108,25 @@ export interface CollectionProbeResult {
     count: number | null;
     error: string | null;
 }
+/**
+ * The git facts one SHARED vault contributes through
+ * {@link AuditDeps.gitHistory}. One record carries both the churn input
+ * (the window's commits) and the rollup fields, so the engine never reads
+ * git twice per vault.
+ */
+export interface AuditGitFacts {
+    vaultPath: string;
+    /** The git layer manages a repository for this vault. */
+    initialized: boolean;
+    /** Working-tree summary; null when unadopted or a read failed. */
+    clean: boolean | null;
+    /** Full hash of the newest commit; null when unknown or a read failed. */
+    headHash: string | null;
+    /** This vault's git-read failure; null while the reads answer. */
+    error: string | null;
+    /** Newest-first commits inside the churn window (`MemoryGit.log` output). */
+    commits: MemoryGitCommit[];
+}
 /** The global-memory budget section (TASK-045 consumes what feeds this). */
 export interface GlobalBudgetReport {
     budgetTokens: number;
@@ -132,6 +156,11 @@ export interface AuditNoteRow {
     indexed: boolean;
     flaggedNotRead: boolean;
     oversized: boolean;
+    /**
+     * Git churn: the share of the recent commit window that touched this
+     * note (0 when untouched, gitless, or the vault is unadopted).
+     */
+    churn: number;
 }
 /** The complete structured answer of one audit pass. */
 export interface AuditReport {
@@ -159,6 +188,17 @@ export interface AuditReport {
         expectedChunks: number | null;
         lastDreamAt: number | null;
         dreamingSchedules: number;
+        /**
+         * Git rollups in shared-registry order; read-only vaults never appear
+         * and a disabled git gate leaves the list empty (TASK-008).
+         */
+        git: Array<{
+            vault: string;
+            initialized: boolean;
+            clean: boolean | null;
+            headHash: string | null;
+            error: string | null;
+        }>;
     };
     rows: AuditNoteRow[];
     totalRows: number;
@@ -202,6 +242,14 @@ export interface AuditDeps {
     fs: AuditFs;
     /** Live collection probe; null when the index is cold (never contacted). */
     collection: (() => Promise<CollectionProbeResult>) | null;
+    /**
+     * Read-only git reader over the SHARED vaults (the service's
+     * VaultGitManager accessors): one entry per registered shared vault while
+     * the git gate is on, the empty list when it is off. It never adopts,
+     * provisions, or mutates, and a per-vault git failure arrives as that
+     * entry's `error`, never as a throw.
+     */
+    gitHistory: () => AuditGitFacts[] | Promise<AuditGitFacts[]>;
 }
 /**
  * InventoryVault walks one vault read-only: the root note tree (the vault

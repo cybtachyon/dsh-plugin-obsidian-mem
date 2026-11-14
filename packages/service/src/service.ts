@@ -76,6 +76,7 @@ import {
   CARD_SETTINGS_KEYS,
   expandHomePath,
   globalFileShapeIssue,
+  isRecord,
   ObsidianMemConfigSchema,
   resolveServiceConfig,
   UNKNOWN_CONFIG_KEYS,
@@ -88,6 +89,14 @@ import type {
   ObsidianMemConfig,
   ResolvedObsidianMemConfig,
 } from './config.js'
+import {
+  cardEditableSlice,
+  differingCardSettingsPaths,
+  filterCardSettingsTree,
+  mergeCardSettingsPatch,
+  removeCardSettingsPath,
+  validateMergedCardSettings,
+} from './card-settings.js'
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js'
 import type { AuditFs, AuditReport, AuditRequest, CollectionProbeResult, VaultInventory } from './audit.js'
 import { DreamOrchestrator } from './dream.js'
@@ -124,6 +133,9 @@ export const SETTINGS_FILE_NAME = 'settings.json'
 
 /** Schema version stamped on settings.json; a newer file is ignored, never misread. */
 const SETTINGS_FILE_VERSION = 1
+
+/** Card settings whose apply re-forms the embedder and the indexer (TASK-004 escalation class). */
+const EMBEDDER_CARD_SETTINGS_KEYS: readonly string[] = ['vectorDim', 'model.id', 'model.cacheDir']
 
 /** Who registered a vault: the row config, the settings card, or lazy provisioning. */
 export type VaultSource = 'settings' | 'card' | 'default'
@@ -929,7 +941,7 @@ export class ObsidianMemService extends Service {
     return {
       settings,
       overrides,
-      restartPending: divergingCardSettingsPaths(settings, this.config),
+      restartPending: differingCardSettingsPaths(settings, this.config),
     }
   }
 
@@ -951,7 +963,9 @@ export class ObsidianMemService extends Service {
   async updateCardSettings(patch: CardSettingsPatch): Promise<CardSettingsView> {
     const unset = patch.unset ?? []
     const rejected: string[] = []
-    collectNonCardSettingsPaths(patch.set ?? {}, [], rejected)
+    // Validation use of the whitelist walker: the kept tree is discarded,
+    // every non-whitelisted path reports into `rejected`.
+    filterCardSettingsTree(patch.set ?? {}, rejected)
     for (const path of unset) {
       if (!CARD_SETTINGS_KEYS.includes(path)) rejected.push(path)
     }
@@ -969,9 +983,7 @@ export class ObsidianMemService extends Service {
     // The draft IS the record about to be written: the row merged with the
     // full new override tree, so a hand-corrupted stored key rejects the
     // apply instead of being persisted and silently dropped at boot.
-    const draft = validateObsidianMemConfig(
-      mergeCardSettingsOverrides(this.rowConfig, overrides),
-    )
+    const draft = validateMergedCardSettings(this.rowConfig, overrides)
     if (draft.issues !== undefined) {
       throw new Error(
         `obsidian-mem card settings rejected: ${draft.issues.map((issue) => issue.message).join('; ')}`,
@@ -1376,16 +1388,15 @@ export class ObsidianMemService extends Service {
   private applySettingsOverrides(resolved: ResolvedObsidianMemConfig): ResolvedObsidianMemConfig {
     const overrides = this.readSettingsOverrides()
     if (Object.keys(overrides).length === 0) return resolved
-    const merged = mergeCardSettingsOverrides(resolved, overrides)
-    const revalidated = validateObsidianMemConfig(merged)
-    if (revalidated.issues !== undefined) {
+    const merged = validateMergedCardSettings(resolved, overrides)
+    if (merged.issues !== undefined) {
       this.log.warn(
         `${SETTINGS_FILE_NAME} overrides rejected: `
-        + `${revalidated.issues.map((issue) => issue.message).join('; ')}; using the row config only`,
+        + `${merged.issues.map((issue) => issue.message).join('; ')}; using the row config only`,
       )
       return resolved
     }
-    return revalidated.value
+    return merged.value
   }
 
   // Card overrides from settings.json: a missing file answers {}, a corrupt
@@ -1417,7 +1428,7 @@ export class ObsidianMemService extends Service {
     }
     if (!isRecord(record.overrides)) return {}
     const dropped: string[] = []
-    const kept = filterCardSettingsOverrides(record.overrides, [], dropped)
+    const kept = filterCardSettingsTree(record.overrides, dropped)
     if (dropped.length > 0) {
       this.log.warn(`ignoring non card-editable ${SETTINGS_FILE_NAME} keys: ${dropped.join(', ')}`)
     }
@@ -1454,7 +1465,7 @@ export class ObsidianMemService extends Service {
     const before = this.effectiveCardSettings().settings
     this.persistSettingsOverrides(overrides)
     const after = this.effectiveCardSettings().settings
-    const changed = changedCardSettingsPaths(before, after)
+    const changed = differingCardSettingsPaths(before, after)
     if (changed.includes('milvus.dbPath')) {
       this.copyVaultsFileToStateDir(dbStateDir(after.milvus.dbPath))
     }
@@ -1476,9 +1487,7 @@ export class ObsidianMemService extends Service {
     overrides: CardEditablePartial
   } {
     const overrides = this.readSettingsOverrides()
-    const merged = validateObsidianMemConfig(
-      mergeCardSettingsOverrides(this.rowConfig, overrides),
-    )
+    const merged = validateMergedCardSettings(this.rowConfig, overrides)
     const settings = merged.issues === undefined
       ? cardEditableSlice(resolveServiceConfig(merged.value, this.homedir()))
       : cardEditableSlice(this.config)
@@ -1487,7 +1496,7 @@ export class ObsidianMemService extends Service {
 
   private persistSettingsOverrides(overrides: Record<string, unknown>): void {
     const record: SettingsFileRecord = { version: SETTINGS_FILE_VERSION, overrides }
-    this.fs.mkdirp(stateDir(this.homedir()))
+    this.fs.mkdirp(this.settingsDirPath())
     this.writeAtomic(this.settingsFilePath(), `${JSON.stringify(record, null, 2)}\n`)
   }
 
@@ -1548,9 +1557,7 @@ export class ObsidianMemService extends Service {
 
     const budgetsChanged = changed.some((key) => key.startsWith('budgets.'))
     const llmChanged = changed.some((key) => key.startsWith('llm.'))
-    const embedderChanged = changed.includes('vectorDim')
-      || changed.includes('model.id')
-      || changed.includes('model.cacheDir')
+    const embedderChanged = changed.some((key) => EMBEDDER_CARD_SETTINGS_KEYS.includes(key))
     const dimChanged = changed.includes('vectorDim')
     const thinkShotsChanged = changed.includes('budgets.thinkShotsPerTurn')
 
@@ -1652,9 +1659,13 @@ export class ObsidianMemService extends Service {
   // config-derived stateDirPath(): a pending milvus.dbPath override lives
   // in this very file, so the file may never move with dbPath, or loading
   // it would be chicken-and-egg on exactly that knob. vaults.json keeps its
-  // dbPath-derived location.
+  // dbPath-derived location. This is the file's one anchor derivation.
+  private settingsDirPath(): string {
+    return stateDir(this.homedir())
+  }
+
   private settingsFilePath(): string {
-    return join(stateDir(this.homedir()), SETTINGS_FILE_NAME)
+    return join(this.settingsDirPath(), SETTINGS_FILE_NAME)
   }
 
   // The VaultFs view of the service seam for core's provisioning helpers.
@@ -1823,182 +1834,6 @@ export function withObsidianMemHooks(hooks: ObsidianMemHooks): typeof ObsidianMe
       super(ctx, config, hooks)
     }
   }
-}
-
-// FilterCardSettingsOverrides keeps only CARD_SETTINGS_KEYS leaf paths from
-// a persisted overrides tree: whitelist leaves pass through untyped (the
-// merged config is schema-revalidated as a whole), objects that prefix a
-// whitelist key recurse, and everything else lands in `dropped` as its
-// dot-path for the caller's warn.
-function filterCardSettingsOverrides(
-  value: Record<string, unknown>,
-  prefix: string[],
-  dropped: string[],
-): Record<string, unknown> {
-  const kept: Record<string, unknown> = {}
-  for (const [key, given] of Object.entries(value)) {
-    const path = [...prefix, key].join('.')
-    if (CARD_SETTINGS_KEYS.includes(path)) {
-      kept[key] = given
-      continue
-    }
-    if (isRecord(given) && CARD_SETTINGS_KEYS.some((leaf) => leaf.startsWith(`${path}.`))) {
-      const nested = filterCardSettingsOverrides(given, [...prefix, key], dropped)
-      if (Object.keys(nested).length > 0) kept[key] = nested
-      continue
-    }
-    dropped.push(path)
-  }
-  return kept
-}
-
-// MergeCardSettingsOverrides writes each present whitelist path onto a
-// structural copy of the resolved row config, so a partial override keeps
-// every sibling the row already set (an override of budgets.searchTopK
-// alone leaves the row's other budgets in place).
-function mergeCardSettingsOverrides(
-  resolved: ResolvedObsidianMemConfig,
-  overrides: Record<string, unknown>,
-): ResolvedObsidianMemConfig {
-  const merged: ResolvedObsidianMemConfig = {
-    ...resolved,
-    vaults: resolved.vaults.map((vault) => ({ ...vault })),
-    model: { ...resolved.model },
-    milvus: { ...resolved.milvus },
-    budgets: { ...resolved.budgets },
-    llm: { ...resolved.llm },
-    dreaming: {
-      ...resolved.dreaming,
-      schedules: resolved.dreaming.schedules.map((schedule) => ({ ...schedule })),
-    },
-  }
-  for (const key of CARD_SETTINGS_KEYS) {
-    const parts = key.split('.')
-    let found: unknown = overrides
-    for (const part of parts) {
-      if (!isRecord(found)) {
-        found = undefined
-        break
-      }
-      found = found[part]
-    }
-    if (found === undefined) continue
-    let target = merged as unknown as Record<string, unknown>
-    for (const part of parts.slice(0, -1)) {
-      target = target[part] as Record<string, unknown>
-    }
-    target[parts[parts.length - 1]!] = found
-  }
-  return merged
-}
-
-// CollectNonCardSettingsPaths gathers every patch path that is not a
-// CARD_SETTINGS_KEYS leaf: the same whitelist-membership walk
-// filterCardSettingsOverrides keeps with, group prefixes recurse, anything
-// else reports at its dot-path (a group key holding a non-object value
-// included).
-function collectNonCardSettingsPaths(
-  value: Record<string, unknown>,
-  prefix: string[],
-  out: string[],
-): void {
-  for (const [key, given] of Object.entries(value)) {
-    const path = [...prefix, key].join('.')
-    if (CARD_SETTINGS_KEYS.includes(path)) continue
-    if (isRecord(given) && CARD_SETTINGS_KEYS.some((leaf) => leaf.startsWith(`${path}.`))) {
-      collectNonCardSettingsPaths(given, [...prefix, key], out)
-      continue
-    }
-    out.push(path)
-  }
-}
-
-// MergeCardSettingsPatch folds a path-validated patch into the stored
-// overrides tree: groups merge key-wise so a partial group keeps its
-// stored siblings, leaves overwrite.
-function mergeCardSettingsPatch(
-  target: Record<string, unknown>,
-  patch: Record<string, unknown>,
-): void {
-  for (const [key, given] of Object.entries(patch)) {
-    if (isRecord(given)) {
-      const existing = target[key]
-      const nested = isRecord(existing) ? existing : {}
-      mergeCardSettingsPatch(nested, given)
-      target[key] = nested
-      continue
-    }
-    target[key] = given
-  }
-}
-
-// RemoveCardSettingsPath deletes one whitelist dot-path from the stored
-// overrides tree and prunes the group the deletion emptied, so the file
-// records only real edits. A missing intermediate is already the unset
-// answer.
-function removeCardSettingsPath(tree: Record<string, unknown>, path: string): void {
-  const [head, ...rest] = path.split('.')
-  if (rest.length === 0) {
-    delete tree[head!]
-    return
-  }
-  const nested = tree[head!]
-  if (!isRecord(nested)) return
-  removeCardSettingsPath(nested, rest.join('.'))
-  if (Object.keys(nested).length === 0) delete tree[head!]
-}
-
-// CardEditableSlice copies the card-editable group fields out of a
-// (resolved) config so the view never aliases the running config object.
-function cardEditableSlice(config: ResolvedObsidianMemConfig): CardEditableConfig {
-  return {
-    vectorDim: config.vectorDim,
-    model: { id: config.model.id, cacheDir: config.model.cacheDir },
-    milvus: { dbPath: config.milvus.dbPath },
-    budgets: { ...config.budgets },
-    llm: { ...config.llm },
-  }
-}
-
-// ChangedCardSettingsPaths returns the whitelisted dot-paths where two
-// persisted views differ; every card-editable leaf is a scalar, so strict
-// inequality IS the deep diff.
-function changedCardSettingsPaths(
-  before: CardEditableConfig,
-  after: CardEditableConfig,
-): string[] {
-  return CARD_SETTINGS_KEYS.filter(
-    (key) => pickCardSettingsPath(after, key) !== pickCardSettingsPath(before, key),
-  )
-}
-
-// DivergingCardSettingsPaths is the restartPending answer: whitelisted
-// paths where the persisted view has left the in-process config behind.
-// escalateCardSettings applies every class except milvus.dbPath, so a
-// settled store only ever diverges on that one knob.
-function divergingCardSettingsPaths(
-  persisted: CardEditableConfig,
-  running: ResolvedObsidianMemConfig,
-): string[] {
-  return CARD_SETTINGS_KEYS.filter(
-    (key) => pickCardSettingsPath(persisted, key) !== pickCardSettingsPath(running, key),
-  )
-}
-
-function pickCardSettingsPath(
-  value: CardEditableConfig | ResolvedObsidianMemConfig,
-  key: string,
-): unknown {
-  let current: unknown = value
-  for (const part of key.split('.')) {
-    if (!isRecord(current)) return undefined
-    current = current[part]
-  }
-  return current
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** DefaultUvxPrewarm warms the uv cache for the pinned milvus-lite wheel. */

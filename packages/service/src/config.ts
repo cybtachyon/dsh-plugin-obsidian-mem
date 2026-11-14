@@ -271,7 +271,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   if (value === undefined || value === null) {
     return succeed(resolved, unknownKeys)
   }
-  if (!isObject(value)) {
+  if (!isRecord(value)) {
     return { issues: [{ message: 'config must be an object', path: [] }] }
   }
 
@@ -298,7 +298,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   }
 
   if (value.model !== undefined) {
-    if (!isObject(value.model)) {
+    if (!isRecord(value.model)) {
       issues.push({ message: 'model must be an object', path: ['model'] })
     } else {
       collectUnknown(value.model, ['model'], ['id', 'dtype', 'cacheDir'], unknownKeys)
@@ -331,7 +331,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   }
 
   if (value.milvus !== undefined) {
-    if (!isObject(value.milvus)) {
+    if (!isRecord(value.milvus)) {
       issues.push({ message: 'milvus must be an object', path: ['milvus'] })
     } else {
       collectUnknown(value.milvus, ['milvus'], ['mode', 'address', 'dbPath', 'readinessTimeoutMs'], unknownKeys)
@@ -356,7 +356,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   }
 
   if (value.budgets !== undefined) {
-    if (!isObject(value.budgets)) {
+    if (!isRecord(value.budgets)) {
       issues.push({ message: 'budgets must be an object', path: ['budgets'] })
     } else {
       const keys = Object.keys(DEFAULT_BUDGETS)
@@ -375,7 +375,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   }
 
   if (value.llm !== undefined) {
-    if (!isObject(value.llm)) {
+    if (!isRecord(value.llm)) {
       issues.push({ message: 'llm must be an object', path: ['llm'] })
     } else {
       collectUnknown(value.llm, ['llm'], ['enabled', 'baseUrl', 'model', 'apiKeyEnv'], unknownKeys)
@@ -393,7 +393,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   }
 
   if (value.dreaming !== undefined) {
-    if (!isObject(value.dreaming)) {
+    if (!isRecord(value.dreaming)) {
       issues.push({ message: 'dreaming must be an object', path: ['dreaming'] })
     } else {
       collectUnknown(value.dreaming, ['dreaming'], ['schedules', 'model', 'nearDuplicateThreshold'], unknownKeys)
@@ -426,7 +426,7 @@ function validateVaultEntries(
 ): ResolvedVaultEntry[] {
   const vaults: ResolvedVaultEntry[] = []
   entries.forEach((entry, index) => {
-    if (!isObject(entry)) {
+    if (!isRecord(entry)) {
       issues.push({ message: 'vault entry must be an object', path: ['vaults', index] })
       return
     }
@@ -503,7 +503,7 @@ function validateSchedules(given: unknown, issues: Issue[]): DreamingSchedule[] 
   const schedules: DreamingSchedule[] = []
   given.forEach((entry, index) => {
     const path = ['dreaming', 'schedules', index]
-    if (!isObject(entry)) {
+    if (!isRecord(entry)) {
       issues.push({ message: 'schedule entry must be an object', path })
       return
     }
@@ -630,7 +630,12 @@ function collectUnknown(
   }
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
+/**
+ * IsRecord reports whether a value is a non-null, non-array object. The
+ * config validator and the card-settings tree walkers share this one
+ * guard instead of keeping a copy each.
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 

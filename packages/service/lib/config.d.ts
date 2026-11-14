@@ -228,5 +228,11 @@ export declare function vaultKey(path: string): string;
  * values, and it carries the unknown-key list onto the result).
  */
 export declare function validateObsidianMemConfig(value: unknown): ObsidianMemConfigValidation;
+/**
+ * IsRecord reports whether a value is a non-null, non-array object. The
+ * config validator and the card-settings tree walkers share this one
+ * guard instead of keeping a copy each.
+ */
+export declare function isRecord(value: unknown): value is Record<string, unknown>;
 export {};
 //# sourceMappingURL=config.d.ts.map

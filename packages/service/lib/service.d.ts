@@ -493,6 +493,7 @@ export declare class ObsidianMemService extends Service {
     private writeAtomic;
     private stateDirPath;
     private vaultsFilePath;
+    private settingsDirPath;
     private settingsFilePath;
     private vaultFs;
     private canonicalize;

@@ -214,7 +214,7 @@ function healthyVault(path = '/vault/notes'): { dirs: string[], files: Record<st
       },
     }),
   }
-  return { dirs: [path, `${path}/.obsidian-mem/metadata`], files }
+  return { dirs: [path, `${path}/.obsidian-mem/metadata`, modelCacheDir(HOME)], files }
 }
 
 function seedHealthy(): MemAuditFs {
@@ -531,6 +531,31 @@ describe('runStoreAudit: model cache and dreaming lines', () => {
       files: { ...seed.files, [`${modelCacheDir(HOME)}/model.onnx`]: 'ONNX' },
     })
     const report = await run({ fs })
+    expect(issueIds(report)).not.toContain('model.uncached')
+  })
+
+  it('probes a configured model.cacheDir, empty meaning uncached, named not the default dir', async () => {
+    const seed = healthyVault()
+    // The default dir is seeded WITH content; only the configured custom
+    // dir (empty) can hold the probe's attention, pinning that the audit
+    // reads the config, not the layout default.
+    const fs = new MemAuditFs({
+      dirs: [...seed.dirs, '/cache/models'],
+      files: { ...seed.files, [`${modelCacheDir(HOME)}/model.onnx`]: 'ONNX' },
+    })
+    const report = await run({ fs, config: { model: { cacheDir: '/cache/models' } } })
+    const uncached = findIssue(report, 'model.uncached')
+    expect(uncached?.detail).toContain('/cache/models')
+    expect(uncached?.detail).not.toContain(modelCacheDir(HOME))
+  })
+
+  it('stays quiet when the configured model.cacheDir has content', async () => {
+    const seed = healthyVault()
+    const fs = new MemAuditFs({
+      dirs: [...seed.dirs, '/cache/models'],
+      files: { ...seed.files, '/cache/models/model.onnx': 'ONNX' },
+    })
+    const report = await run({ fs, config: { model: { cacheDir: '/cache/models' } } })
     expect(issueIds(report)).not.toContain('model.uncached')
   })
 

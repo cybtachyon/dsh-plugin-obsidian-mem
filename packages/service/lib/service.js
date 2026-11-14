@@ -898,7 +898,12 @@ export class ObsidianMemService extends Service {
             modelId: this.config.model.id,
             vectorDim: this.config.vectorDim,
             dtype: this.config.model.dtype,
-            cacheDir: modelCacheDir(this.homedir()),
+            // resolveServiceConfig already fills the default; the '' check keeps a
+            // hand-built resolved config from handing transformers.js an empty
+            // env.cacheDir (createEmbedder would pass it through verbatim).
+            cacheDir: this.config.model.cacheDir === ''
+                ? modelCacheDir(this.homedir())
+                : this.config.model.cacheDir,
         });
         return this.embedderStore;
     }

@@ -25,6 +25,7 @@ import {
   isVaultMode,
   isVectorDim,
   MILVUS_SCALAR_MAX_LENGTHS,
+  modelCacheDir,
   RECALL_READ_MAX_SECTIONS,
   RECALL_READ_SECTION_TOKENS,
   RECALL_TURN_START_TOKENS,
@@ -76,7 +77,8 @@ export interface ResolvedVaultEntry {
 export interface ObsidianMemConfig {
   vaults?: MountedVaultEntry[]
   vectorDim?: number
-  model?: { id?: string; dtype?: string }
+  /** cacheDir: an omitted (default) value takes core modelCacheDir(homedir) at resolveServiceConfig time. */
+  model?: { id?: string; dtype?: string; cacheDir?: string }
   milvus?: {
     mode?: string
     address?: string
@@ -106,7 +108,8 @@ export interface ObsidianMemResolvedConfig {
   /** globalFile is resolved: blank or omitted takes GLOBAL_MEMORY_FILE_DEFAULT via core resolveGlobalFile. */
   vaults: ResolvedVaultEntry[]
   vectorDim: number
-  model: { id: string; dtype: string }
+  /** cacheDir: never '' after resolveServiceConfig; an omitted knob takes core modelCacheDir(homedir). */
+  model: { id: string; dtype: string; cacheDir: string }
   milvus: { mode: 'spawn' | 'external'; address: string; dbPath: string; readinessTimeoutMs: number }
   budgets: {
     turnStartRecallTokens: number
@@ -170,7 +173,13 @@ function defaults(): ObsidianMemResolvedConfig {
   return {
     vaults: [],
     vectorDim: VECTOR_DIM_DEFAULT,
-    model: { id: DEFAULT_MODEL_ID, dtype: TRANSFORMERS_PIPELINE_OPTIONS.dtype },
+    model: {
+      id: DEFAULT_MODEL_ID,
+      dtype: TRANSFORMERS_PIPELINE_OPTIONS.dtype,
+      // '' = "core modelCacheDir(homedir)" decided at resolveServiceConfig
+      // time, the same sentinel seam as milvus.dbPath (keeps core env-free).
+      cacheDir: '',
+    },
     milvus: {
       mode: 'spawn',
       address: '',
@@ -232,7 +241,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
     if (!isObject(value.model)) {
       issues.push({ message: 'model must be an object', path: ['model'] })
     } else {
-      collectUnknown(value.model, ['model'], ['id', 'dtype'], unknownKeys)
+      collectUnknown(value.model, ['model'], ['id', 'dtype', 'cacheDir'], unknownKeys)
       const model = value.model
       const stringField = (key: 'id' | 'dtype', path: (string | number)[]) => {
         const given = model[key]
@@ -244,6 +253,19 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
       resolved.model = {
         id: stringField('id', ['model', 'id']),
         dtype: stringField('dtype', ['model', 'dtype']),
+        // cacheDir follows the milvus.dbPath sentinel rule, NOT model.id's
+        // non-empty rule: the schema default is '' (the home default is not
+        // knowable at validate time), cordis re-validates the resolved row
+        // through this same schema, and resolveServiceConfig fills '' to
+        // core modelCacheDir(homedir), so a plain-string rule is the only
+        // one that is idempotent. An explicit '' means "the default".
+        cacheDir: stringOr(
+          model.cacheDir,
+          resolved.model.cacheDir,
+          'model.cacheDir',
+          ['model', 'cacheDir'],
+          issues,
+        ),
       }
     }
   }
@@ -463,8 +485,9 @@ function validateSchedules(given: unknown, issues: Issue[]): DreamingSchedule[] 
 
 /**
  * ResolveServiceConfig expands `~`, absolutizes every vault path against the
- * home, and fills the dbPath default from core dbDir. It is the only place
- * $HOME enters the config (mirrors core's homedir-argument discipline).
+ * home, and fills the dbPath and model.cacheDir defaults from core dbDir and
+ * modelCacheDir. It is the only place $HOME enters the config (mirrors core's
+ * homedir-argument discipline).
  */
 export function resolveServiceConfig(
   config: ObsidianMemResolvedConfig,
@@ -483,6 +506,16 @@ export function resolveServiceConfig(
       dbPath: config.milvus.dbPath === ''
         ? dbDir(homedir)
         : expandHome(config.milvus.dbPath, homedir),
+    },
+    model: {
+      ...config.model,
+      // Same sentinel seam as dbPath: '' takes the core layout default, so
+      // the resolved model.cacheDir is never '' (createEmbedder feeds it
+      // straight into transformers.js env.cacheDir, where '' would disable
+      // the download cache).
+      cacheDir: config.model.cacheDir === ''
+        ? modelCacheDir(homedir)
+        : expandHome(config.model.cacheDir, homedir),
     },
   }
 }

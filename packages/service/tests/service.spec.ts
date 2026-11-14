@@ -11,11 +11,13 @@ import {
   dbDir,
   defaultVaultPath,
   metadataDir,
+  modelCacheDir,
   parseNote,
   stateDir,
 } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
+import type { Embedder } from '../src/embedder.ts'
 import {
   DEFAULT_READINESS_TIMEOUT_MS,
   ObsidianMemConfigSchema,
@@ -343,7 +345,7 @@ describe('config schema', () => {
   const fullDefaults = {
     vaults: [],
     vectorDim: 384,
-    model: { id: 'Xenova/multilingual-e5-small', dtype: 'q8' },
+    model: { id: 'Xenova/multilingual-e5-small', dtype: 'q8', cacheDir: '' },
     milvus: { mode: 'spawn', address: '', dbPath: '', readinessTimeoutMs: 600_000 },
     budgets: {
       turnStartRecallTokens: 1200,
@@ -382,6 +384,26 @@ describe('config schema', () => {
     expect(validateObsidianMemConfig({ vectorDim: 256 }).value?.vectorDim).toBe(256)
     expect(validateObsidianMemConfig({ vectorDim: 999 }).issues?.[0]?.message)
       .toMatch(/384 \(full width\).*128\/192\/256\/320/)
+  })
+
+  it('resolves model.cacheDir at construction: core default, custom expanded, sentinel default', () => {
+    expect(harness().service.config.model.cacheDir).toBe(modelCacheDir(HOME))
+
+    const sentinel = harness({ config: { model: { cacheDir: '' } } })
+    expect(sentinel.service.config.model.cacheDir).toBe(modelCacheDir(HOME))
+
+    const custom = harness({ config: { model: { cacheDir: '~/mm' } } })
+    expect(custom.service.config.model.cacheDir).toBe(join(HOME, 'mm'))
+  })
+
+  it('getEmbedder keeps an empty hand-built model.cacheDir out of createEmbedder', () => {
+    const { service } = harness()
+    // resolveServiceConfig never leaves cacheDir '' (the resolve tests pin
+    // it); this covers the getEmbedder guard for a config that bypassed
+    // resolve, where '' would reach transformers.js env.cacheDir.
+    service.config.model.cacheDir = ''
+    const embedderHost = service as unknown as { getEmbedder(): Embedder }
+    expect(() => embedderHost.getEmbedder()).not.toThrow()
   })
 
   it('defaults vault modes and globalFile and rejects bad ones with a path', () => {

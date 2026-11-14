@@ -56,7 +56,7 @@ README/AGENTS docs.
 
 ### Phase 1: settings domain (service + events)
 
- - [ ] [TASK-001-model-cache-dir-knob](docs/PLAN-config-pane-TASK-001-model-cache-dir-knob.md)
+ - [x] [TASK-001-model-cache-dir-knob](docs/PLAN-config-pane-TASK-001-model-cache-dir-knob.md)
  - [ ] [TASK-002-settings-override-store](docs/PLAN-config-pane-TASK-002-settings-override-store.md)
  - [ ] [TASK-003-card-settings-service-api](docs/PLAN-config-pane-TASK-003-card-settings-service-api.md)
  - [ ] [TASK-004-live-apply-escalation](docs/PLAN-config-pane-TASK-004-live-apply-escalation.md)

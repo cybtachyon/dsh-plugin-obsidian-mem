@@ -7,6 +7,7 @@ import {
   MILVUS_SCALAR_MAX_LENGTHS,
   VECTOR_DIM_DEFAULT,
   dbDir,
+  modelCacheDir,
 } from '../../core/lib/index.js'
 import {
   DEFAULT_READINESS_TIMEOUT_MS,
@@ -56,7 +57,7 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
       const config = (result as { value: ResolvedObsidianMemConfig }).value
       expect(config.vaults).toEqual([])
       expect(config.vectorDim).toBe(VECTOR_DIM_DEFAULT)
-      expect(config.model).toEqual({ id: DEFAULT_MODEL_ID, dtype: 'q8' })
+      expect(config.model).toEqual({ id: DEFAULT_MODEL_ID, dtype: 'q8', cacheDir: '' })
       expect(config.milvus).toEqual({
         mode: 'spawn',
         address: '',
@@ -96,6 +97,31 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
     expect(resolved.budgets.searchTopK).toBe(5)
     expect(resolved.budgets.readSections).toBe(2)
   })
+
+  it('keeps a mounted model.cacheDir string, including the "" default sentinel', () => {
+    const custom = (validate({ model: { cacheDir: '/cache/models' } }) as { value: ResolvedObsidianMemConfig }).value
+    expect(custom.model.cacheDir).toBe('/cache/models')
+
+    // '' is the sentinel for "core modelCacheDir(homedir)" (the milvus.dbPath
+    // rule): validation must accept it, because cordis re-validates the
+    // resolved row where '' is the stored default.
+    const sentinelResult = validate({ model: { cacheDir: '' } })
+    expect(issuesOf(sentinelResult)).toEqual([])
+    const sentinel = (sentinelResult as { value: ResolvedObsidianMemConfig }).value
+    expect(sentinel.model.cacheDir).toBe('')
+  })
+
+  it('re-validates a fully resolved default config without issues (idempotent sentinels)', () => {
+    const first = validate({})
+    expect(first.issues).toBeUndefined()
+
+    // The service constructor re-runs the schema over the already-resolved
+    // row cordis validated; tightening the cacheDir rule past stringOr would
+    // kill every default mount here.
+    const again = validate((first as { value: ResolvedObsidianMemConfig }).value)
+    expect(again.issues).toBeUndefined()
+    expect((again as { value: ResolvedObsidianMemConfig }).value.model.cacheDir).toBe('')
+  })
 })
 
 describe('validateObsidianMemConfig: rejection table', () => {
@@ -112,6 +138,7 @@ describe('validateObsidianMemConfig: rejection table', () => {
     ['vectorDim off the whitelist', { vectorDim: 250 }, ['vectorDim']],
     ['model not an object', { model: 'e5' }, ['model']],
     ['model.id blank', { model: { id: '  ' } }, ['model.id']],
+    ['model.cacheDir not a string', { model: { cacheDir: 42 } }, ['model.cacheDir']],
     ['milvus not an object', { milvus: 'spawn' }, ['milvus']],
     ['milvus.mode not in enum', { milvus: { mode: 'remote' } }, ['milvus.mode']],
     ['milvus.readinessTimeoutMs not positive', { milvus: { readinessTimeoutMs: 0 } }, ['milvus.readinessTimeoutMs']],
@@ -241,6 +268,21 @@ describe('resolveServiceConfig and path helpers', () => {
     const config = (validated as { value: ResolvedObsidianMemConfig }).value
 
     expect(resolveServiceConfig(config, '/home/tester').milvus.dbPath).toBe('/home/tester/mem-db')
+  })
+
+  it('fills model.cacheDir: the "" default takes core modelCacheDir, custom paths expand', () => {
+    const defaulted = (validate({}) as { value: ResolvedObsidianMemConfig }).value
+    expect(resolveServiceConfig(defaulted, '/home/tester').model.cacheDir)
+      .toBe(modelCacheDir('/home/tester'))
+
+    const tilde = (validate({ model: { cacheDir: '~/models-cache' } }) as { value: ResolvedObsidianMemConfig }).value
+    expect(resolveServiceConfig(tilde, '/home/tester').model.cacheDir).toBe('/home/tester/models-cache')
+
+    const relative = (validate({ model: { cacheDir: 'models-cache' } }) as { value: ResolvedObsidianMemConfig }).value
+    expect(resolveServiceConfig(relative, '/home/tester').model.cacheDir).toBe('/home/tester/models-cache')
+
+    const absolute = (validate({ model: { cacheDir: '/srv/models' } }) as { value: ResolvedObsidianMemConfig }).value
+    expect(resolveServiceConfig(absolute, '/home/tester').model.cacheDir).toBe('/srv/models')
   })
 
   it('expandHomePath passes absolute paths through and resolves relative ones against home', () => {

@@ -8,6 +8,14 @@ become durable exactly like card vaults are (the `vaults.json` precedent).
 
 - Card overrides WIN per leaf key over the same key in the profile row
   config (card is the newer user intent). Row-config-only keys stay as set.
+- `model.cacheDir` (like `milvus.dbPath`) takes `''` as the default
+  sentinel: validation accepts any string (`stringOr`, not `model.id`'s
+  non-empty rule, because cordis re-validates the resolved row whose stored
+  default IS `''`), and `resolveServiceConfig` maps `''` to core
+  `modelCacheDir(homedir)`. So a settings.json override row may legitimately
+  carry `''`, meaning "the core default", never "unset the knob". Clearing an
+  override means DELETING the key from the overrides map (the profile row
+  value then wins again), not writing `''`.
 - The override file anchors at the FIXED core layout location
   `stateDir(homedir())` (= `dbStateDir(dbDir(homedir()))`, from
   `packages/core/lib/index.js`), NOT at the config-derived `stateDirPath()`,

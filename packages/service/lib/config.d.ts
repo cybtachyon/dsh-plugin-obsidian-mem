@@ -49,9 +49,11 @@ export interface ResolvedVaultEntry {
 export interface ObsidianMemConfig {
     vaults?: MountedVaultEntry[];
     vectorDim?: number;
+    /** cacheDir: an omitted (default) value takes core modelCacheDir(homedir) at resolveServiceConfig time. */
     model?: {
         id?: string;
         dtype?: string;
+        cacheDir?: string;
     };
     milvus?: {
         mode?: string;
@@ -86,9 +88,11 @@ export interface ObsidianMemResolvedConfig {
     /** globalFile is resolved: blank or omitted takes GLOBAL_MEMORY_FILE_DEFAULT via core resolveGlobalFile. */
     vaults: ResolvedVaultEntry[];
     vectorDim: number;
+    /** cacheDir: never '' after resolveServiceConfig; an omitted knob takes core modelCacheDir(homedir). */
     model: {
         id: string;
         dtype: string;
+        cacheDir: string;
     };
     milvus: {
         mode: 'spawn' | 'external';
@@ -153,8 +157,9 @@ export declare const ObsidianMemConfigSchema: ConfigSchema;
 export declare function globalFileShapeIssue(resolved: string): string | null;
 /**
  * ResolveServiceConfig expands `~`, absolutizes every vault path against the
- * home, and fills the dbPath default from core dbDir. It is the only place
- * $HOME enters the config (mirrors core's homedir-argument discipline).
+ * home, and fills the dbPath and model.cacheDir defaults from core dbDir and
+ * modelCacheDir. It is the only place $HOME enters the config (mirrors core's
+ * homedir-argument discipline).
  */
 export declare function resolveServiceConfig(config: ObsidianMemResolvedConfig, homedir: string): ResolvedObsidianMemConfig;
 /**

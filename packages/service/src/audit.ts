@@ -39,7 +39,6 @@ import {
   MANUAL_COMPACTION_APPROVAL,
   MANUAL_COMPACTION_RECIPE,
   metadataDir,
-  modelCacheDir,
   NOTE_TIMELINE_BYTES,
   parseNote,
   PLUGIN_METADATA_REL,
@@ -436,8 +435,9 @@ function readVaultState(vault: VaultEntry, fs: AuditFs): VaultStateInfo {
 }
 
 // Whole-tree disk usage: stat-only, dot dirs excluded (covers the
-// .obsidian-mem sidecar dir). The model cache needs no skip here: core's
-// modelCacheDir keeps it under dbDir, outside every vault.
+// .obsidian-mem sidecar dir). The default model cache needs no skip here:
+// core's modelCacheDir keeps it under dbDir, outside every vault (a
+// configured model.cacheDir inside a vault is measured on purpose).
 function measureUsage(vault: VaultEntry, fs: AuditFs): { bytes: number; truncated: boolean } {
   let bytes = 0
   let entries = 0
@@ -843,8 +843,11 @@ export async function runStoreAudit(deps: AuditDeps, request: AuditRequest = {})
       'fix the frontmatter (an unclosed quote or fence poisons every key after it); parse errors: ' + malformed.slice(0, MALFORMED_ERROR_ECHO_CAP).map((note) => note.malformed).join(', '))
   }
 
-  // 6. Model cache.
-  const cache = modelCacheDir(deps.homedir)
+  // 6. Model cache: the directory the plugin actually embeds into. The
+  // resolved config is authoritative (resolveServiceConfig never leaves
+  // model.cacheDir ''), so a custom cacheDir cannot hide behind the
+  // default-dir probe.
+  const cache = deps.config.model.cacheDir
   const cacheEntries = deps.fs.listDirectory(cache)
   if (cacheEntries === null || cacheEntries.length === 0) {
     issue('model.uncached', 'INFO', `the embedding model is not cached at ${quoted(cache, ECHO_PATH_CAP)} yet`,

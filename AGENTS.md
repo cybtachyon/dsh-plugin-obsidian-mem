@@ -15,7 +15,8 @@
     constants: the vault root IS the indexed note root; each vault's
     sidecars (indexer state, `DREAMS.md`) live under
     `<vault>/.obsidian-mem/metadata/`; the model cache lives under
-    `<dbDir>/models/`
+    `<dbDir>/models/` (relocatable via service config `model.cacheDir`;
+    the `''` default sentinel resolves to `modelCacheDir(homedir)`)
   - `VaultConfig` (path, `shared` | `readonly` mode, `globalFile` relative
     to the vault root, default `GLOBAL.md`) and the vault registry model
   - The memory-note Markdown format: frontmatter (`gray-matter`) and body

@@ -144,7 +144,7 @@ function configFixture(overrides: Partial<ResolvedObsidianMemConfig> = {}): Reso
   return {
     vaults: [],
     vectorDim: 384,
-    model: { id: 'model', dtype: 'q8' },
+    model: { id: 'model', dtype: 'q8', cacheDir: `${DB}/models` },
     milvus: { mode: 'spawn', address: '', dbPath: DB, readinessTimeoutMs: 1 },
     budgets: {
       turnStartRecallTokens: 500,

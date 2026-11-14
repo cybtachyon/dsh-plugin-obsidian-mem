@@ -218,9 +218,31 @@ pid 1091813 verified alive 2026-11-13).
 
 ### Phase C: same-session A/B (spec Step 3)
 
- - [ ] [TASK-010-baseline-run](docs/PLAN-wake-gate-TASK-010-baseline-run.md)
- - [ ] [TASK-011-gated-run](docs/PLAN-wake-gate-TASK-011-gated-run.md)
- - [ ] [TASK-012-score-commit-decide](docs/PLAN-wake-gate-TASK-012-score-commit-decide.md)
+ - [x] [TASK-010-baseline-run](docs/PLAN-wake-gate-TASK-010-baseline-run.md)
+ - [x] [TASK-011-gated-run](docs/PLAN-wake-gate-TASK-011-gated-run.md)
+ - [x] [TASK-012-score-commit-decide](docs/PLAN-wake-gate-TASK-012-score-commit-decide.md)
+
+ TASK-010..012 result (2026-11-13, spec §"Step 3 A/B executed"):
+ **decision FAIL**. Same-session pair (both artifacts `server.rowCount`
+ 213; wake-audit invariants verified at session start and after the
+ gated run: 213/213 scan, 0 empty, 0 markers, 记忆 on 2 rows). Gated:
+ sparse-only forbidden 2 -> 1 (inside the <=2 margin; lone survivor
+ lywa-php-lint-tooling via slug word `php`, the pre-recorded ruling
+ class it PASS-margin, not PARTIAL); P@k 0.284 -> 0.377; forbidden
+ 10 -> 7; zh control zero deltas (OFF SUMMARY byte-identical to the
+ §Step 1.3 pin; ON keeps all three run-* pinned hits, codepoint
+ shapes fail open). FAIL trigger: relevant-of-labeled 15/22 -> 14/22
+ (machinae-combat-systems lost typescript-simulation-style.md).
+ Mechanism measured: the gate PASSES that row (wake contains
+ `simulation`); lite 3.2.2 computes filtered-sparse-search BM25
+ statistics over the matched subset, the row's raw BM25 rescales
+ 11.70 -> 4.97, the client sparse floor 5.0 trims it, then
+ FUSED_SCORE_FLOOR 1/62 trims the dense-only 1/66. Control: an
+ all-rows filter answers bit-identical scores to ungated; a
+ one-row-excluded filter shifts every score. Option 4 (Q3: automatic
+ under this plan's authority, snapshot first) is the consequence;
+ TASK-013 (Phase D live confirmation) is superseded: the gate does
+ not ship on a FAIL.
 
 ### Phase D: live confirmation (spec Step 4, sequencing per Q1 answer)
 
@@ -248,6 +270,18 @@ pid 1091813 verified alive 2026-11-13).
 
 ## Discovered issues ledger
 
+- FOUND (TASK-010/012, spec §"Step 3 A/B executed", the FAIL
+  mechanism): milvus-lite 3.2.2 recomputes BM25 corpus statistics
+  over the SCALAR-FILTERED subset for every sparse search. A
+  filter-shaped control (same query, same session): `chunk_id > 0`
+  answers bit-identical scores to the ungated search; excluding one
+  row shifts every score; the wake gate rescaled a relevant row's
+  raw BM25 11.70 -> 4.97 (below the 5.0 client floor) even though
+  the predicate passed it. Any future scalar filter on the sparse
+  leg (wake gate, Option-4 legs if ever filtered, scope filters)
+  rescores the corpus per query: floors tuned on unfiltered
+  distributions do not transfer. Candidate vault note at Finalize:
+  `milvus-lite-3-2-2-filtered-sparse-search-rescores-bm25-per-filtered-set`.
 - RECORDED (vault note `milvus-lite-3-2-2-query-pagination-by-pk-cursor-silently-loses-rows`
   + wake-audit-probe docblock): milvus-lite 3.2.2 `query` answers in
   segment order; PK-cursor pagination silently loses rows and `order_by`

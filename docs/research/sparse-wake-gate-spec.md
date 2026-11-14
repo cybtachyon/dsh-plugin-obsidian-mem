@@ -305,7 +305,11 @@ sparse-only forbidden 6 → 1 (row 2 survives; ≤2 stays inside the PASS
 margin), relevant sparse-visible rows 15 → 14 with the loser still
 dense-carried, no marker-driven survivors.** A TASK-011 outcome of
 survivors >1 or relevant loss contradicts this prediction and points at
-harness/gate wiring, not at wake content.
+harness/gate wiring, not at wake content. OUTCOME (§"Step 3 A/B
+executed"): forbidden 2 → 1 (margin held; the lone survivor is a
+different, new slug-word row); the relevant-loss branch fired, its
+cause measured as the gate × per-filtered-set BM25 statistics × floors
+interaction, not wake content; the decision landed FAIL.
 
 ### Step 1.3 zh baseline (TASK-003): the zh control pin for the TASK-010/011 A/B
 
@@ -443,6 +447,8 @@ fire.
 prediction (three probes 2→0) is superseded for TASK-010/011: after
 this refresh the pinned control's three run-* probes are predicted to
 survive the gate UNCHANGED. Phase B (spec Step 2) is unblocked.
+CONFIRMED at TASK-011: the gated probe run showed zero deltas on all
+17 probes (§"Step 3 A/B executed", zh control paragraph).
 
 ## Step 2: implement (TDD, single commit with lib)
 
@@ -482,6 +488,163 @@ row; script pattern in the route-attribution vault note):
   unchanged, P@k up or forbidden-rate down with the other held.
 - Both artifacts + the per-query diff table get committed under
   docs/research/ (timestamp-free), and the outcome is recorded here.
+
+### Step 3 A/B executed (TASK-010/011/012, 2026-11-13): decision FAIL
+
+Implementation commit: 9c2ae27 (gate + `--wake-gate` harness flag;
+refactor 36ab4c6 keeps the merge one-home). The pair ran back to back
+in ONE session against the live collection:
+`eval-split-strip-on-d078-s50-k60-m016129-wakegate-baseline.json`
+(`wakeGate: false`) and
+`eval-split-strip-on-d078-s50-k60-m016129-wakegate.json`
+(`wakeGate: true`). Pair validity: both artifacts read
+`server.rowCount: 213`; wake-audit invariants verified at session start
+AND immediately after the gated run (213 rows, scanComplete 213/213,
+EMPTY wake 0, intent markers 0, 2 rows carry the Han wake key 记忆).
+
+Corpus-drift sanity (TASK-010 clause, noted not repaired): this
+baseline (88 page rows: 25 R / 29 A / 10 F / 24 .) differs materially
+from the committed 205-row-era
+`eval-split-strip-on-d078-s50-k60-m016129.json` (76 rows: 19 R / 24 A
+/ 19 F / 14 .); the corpus grew 205 -> 213 and TASK-015/017 rewrote
+every wake array since. The same-session pair, not the committed
+artifact, is the control.
+
+Aggregates, same-session pair:
+
+| metric | baseline | gated |
+| --- | --- | --- |
+| returned page rows | 88 | 61 |
+| relevant | 25 | 23 |
+| acceptable | 29 | 21 |
+| forbidden | 10 | 7 |
+| neutral | 24 | 10 |
+| relevantLabels hits (of 22) | 15 | 14 |
+| precision@k | 0.284 | 0.377 |
+| forbidden-rate | 0.114 | 0.115 |
+
+Class x route (page rows), from `returned[]` routes + classification:
+
+| class | base both | base dense | base sparse | gate both | gate dense | gate sparse |
+| --- | --- | --- | --- | --- | --- | --- |
+| relevant | 24 | 1 | 0 | 19 | 4 | 0 |
+| acceptable | 25 | 4 | 0 | 12 | 9 | 0 |
+| forbidden | 5 | 3 | **2** | 2 | 4 | **1** |
+| neutral | 18 | 2 | 4 | 4 | 3 | 3 |
+
+Relevant/acceptable sparse-only stayed 0 (the §Problem invariant
+holds again on the fresh corpus). Eight rows flipped both -> dense
+(the gate cut their sparse leg; dense kept them).
+
+Per-query diff (n: baseline -> gated; deltas are gated minus
+baseline; names shortened):
+
+| query | n | ΔR | ΔA | ΔF | Δ. | lost (class/route) | gained |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| milvus-irrelevant-context | 6->2 | -1 | -1 | 0 | -2 | subagent-zero(A), bootstrap-chunk(R), dream-run(.)x2, turn-start(.) | pagination(.dense) |
+| dream-plan-runs-actually | 6->5 | 0 | -1 | +1 | -1 | global-budget(A), vault-layout(.) | guestwise-plan-tasks(F,dense) |
+| budget-reminder-end-of-turn | 6->5 | 0 | -1 | 0 | 0 | subagent-zero(A) | - |
+| milvus-goaway-keepalive | 3->2 | 0 | 0 | 0 | -1 | pagination(.) | - |
+| lib-tracked-build-contract | 6->4 | 0 | 0 | -1 | -1 | theme-storybook(F), act-flag(.) | - |
+| typecheck-test-trees | 4->2 | 0 | 0 | -1 | -1 | theme-playwright(F), turn-start(.) | - |
+| session-transcript-probe | 6->3 | 0 | -2 | 0 | -1 | cwd-header(A), subagent-zero(A), turn-start(.) | - |
+| subagent-zero-recall | 6->6 | 0 | 0 | 0 | 0 | none | none |
+| layout-sidecar-model-cache | 4->2 | 0 | 0 | -1 | -1 | drupal11-plugin-discovery(F), core-wake-legality(.sparse) | - |
+| machinae-combat-systems | 5->4 | **-1** | 0 | -1 | +1 | **typescript-simulation-style(R,both)**, lywa-solr-pywsd-runner(F,sparse) | core-wake-legality(.sparse) |
+| machinae-save-restore | 4->4 | 0 | 0 | -1 | +1 | lywa-contrib-patch-baseline(F,sparse) | concurrent-git-index(.sparse) |
+| machinae-threejs-renderer | 4->4 | 0 | 0 | 0 | 0 | none | none |
+| lywa-synonym-service-di | 6->4 | 0 | -1 | 0 | -1 | lywa-index(A), lywa-solr-pywsd-runner(.) | - |
+| lywa-glossary-synonyms | 5->2 | 0 | 0 | 0 | -3 | drush-import(.)x2, kernel-test-minted(.sparse) | - |
+| lywa-lightbox-pause | 6->3 | 0 | -2 | 0 | -1 | frontend-test(A), lywa-index(A), authnet-nightwatch(.) | - |
+| guestwise-ci-playwright | 5->4 | 0 | 0 | 0 | -1 | fastest-parallel-phpunit(.sparse) | - |
+| guestwise-ticket-type-form | 6->5 | 0 | 0 | +1 | -2 | seatmap(.), demo-gaps(A), phpmd(.) | order-item(A), **lywa-php-lint-tooling(F,sparse)** |
+
+The single relevant-label regression is machinae-combat-systems:
+`typescript-simulation-style.md` chunk 4294887176612183 (label hit
+1 -> 0). Mechanism, verified (not assumed): the row PASSES the gate
+predicate (wake `[typescript, simulation, style, …]` contains the
+stripped token `simulation`; a same-session read-only replay of the
+gated search returns the row), but milvus-lite 3.2.2 computes the
+BM25 corpus statistics of a scalar-filtered sparse search over the
+FILTERED subset, so the gate rescales its raw BM25 11.70 -> 4.97;
+the client-side sparse floor (`-score >= 5.0`, production
+`SPARSE_SEARCH_RADIUS` parity) then trims it off the sparse route,
+and the fused floor (`FUSED_SCORE_FLOOR` 1/62) trims the single-leg
+dense rank-6 row (1/66 = 0.01515) off the page. Filter-shape
+controls, same session: `chunk_id > 0` (matches every row) answers
+BIT-IDENTICAL scores to the ungated search; excluding one row with
+`source_path != …` shifts every row's score (idf/avgdl are
+recomputed per filtered set). The predicate never rejects a relevant
+wake; the floors plus per-query BM25 statistics do the damage. The
+same dispatch + floors are production's shape, so the loss would
+ship with the gate as specified.
+
+zh control (spec §Step 1.3 pin; PASS criterion "zh probe hits
+unchanged"): OFF run `SUMMARY` line is BYTE-IDENTICAL to the pin
+(`cmp`). ON run (`--wake-gate`): all 17 probes' `hitChunkIds`
+identical to the pin; the three `run-*` probes keep BOTH pinned hits
+gated (gate exprs `ARRAY_CONTAINS_ANY(wake_keywords, ["记忆"])`,
+`["智能体"]`, `["的共享记忆"])`; `raw-joined`,
+`substr-共享记忆`, `shipped-strip-out` carry exprs and stay empty as
+pinned; every single-codepoint shape (`t002-strip-out`,
+`split-unstripped`, `cp-*`) gates to an empty token list, emits NO
+expr, and keeps its pinned hits. Zero deltas. The §Step 1.3
+prediction (three probes 2 -> 0) is confirmed superseded by TASK-017
+end-to-end through the shipped flag.
+
+Sparse-only forbidden counts vs the TASK-002 §Step 1.2 prediction:
+baseline 2 (machinae-combat-systems / lywa-solr-pywsd-runner and
+machinae-save-restore / lywa-contrib-patch-baseline); gated 1
+(guestwise-ticket-type-form / lywa-php-lint-tooling, surviving via
+stripped token `php` hitting its slug-word wake
+`[lywa, php, lint, tooling]`). Headline count matches the predicted
+">5 of 6 die, exactly 1 survivor (<= 2 PASS margin)", but the
+composition moved on the reindexed corpus: of the §Problem six, only
+lywa-solr-pywsd-runner still reached the baseline page sparse-only
+(and died as predicted); the predicted survivor (guestwise row
+riding `global`) no longer appears as a forbidden page row at all,
+and its sparse leg did die (the row flipped both -> dense on
+guestwise-ci-playwright); the actual lone survivor is a new
+slug-word collision the prediction could not name. Post-gate
+sparse-route survivors' gate intersections, measured read-only:
+`home` (machinae-combat / core-wake-legality, neutral), `one`
+(machinae-save-restore / concurrent-git-index, neutral), `php`
+(lywa-synonym-service-di / lywa-php-lint-tooling, neutral) and
+(guestwise-ticket-type-form / lywa-php-lint-tooling, FORBIDDEN).
+
+Decision rules, rule by rule:
+
+1. sparse-only forbidden <= 2: gated 1. PASS clause.
+2. relevant-of-labeled >= baseline: 14 < 15. **VIOLATED.**
+3. zh probe hits unchanged: unchanged (byte-identical OFF; ON zero
+   deltas). PASS clause.
+4. P@k up or forbidden-rate down with the other held: P@k
+   0.284 -> 0.377 up; forbidden-rate 0.1136 -> 0.1148 (absolute
+   forbidden rows 10 -> 7; rate essentially flat, marginally up on
+   the smaller page). Satisfied under the absolute-count reading;
+   moot, rule 2 fails.
+
+Classification of the lone survivor (pre-recorded PLAN ledger
+ruling): slug-word survivors inside the <= 2 margin are NOT PARTIAL;
+PARTIAL is reserved for survivors whose wake array matched the query
+via their COLLISION word of the generic-intent-marker pollution kind
+(markers measured 0 corpus-wide). The `php` survivor is the same
+legitimate-shared-slug-vocabulary class as the "global" survivor the
+ruling names. PARTIAL does not apply.
+
+**Decision: FAIL.** The Decision rules name the realized condition
+verbatim: "relevant rows or zh hits drop: the gate is too blunt",
+and relevant-of-labeled dropped (15/22 -> 14/22, the
+typescript-simulation-style.md row). FAIL is the only condition that
+opens Option 4 (dual BM25 fields); per the Q3 answer it proceeds
+automatically under the plan's authority (snapshot
+`~/.dsh/obsidian-mem-db` first; old collection stays alive until the
+Option-4 A/B completes). Recorded addendum for whoever sequences
+Option 4: the killer mechanism measured here is not the predicate
+but its interaction with per-filtered-set BM25 statistics and the
+two floors; a wake gate that passes the relevant row still loses it.
+Option 4's own sparse legs would carry no scalar filter, so they do
+not inherit this interaction.
 
 ## Step 4: live confirmation (light)
 

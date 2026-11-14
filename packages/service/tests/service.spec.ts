@@ -1792,4 +1792,70 @@ describe('vault git wiring', () => {
       .rejects.toThrow(/read-only vault/)
     expect(git.calls.filter((call) => call.root === readOnly)).toEqual([])
   })
+
+  // Dream-commit seam (TASK-006): the dream ok path closes with one
+  // commitAllShared pass, and the launch text names the adopted roots for
+  // the prompt's Step 0 Pre-Sync step.
+
+  /** DreamGitHarness: a git-enabled service with the launch gateways mounted. */
+  function dreamGitHarness(git: ReturnType<typeof recordingGit>, gitEnabled: boolean) {
+    const vault = gitTempDir()
+    const agents = fakeGateway()
+    const h = harness({
+      gitEnabled,
+      seedDirs: [vault],
+      config: { vaults: [{ path: vault }] },
+      gitRunner: git.gitRunner,
+      services: {
+        agents: agents.gateway,
+        agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      },
+    })
+    return { ...h, vault, agents }
+  }
+
+  /** LaunchText: the followup text the dream agent double received. */
+  function launchText(agents: ReturnType<typeof fakeGateway>): string {
+    const followup = agents.followups[0] as { content: Array<{ type: string; text: string }> }
+    return followup.content[0]?.text ?? ''
+  }
+
+  it('a successful dream run records one commit pass and names the adopted roots in the launch text', async () => {
+    const git = recordingGit()
+    const h = dreamGitHarness(git, true)
+    await h.service.ensureMemoryAccess()
+    git.calls.length = 0
+    git.markDirty()
+
+    const result = await h.service.dream({ operation: 'run' })
+    if (result.operation !== 'run') {
+      throw new Error('expected the run operation')
+    }
+    const summary = await result.done
+    expect(summary.ok).toBe(true)
+    expect(commitMessages(git)).toEqual([
+      expect.stringMatching(
+        /^obsidian-mem: dream \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      ),
+    ])
+    expect(summary.summary).toContain(`git: ${h.vault}=${'f'.repeat(7)}`)
+    expect(launchText(h.agents)).toContain(
+      `Memory git roots (for the Pre-Sync step): ${h.vault}`,
+    )
+    expect(h.ctx.errors).toEqual([])
+  })
+
+  it('a git-disabled dream run reaches no git boundary and omits the roots line', async () => {
+    const git = recordingGit()
+    const h = dreamGitHarness(git, false)
+    await h.service.ensureMemoryAccess()
+
+    const result = await h.service.dream({ operation: 'run' })
+    if (result.operation !== 'run') {
+      throw new Error('expected the run operation')
+    }
+    expect((await result.done).ok).toBe(true)
+    expect(git.calls).toEqual([])
+    expect(launchText(h.agents)).not.toContain('Memory git roots')
+  })
 })

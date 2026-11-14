@@ -8,8 +8,10 @@
  * TASK-001), the host agentDefaultModel route (TASK-002), failed-turn
  * detection from the session log (TASK-003), the load-bearing scoring
  * order (relevancy scored against the PREVIOUS stamp, THEN lastDreamAt
- * written), and the ok-path onRunSucceeded dep firing exactly once
- * (PLAN-budget-rebaseline TASK-002). Everything external is a fake:
+ * written), the ok-path onRunSucceeded dep firing exactly once
+ * (PLAN-budget-rebaseline TASK-002), and the ok-path memory git commit
+ * seam with its summary fold plus the launch-text git roots block
+ * (PLAN-git-versioning TASK-006). Everything external is a fake:
  * ServiceFs in memory, inventories as data, a fake agents gateway (whose
  * agent double answers ownEvents with a scripted transcript), a fake host
  * default-model route, faked vectors.
@@ -17,7 +19,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { GLOBAL_MEMORY_FILE_DEFAULT, NOTE_TIMELINE_BYTES } from '../../core/lib/index.js'
+import { DEFAULT_CHURN_THRESHOLD_PERCENT, DEFAULT_CHURN_WINDOW_COMMITS, GLOBAL_MEMORY_FILE_DEFAULT, NOTE_TIMELINE_BYTES } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
 import { DEFAULT_DREAM_PROMPT, DreamBlockedError, DreamBusyError, DreamOrchestrator, renderPromptTunables } from '../src/dream.ts'
 import type { DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
@@ -156,6 +158,11 @@ function configFixture(overrides: Partial<ResolvedObsidianMemConfig> = {}): Reso
     },
     llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
     dreaming: { schedules: [], model: '', nearDuplicateThreshold: 0.92 },
+    git: {
+      enabled: false,
+      churnThresholdPercent: DEFAULT_CHURN_THRESHOLD_PERCENT,
+      churnWindowCommits: DEFAULT_CHURN_WINDOW_COMMITS,
+    },
     ...overrides,
   }
 }
@@ -174,6 +181,8 @@ interface DepsOptions {
   gateway?: DreamAgentsGateway | null
   defaultAgentOptions?: () => { provider?: string; model?: string } | undefined
   vectors?: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>
+  commitMemory?: (message: string) => Promise<Array<{ vault: string; hash: string | null }>>
+  gitRoots?: () => string[]
   onRunSucceeded?: () => void
   logs?: string[]
 }
@@ -192,6 +201,8 @@ function deps(fixture: DepsOptions): DreamDeps {
     agentsGateway: () => fixture.gateway ?? undefined,
     defaultAgentOptions: fixture.defaultAgentOptions ?? (() => ({ provider: 'acme', model: 'm-1' })),
     noteVectors: fixture.vectors ?? (async () => new Map<string, number[]>()),
+    commitMemory: fixture.commitMemory ?? (async () => []),
+    gitRoots: fixture.gitRoots ?? (() => []),
     onRunSucceeded: fixture.onRunSucceeded ?? (() => {}),
     log: (message) => {
       ;(fixture.logs ?? []).push(message)
@@ -401,6 +412,8 @@ describe('prompt: seed once, render tunables on every load', () => {
     expect(first).toContain('12288')
     expect(first).toContain('1500')
     expect(first).toContain('0.92')
+    // TASK-006: the Step 4 churn sentence renders from the git group.
+    expect(first).toContain('50% of the last 8')
     expect(first).toContain('_history.md')
     // The seeded protocol names the sidecar diary location, not a vault-root
     // DREAMS.md (PLAN-vault-layout TASK-006).
@@ -425,6 +438,29 @@ describe('prompt: seed once, render tunables on every load', () => {
     expect(other.loadPrompt()).toBe('Split notes above 12288 bytes; budget 900.')
     expect(fs.mutations).toEqual([])
     expect(renderPromptTunables('unknown {{PLACEHOLDER}} stays', configFixture())).toBe('unknown {{PLACEHOLDER}} stays')
+  })
+
+  it('renders every {{...}} token of the prepared prompt and no stray placeholder survives', () => {
+    // Collected first so a failure names the exact token the renderer lost.
+    const tokens = [...DEFAULT_DREAM_PROMPT.matchAll(/\{\{[^{}]*\}\}/g)].map((match) => match[0])
+    expect(tokens).toEqual(expect.arrayContaining([
+      '{{NOTE_TIMELINE_BYTES}}',
+      '{{ARCHIVE_HISTORY_SUFFIX}}',
+      '{{GLOBAL_MEMORY_TOKENS}}',
+      '{{NEAR_DUPLICATE_THRESHOLD}}',
+      '{{CHURN_THRESHOLD_PERCENT}}',
+      '{{CHURN_WINDOW_COMMITS}}',
+    ]))
+    const rendered = renderPromptTunables(DEFAULT_DREAM_PROMPT, configFixture())
+    expect([...rendered.matchAll(/\{\{[^{}]*\}\}/g)].map((match) => match[0])).toEqual([])
+    expect(rendered).toContain('50% of the last 8')
+    // A custom git group re-renders the Step 4 sentence; no default leaks.
+    const custom = renderPromptTunables(DEFAULT_DREAM_PROMPT, configFixture({
+      git: { enabled: true, churnThresholdPercent: 30, churnWindowCommits: 4 },
+    }))
+    expect(custom).toContain('30% of the last 4')
+    expect(custom).not.toContain('50%')
+    expect([...custom.matchAll(/\{\{[^{}]*\}\}/g)].map((match) => match[0])).toEqual([])
   })
 })
 
@@ -665,6 +701,125 @@ describe('run: onRunSucceeded ok-path dep', () => {
       onRunSucceeded: () => { calls += 1 },
     })).plan()
     expect(calls).toBe(0)
+  })
+})
+
+// PLAN-git-versioning TASK-006: the ok path closes with ONE memory git
+// commit pass after the stamp and before the rebaseline dep. Committed
+// hashes fold into the summary; a clean pass adds nothing; a throwing
+// git seam logs and never flips ok; plan and failed runs never reach it.
+describe('run: memory git commit seam', () => {
+  it('calls commitMemory exactly once, after the lastDreamAt stamp and before onRunSucceeded, with the pinned message', async () => {
+    const fs = stampedFs()
+    const order: string[] = []
+    const messages: string[] = []
+    const stampsSeen: Array<number | null> = []
+    const orchestrator = new DreamOrchestrator(deps({
+      fs,
+      gateway: fakeGateway().gateway,
+      commitMemory: async (message) => {
+        order.push('commit')
+        messages.push(message)
+        // Observe the stamp from inside the dep: only the ok-path write
+        // moves it past the seeded LAST_DREAM_ISO value.
+        const state = JSON.parse(fs.files.get(`${DB}/state/state.json`) ?? 'null') as { lastDreamAt?: number } | null
+        stampsSeen.push(state?.lastDreamAt ?? null)
+        return [{ vault: SHARED, hash: 'a'.repeat(40) }]
+      },
+      onRunSucceeded: () => {
+        order.push('succeeded')
+      },
+    }))
+    const summary = await orchestrator.startRun().done
+    expect(summary.ok).toBe(true)
+    expect(order).toEqual(['commit', 'succeeded'])
+    expect(messages).toEqual([
+      expect.stringMatching(/^obsidian-mem: dream \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+    ])
+    expect(stampsSeen).toHaveLength(1)
+    expect(stampsSeen[0] as number).toBeGreaterThan(Date.parse(LAST_DREAM_ISO))
+  })
+
+  it('folds committed hashes into the summary and reads clean trees as clean', async () => {
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: fakeGateway().gateway,
+      commitMemory: async () => [
+        { vault: SHARED, hash: `${'b'.repeat(40)}` },
+        { vault: READ_ONLY, hash: null },
+      ],
+    }))
+    const summary = await orchestrator.startRun().done
+    expect(summary.summary).toBe(
+      `dreamed 0 notes: 0 bumped, 0 degraded, 0 flagged for archive review; git: ${SHARED}=${'b'.repeat(7)}, ${READ_ONLY}=clean`,
+    )
+  })
+
+  it('leaves the summary untouched when nothing committed', async () => {
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: fakeGateway().gateway,
+      commitMemory: async () => [{ vault: SHARED, hash: null }],
+    }))
+    const summary = await orchestrator.startRun().done
+    expect(summary.ok).toBe(true)
+    expect(summary.summary).toBe('dreamed 0 notes: 0 bumped, 0 degraded, 0 flagged for archive review')
+  })
+
+  it('logs a throwing commitMemory and keeps ok true with no git clause', async () => {
+    const logs: string[] = []
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: fakeGateway().gateway,
+      logs,
+      commitMemory: async () => {
+        throw new Error('git exploded')
+      },
+    }))
+    const summary = await orchestrator.startRun().done
+    expect(summary.ok).toBe(true)
+    expect(summary.summary).not.toContain('git:')
+    expect(logs.some((entry) => entry.includes('memory git commit failed') && entry.includes('git exploded'))).toBe(true)
+    expect(orchestrator.busy).toBe(false)
+  })
+
+  it('never commits for a plan, a refused start, or a failed run', async () => {
+    let calls = 0
+    const orchestrator = new DreamOrchestrator(deps({
+      gateway: fakeGateway({ whenIdle: () => Promise.reject(new Error('agent died')) }).gateway,
+      commitMemory: async () => {
+        calls += 1
+        return []
+      },
+    }))
+    await orchestrator.plan()
+    expect(calls).toBe(0)
+    await expect(orchestrator.startRun().done).rejects.toThrow('agent died')
+    expect(calls).toBe(0)
+  })
+})
+
+// The prompt's Step 0 says "run `git fetch` in the memory root"; the
+// launch text must name that root (TASK-006), as one final line, only
+// when the git layer actually adopted shared vaults.
+describe('run: launch text carries the git roots', () => {
+  const launchText = (followup: unknown): string =>
+    (followup as { content: Array<{ type: string; text: string }> }).content[0]?.text ?? ''
+
+  it('appends the one-line roots block after the work plan when gitRoots is non-empty', async () => {
+    const recorder = fakeGateway()
+    await new DreamOrchestrator(deps({
+      gateway: recorder.gateway,
+      gitRoots: () => ['/vault/one', '/vault/two'],
+    })).startRun().done
+    const text = launchText(recorder.followups[0])
+    expect(text).toContain('# Work plan for this run')
+    expect(text.endsWith('Memory git roots (for the Pre-Sync step): /vault/one, /vault/two\n')).toBe(true)
+  })
+
+  it('omits the roots block entirely when gitRoots is empty', async () => {
+    const recorder = fakeGateway()
+    await new DreamOrchestrator(deps({ gateway: recorder.gateway })).startRun().done
+    const text = launchText(recorder.followups[0])
+    expect(text).not.toContain('Memory git roots')
+    expect(text.endsWith('verify each candidate with memory_read before acting.\n')).toBe(true)
   })
 })
 

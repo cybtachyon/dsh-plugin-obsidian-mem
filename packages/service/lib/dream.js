@@ -18,13 +18,16 @@
  * fires the optional `onRunSucceeded` dep, the ok-path global-budget
  * rebaseline (PLAN-budget-rebaseline TASK-002).
  *
- * Git-churn stressors are a documented deviation from the ext: vaults are
- * not necessarily git repos here, so stress is read-staleness, staleness
- * vs lastDreamAt, and near-duplicate vector similarity only. The dream
- * agent moves memory through memory_read/memory_write (service applyWrite);
- * the only files this engine writes are plugin-owned: the editable prompt
- * seed, the state stamp, the relevancy sidecar, and the DREAMS.md diary
- * fallback. Archive candidates are flagged, never auto-deleted.
+ * Git (PLAN-git-versioning TASK-006): with config `git.enabled` the shared
+ * vaults are git repos owned by the VaultGitManager; the launch text names
+ * the adopted roots for the prompt's Step 0 Pre-Sync, the ok path closes
+ * with one commitMemory pass over every shared vault, and the Step 4
+ * churn stressors read git history at the `git.churnWindowCommits` window.
+ * The dream agent moves memory through memory_read/memory_write (service
+ * applyWrite); the only files this engine writes are plugin-owned: the
+ * editable prompt seed, the state stamp, the relevancy sidecar, and the
+ * DREAMS.md diary fallback (gitignored sidecar dir, never committed).
+ * Archive candidates are flagged, never auto-deleted.
  * @module dsh-plugin-obsidian-mem/service/dream
  */
 import { randomUUID } from 'node:crypto';
@@ -556,7 +559,13 @@ export class DreamOrchestrator {
     }
     async drive(id, model) {
         const startedAt = Date.now();
-        const finish = (ok, error, scoring) => {
+        const finish = (ok, error, scoring, gitOutcomes = []) => {
+            // Git fold (TASK-006): committed vaults ride the summary as
+            // `<vault>=<hash7>`; a clean tree reads `clean`, and the clause
+            // appears only when the pass committed somewhere.
+            const gitNote = gitOutcomes.some((outcome) => outcome.hash !== null)
+                ? `; git: ${gitOutcomes.map((outcome) => `${outcome.vault}=${outcome.hash === null ? 'clean' : outcome.hash.slice(0, 7)}`).join(', ')}`
+                : '';
             const summary = {
                 id,
                 startedAt,
@@ -567,7 +576,7 @@ export class DreamOrchestrator {
                 degraded: scoring?.degraded ?? 0,
                 archiveCandidates: scoring?.archiveCandidates ?? [],
                 summary: ok
-                    ? `dreamed ${String(scoring?.notes ?? 0)} notes: ${String(scoring?.bumped ?? 0)} bumped, ${String(scoring?.degraded ?? 0)} degraded, ${String(scoring?.archiveCandidates?.length ?? 0)} flagged for archive review`
+                    ? `dreamed ${String(scoring?.notes ?? 0)} notes: ${String(scoring?.bumped ?? 0)} bumped, ${String(scoring?.degraded ?? 0)} degraded, ${String(scoring?.archiveCandidates?.length ?? 0)} flagged for archive review${gitNote}`
                     : `dream run failed: ${error ?? 'unknown error'}`,
                 error,
             };
@@ -581,7 +590,14 @@ export class DreamOrchestrator {
             if (gateway === undefined) {
                 throw new DreamBlockedError('the agents service disappeared before the run could launch');
             }
-            const launchText = `${plan.prompt}\n---\n\n# Work plan for this run\n\n${plan.plan}\n\nVaults, budgets, and cluster detail above are authoritative; verify each candidate with memory_read before acting.\n`;
+            // Step 0 Pre-Sync tells the agent to run `git fetch` in the memory
+            // root; the roots line names WHERE (the adopted shared vaults), one
+            // line, only while the git layer actually adopted something.
+            const gitRoots = this.deps.gitRoots();
+            const rootsLine = gitRoots.length === 0
+                ? ''
+                : `Memory git roots (for the Pre-Sync step): ${gitRoots.join(', ')}\n`;
+            const launchText = `${plan.prompt}\n---\n\n# Work plan for this run\n\n${plan.plan}\n\nVaults, budgets, and cluster detail above are authoritative; verify each candidate with memory_read before acting.\n${rootsLine}`;
             const route = this.launchRoute(model);
             if (route === null) {
                 // startRun's blockedReason already gates this; the host default
@@ -615,13 +631,25 @@ export class DreamOrchestrator {
             // stamp lastDreamAt.
             const scoring = this.applyDreamScoring();
             this.setLastDream(Date.now());
+            // Memory git commit (TASK-006): one closing pass over every shared
+            // vault, after the stamp so plugin state is settled. The manager
+            // never rejects and a disabled gate answers []; the catch is the
+            // belt against a throwing dep, because the memory work landed and
+            // ok stays true.
+            let gitOutcomes = [];
+            try {
+                gitOutcomes = await this.deps.commitMemory(`obsidian-mem: dream ${String(new Date().toISOString())}`);
+            }
+            catch (error) {
+                this.deps.log(`dream ${id}: memory git commit failed: ${describeError(error)}`);
+            }
             // Budget rebaseline (PLAN-budget-rebaseline TASK-002): the ok path
             // zeroes the live per-session recall counters through the wired dep,
             // so the global budget window starts at this run. Failed paths never
             // reach here, so a dead agent never reopens the gate.
             this.deps.onRunSucceeded?.();
             this.deps.log(`dream ${id} done: ${String(scoring.bumped)} bumped, ${String(scoring.degraded)} degraded, ${String(scoring.archiveCandidates.length)} archive candidates`);
-            return finish(true, null, scoring);
+            return finish(true, null, scoring, gitOutcomes);
         }
         catch (error) {
             const message = describeError(error);
@@ -728,6 +756,8 @@ export function renderPromptTunables(template, config) {
         .replaceAll('{{NOTE_TIMELINE_BYTES}}', String(NOTE_TIMELINE_BYTES))
         .replaceAll('{{ARCHIVE_HISTORY_SUFFIX}}', ARCHIVE_HISTORY_SUFFIX)
         .replaceAll('{{GLOBAL_MEMORY_TOKENS}}', String(config.budgets.globalMemoryTokens))
-        .replaceAll('{{NEAR_DUPLICATE_THRESHOLD}}', String(config.dreaming.nearDuplicateThreshold));
+        .replaceAll('{{NEAR_DUPLICATE_THRESHOLD}}', String(config.dreaming.nearDuplicateThreshold))
+        .replaceAll('{{CHURN_THRESHOLD_PERCENT}}', String(config.git.churnThresholdPercent))
+        .replaceAll('{{CHURN_WINDOW_COMMITS}}', String(config.git.churnWindowCommits));
 }
 //# sourceMappingURL=dream.js.map

@@ -765,6 +765,12 @@ export class ObsidianMemService extends Service {
                 // answers undefined for an unmounted service, so no try/catch.
                 defaultAgentOptions: () => this.ctx.get('agentDefaultModel')?.currentSelection() ?? undefined,
                 noteVectors: (targets) => this.fetchNoteVectors(targets),
+                // Dream-end git seam (PLAN-git-versioning TASK-006): the manager's
+                // live gate answers [] when git is disabled, so the ok path calls
+                // unconditionally; adoptedRoots names the Step 0 Pre-Sync roots in
+                // the launch text.
+                commitMemory: (message) => this.vaultGit.commitAllShared(message),
+                gitRoots: () => this.vaultGit.adoptedRoots(),
                 // Successful compaction rebaselines the global recall budget
                 // (PLAN-budget-rebaseline TASK-002): the closure reads the wired
                 // registry at call time, and no-ops before the events row wires one.

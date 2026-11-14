@@ -18,17 +18,21 @@
  * fires the optional `onRunSucceeded` dep, the ok-path global-budget
  * rebaseline (PLAN-budget-rebaseline TASK-002).
  *
- * Git-churn stressors are a documented deviation from the ext: vaults are
- * not necessarily git repos here, so stress is read-staleness, staleness
- * vs lastDreamAt, and near-duplicate vector similarity only. The dream
- * agent moves memory through memory_read/memory_write (service applyWrite);
- * the only files this engine writes are plugin-owned: the editable prompt
- * seed, the state stamp, the relevancy sidecar, and the DREAMS.md diary
- * fallback. Archive candidates are flagged, never auto-deleted.
+ * Git (PLAN-git-versioning TASK-006): with config `git.enabled` the shared
+ * vaults are git repos owned by the VaultGitManager; the launch text names
+ * the adopted roots for the prompt's Step 0 Pre-Sync, the ok path closes
+ * with one commitMemory pass over every shared vault, and the Step 4
+ * churn stressors read git history at the `git.churnWindowCommits` window.
+ * The dream agent moves memory through memory_read/memory_write (service
+ * applyWrite); the only files this engine writes are plugin-owned: the
+ * editable prompt seed, the state stamp, the relevancy sidecar, and the
+ * DREAMS.md diary fallback (gitignored sidecar dir, never committed).
+ * Archive candidates are flagged, never auto-deleted.
  * @module dsh-plugin-obsidian-mem/service/dream
  */
 import type { VaultMode } from '../../core/lib/index.js';
 import type { ResolvedObsidianMemConfig } from './config.js';
+import type { VaultGitCommitOutcome } from './vault-git.js';
 import type { GlobalBudgetReport, VaultInventory } from './audit.js';
 import type { GlobalMemoryIndex, ServiceFs } from './service.js';
 /**
@@ -204,6 +208,22 @@ export interface DreamDeps {
     defaultAgentOptions: () => DreamAgentRoute | undefined;
     /** Stored chunk vectors averaged per note; empty map when index cold. */
     noteVectors: (targets: readonly DreamVectorTarget[]) => Promise<Map<string, number[]>>;
+    /**
+     * CommitMemory records one git commit pass over every shared vault at
+     * the end of the ok path (the service wires the VaultGitManager
+     * commitAllShared seam; a disabled git gate answers the empty list). A
+     * null hash means the vault tree was clean. The orchestrator catches
+     * throws: git is the history book and can never flip a landed memory
+     * run (PLAN-git-versioning TASK-006).
+     */
+    commitMemory: (message: string) => Promise<VaultGitCommitOutcome[]>;
+    /**
+     * GitRoots lists the shared vault roots the git layer has adopted; the
+     * launch text names them for the prompt's Step 0 Pre-Sync step only
+     * when the list is non-empty (empty means git is off or nothing is
+     * adopted yet).
+     */
+    gitRoots: () => string[];
     /**
      * Fires on the ok path only, right after the lastDreamAt stamp: the
      * service wires it to the session registry's budget reset, so a

@@ -76,7 +76,8 @@ README/AGENTS docs.
 ### Phase 4: docs and gates
 
  - [x] [TASK-010-docs-readme-agents](docs/PLAN-config-pane-TASK-010-docs-readme-agents.md)
- - [ ] [TASK-011-gates-and-live-verify](docs/PLAN-config-pane-TASK-011-gates-and-live-verify.md)
+ - [x] [TASK-011-gates-and-live-verify](docs/PLAN-config-pane-TASK-011-gates-and-live-verify.md)
+   post-restart probes pending on the user's host restart + continue message.
 
 ## Dependencies
 

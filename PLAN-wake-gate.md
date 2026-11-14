@@ -142,6 +142,12 @@ pid 1091813 verified alive 2026-11-13).
 - NOTED (out of scope): think-channel still treats when/what/etc as
   recall trigger terms (INTENT_MARKERS shared with wake extraction);
   separate hygiene fix if ever scheduled.
+- NOTED (TASK-014 report): `LlmRefiner.refine` merges endpoint wake
+  terms onto the capped list without `isUsableKeyword` or re-capping;
+  and single-segment chunker headers are invisible to wake extraction
+  (`section_header` not in `TriggerInput`). Both are follow-up
+  candidates outside this plan; TASK-015 should just note whether the
+  live reindex engaged the refiner.
 - RECIPE for TASK-006 fixture edits (vault note
   `dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig`):
   after changing fixture shapes, typecheck the test trees with the

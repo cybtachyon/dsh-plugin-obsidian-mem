@@ -8,11 +8,13 @@ import { extractTriggers, normalizeExtension } from '../src/triggers.ts'
  * overrides for extensions and frameworks, presence-gated framework
  * vocabulary plus manifest vocabulary, wake keywords from headers,
  * emphasis, frontmatter keywords, the note file-name slug, the chunker
- * header-path line, and the non-generic intent markers, with dedupe,
- * lowercasing, and the constants' capacity caps. Wake-key legality
- * (TASK-014) drops the generic house-format labels (why, how to apply,
- * bare interrogatives) and fragment shapes (digit- or symbol-led keys,
- * unbalanced brackets, em-dash splices).
+ * header-path line, the non-generic intent markers, and the maximal Han
+ * runs of the chunk text (TASK-017), with dedupe, lowercasing, and the
+ * constants' capacity caps. Wake-key legality (TASK-014) drops the
+ * generic house-format labels (why, how to apply, bare interrogatives),
+ * fragment shapes (digit- or symbol-led keys, unbalanced brackets,
+ * em-dash splices), and Han runs that are entirely standalone
+ * function-word characters.
  */
 
 function ext(text: string, filePath = 'notes/a.md'): string[] {
@@ -233,6 +235,98 @@ describe('wake_keywords', () => {
     const text = '# Alpha\n\n**beta** gamma *delta* how debug'
 
     expect(keywords(text)).toEqual(keywords(text))
+  })
+})
+
+describe('wake_keywords: Han run harvest (TASK-017)', () => {
+  it('harvests maximal Han runs after the existing wake entries, deduped', () => {
+    const text = [
+      '## Zh copy rules',
+      '',
+      'Obsidian Mem 是一款插件，可将你的知识库用作智能体（Agent）的共享记忆。',
+      'The run 记忆 appears twice: 记忆 again.',
+    ].join('\n')
+
+    const found = keywords(text)
+
+    expect(found).toContain('是一款插件')
+    expect(found).toContain('可将你的知识库用作智能体')
+    expect(found).toContain('的共享记忆')
+    expect(found).toContain('记忆')
+    // Existing entries keep first position; the runs fill in after them
+    // in discovery order.
+    const zhCopyIndex = found.indexOf('zh copy rules')
+    expect(zhCopyIndex).toBeGreaterThanOrEqual(0)
+    const runIndexes = ['是一款插件', '可将你的知识库用作智能体', '的共享记忆', '记忆'].map(
+      (run) => found.indexOf(run),
+    )
+    expect(runIndexes).toEqual([...runIndexes].sort((a, b) => a - b))
+    for (const runIndex of runIndexes) {
+      expect(runIndex).toBeGreaterThan(zhCopyIndex)
+    }
+    expect(found.filter((keyword) => keyword === '记忆')).toHaveLength(1)
+    // Maximal-run shape: sub-tokens and cross-run joins are never stored.
+    expect(found).not.toContain('共享记忆')
+    expect(found).not.toContain('记忆记忆')
+  })
+
+  it('keeps maximal-run shape: adjacent Han is one key, never sub-tokens', () => {
+    const found = keywords('记忆记忆 智能体记忆')
+
+    expect(found).toContain('记忆记忆')
+    expect(found).toContain('智能体记忆')
+    expect(found).not.toContain('记忆')
+    expect(found).not.toContain('智能体')
+  })
+
+  it('drops runs made only of standalone Han function-word characters', () => {
+    const found = keywords('他说，是的，我们的，时代。')
+
+    expect(found).toContain('他说')
+    expect(found).toContain('时代')
+    expect(found).not.toContain('是的')
+    expect(found).not.toContain('我们的')
+  })
+
+  it('applies the function-run drop to frontmatter keywords too (one legality gate)', () => {
+    const found = keywords('plain prose here.', { keywords: ['记忆', '是的'] })
+
+    expect(found).toContain('记忆')
+    expect(found).not.toContain('是的')
+  })
+
+  it('existing entries keep priority when the column fills; Han runs fill the rest', () => {
+    const cap = MILVUS_ARRAY_CAPACITIES.wakeKeywords
+    const meta = { keywords: Array.from({ length: cap - 2 }, (_, i) => `keyword ${i}`) }
+
+    const found = keywords('智能体 记忆 的共享记忆', meta)
+
+    expect(found).toHaveLength(cap)
+    expect(found.slice(-2)).toEqual(['智能体', '记忆'])
+    expect(found).not.toContain('的共享记忆')
+  })
+
+  it('caps a Han run at the wakeKeywords element max length', () => {
+    const cap = MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords
+    const fits = '记'.repeat(cap)
+    const over = '记'.repeat(cap + 1)
+
+    const found = keywords(`${fits} ${over}`)
+
+    expect(found).toContain(fits)
+    expect(found).not.toContain(over)
+  })
+
+  it('leaves a Latin-only note’s wake array unchanged and Han-free', () => {
+    const found = extractTriggers({
+      sectionText: 'The route normalizer strips ajax subpaths.',
+      filePath: 'drupal/drupal-route-normalizer-301-on-ajax-subpaths.md',
+    }).wake_keywords
+
+    // The exact TASK-002 collision-row shape: Latin slug words only,
+    // byte-identical to the pre-Task-017 output.
+    expect(found).toEqual(['drupal', 'route', 'normalizer', 'on', 'ajax', 'subpaths'])
+    expect(found.every((keyword) => !/\p{Script=Han}/u.test(keyword))).toBe(true)
   })
 })
 

@@ -48,8 +48,9 @@ export interface Triggers {
  * author's explicit vocabulary beats detection). `keywords:` only
  * prepends; text signals still contribute wake keywords. Order is
  * deterministic: frontmatter and file-name words first, then
- * fence/inline/manifest/header/emphasis/marker discovery order,
- * deduplicated, lowercased, legality-filtered, capped.
+ * fence/inline/manifest/header/emphasis/marker discovery order, then
+ * the text's maximal Han runs, deduplicated, lowercased,
+ * legality-filtered, capped.
  */
 export declare function extractTriggers(input: TriggerInput): Triggers;
 /**

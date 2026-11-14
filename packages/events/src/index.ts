@@ -1,7 +1,7 @@
 /**
  * The lifecycle hooks for the Obsidian Mem capability: turn-start recall
  * injection through the per-agent channel, the Read-tool intercept, the
- * Think-stream keyword intercept, the turn-end save/audit reminder, and the
+ * Think-stream keyword intercept, the memory-tool watch, and the
  * global per-session recall budget that caps what all of them inject.
  *
  * Mount shape (mirrors the tools row): the static `inject` pins the
@@ -31,7 +31,7 @@ import type { EffectDisposer, HookLogger, LiveAgent, MemoryEventsScope } from '.
 import { installReadIntercept } from './readIntercept.js'
 import { SESSIONS_FILE_NAME, SessionRegistry } from './sessions.js'
 import { installThinkIntercept } from './thinkIntercept.js'
-import { installMemoryToolWatch, installTurnEnd } from './turnEnd.js'
+import { installMemoryToolWatch } from './turnEnd.js'
 import { installTurnStart } from './turnStart.js'
 import { runGuarded } from './toolkit.js'
 import { installWriteLedger } from './writeLedger.js'
@@ -66,8 +66,8 @@ export function apply(ctx: Context, options: MountOptions = {}): void {
  * MountLifecycle wires one profile's lifecycle: session registry, seam
  * hookup, and the agent create/dispose pairing whose per-agent
  * `agent.ctx.effect()` carries every agent-scoped listener this row
- * installs (turn-start recall, the Think-stream intercept, and the turn-end
- * reminder). Answers the registry (tests assert on it).
+ * installs (turn-start recall and the Think-stream intercept). Answers the
+ * registry (tests assert on it).
  */
 export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions = {}): SessionRegistry {
   const ctx = scope
@@ -118,7 +118,6 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
         const disposers = [
           installTurnStart(deps),
           installThinkIntercept(deps),
-          installTurnEnd(deps),
         ]
         return () => {
           for (const dispose of disposers) {
@@ -142,7 +141,7 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
 
   // Plugin-level tool observation: tools/result is keyed by exec.agent and
   // observed here (not per agent.ctx); see TASK-042 and the TASK-044
-  // memory-tool turn guard.
+  // memory-tool watch (TASK-010: the watch is all that rides turn end).
   installReadIntercept({ ctx, memory, registry, logger: hookLogger })
   installMemoryToolWatch({ ctx, registry, logger: hookLogger })
   installWriteLedger({ ctx, registry, logger: hookLogger })
@@ -211,14 +210,10 @@ export {
 export type { ThinkInterceptDeps } from './thinkIntercept.js'
 export {
   installMemoryToolWatch,
-  installTurnEnd,
   isTrivialTurn,
-  TURN_END_REMINDER,
   TRIVIAL_TURN_MAX_CHARS,
-  turnEndReminder,
   WORK_MARKER,
 } from './turnEnd.js'
-export type { MemoryToolWatchDeps, TurnEndDeps } from './turnEnd.js'
-export { compactionInstruction } from './budget.js'
+export type { MemoryToolWatchDeps } from './turnEnd.js'
 export { installWriteLedger } from './writeLedger.js'
 export type { WriteLedgerDeps } from './writeLedger.js'

@@ -394,9 +394,10 @@ describe('guidanceLine', () => {
 // while the summed recall injections (registry.totalRecallTokensUsed, the
 // same number the service echoes through globalMemoryIndex) sit past
 // budgets.globalMemoryTokens, turn-start recall is fully suppressed: no
-// recall, no pinned global file, no guidance, and since the reminder moved
-// to the turn-end steer (TASK-003), no budget notice either. The flip is
-// strictly-over: usage exactly at the cap still gets fresh recall.
+// recall, no pinned global file, no guidance, and no budget notice either
+// (the over-budget remedy rides the audit, card, and dream surfaces since
+// TASK-010 removed the turn-end steer). The flip is strictly-over: usage
+// exactly at the cap still gets fresh recall.
 describe('global memory budget switch', () => {
   it('injects nothing but the absence of a budget notice when over budget', async () => {
     const { agent, memory, preStep, registry, scans } = turnStartHarness({

@@ -32,8 +32,6 @@ export interface AgentHostContext {
     on(name: 'agent/pre-step', listener: PreStepListener): () => boolean;
     /** Registers the emit-style assistant-stream observer on the agent's fiber. */
     on(name: 'agent/assistant-stream', listener: (payload: AssistantStreamPayload) => void): () => boolean;
-    /** Registers the serial turn-stopping observer on the agent's fiber. */
-    on(name: 'agent/turn-stopping', listener: (payload: TurnStoppingPayload) => void): () => boolean;
     /** Registers a cleanup-aware effect on the agent's fiber; answers a disposer. */
     effect(execute: () => (() => void) | void, label?: string): EffectDisposer;
 }
@@ -50,13 +48,6 @@ export interface LiveAgent {
     readonly ctx: AgentHostContext;
     /** Queues model-facing context for the next step boundary without waking. */
     inject(message: InjectedUserMessage): void;
-    /**
-     * Admits a message into the live turn and keeps that turn open (AGENTS.md
-     * Event Facts; the turn-end reminder's channel). A steer during
-     * `agent/turn-stopping` runs another step, so the caller needs the
-     * once-per-turn guard or the turn loops open.
-     */
-    steer(message: InjectedUserMessage): void;
 }
 export interface HostContentBlock {
     readonly type: 'text';
@@ -150,12 +141,6 @@ export interface AssistantStreamPayload {
     readonly agent: LiveAgent;
     readonly frame: AssistantStreamFrameMirror;
 }
-/** Turn-stopping payload (serial; steer inside keeps the turn open). */
-export interface TurnStoppingPayload {
-    readonly agent: LiveAgent;
-    readonly turn: number;
-    readonly signal?: AbortSignal;
-}
 /** The `tools/result` execution slice (name, parsed arguments, caller agent). */
 export interface ToolExecutionMirror {
     readonly name: string;
@@ -188,8 +173,6 @@ declare module '@deepseek-ai/cordis' {
         'tools/result'(this: unknown, exec: ToolExecutionMirror, result: ToolResultMirror): undefined;
         /** Emit; Scoped<Agent>: fires on the agent ctx, not the plugin ctx. */
         'agent/assistant-stream'(this: unknown, payload: AssistantStreamPayload): void;
-        /** Serial; Scoped<Agent>: a steer here keeps the turn open (TASK-044). */
-        'agent/turn-stopping'(this: unknown, payload: TurnStoppingPayload): undefined | Promise<undefined>;
     }
 }
 /**

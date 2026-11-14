@@ -1,47 +1,21 @@
 /**
- * Turn-end save/audit reminder (TASK-044). Rides `agent/turn-stopping`
- * (serial; `this: Scoped<Agent>`, verified against the live cordis 4.1.0
- * Event catalog: "the turn is about to close; a listener that steers keeps
- * the machine re-reading its inbox") registered on the AGENT's own context
- * (AGENTS.md "DSH Event Facts"), and delivers the canonical engramory
- * save/audit checklist via `agent.steer(...)` — steer, never followup: the
- * reminder is for the agent that is about to stop, not a wake of an idle
- * one. A steer keeps the open turn open, so the once-per-turn guard is
- * load-bearing: a per-install fired-turn marker (the per-agent analogue of
- * the task file's `WeakMap<Agent, state>`; it dies with the agent effect)
- * lets exactly one steer per turn and makes an open-turn loop impossible.
- *
- * While the global memory recall budget is spent, the SAME steer also
- * carries the budget section after the checklist: `compactionInstruction`
- * with the registry's summed usage (TASK-003, PLAN-budget-reminder
- * Q-PIGGYBACK full piggyback). The budget section inherits the skips below
- * unchanged: no new gate, no separate steer, no extra once-per-turn state.
- *
- * Skips: subagent sessions (the parent carries the memory duty); turns that
- * already used a memory_* tool (observed via the plugin-ctx `tools/result`
- * listener in installMemoryToolWatch — the agent already knows); trivial
- * turns (first user text of 24 chars or fewer unless it carries a work
- * marker /, \, or backtick); sessions whose first user text never surfaced.
- * The `<FIRST_SHARED_VAULT>` in the verbatim reminder body is interpolated
- * from the live vault registry (first shared vault; the default vault path
- * when none are shared), and the reminder itself never calls
- * ensureMemoryAccess — it is a static text, no provisioning side effect.
+ * Turn-end observation (TASK-010). The save/audit reminder steer that used
+ * to ride `agent/turn-stopping` is removed: the completion checkpoint now
+ * rides the `memory_audit` `checkpoint` view at the agent's own turn end
+ * (prepared system prompt), and the steered checklist cost tokens. The
+ * memory-tool watch is all that remains at turn end: the plugin-level
+ * `tools/result` observer below flags per-turn memory_* usage keyed by the
+ * calling agent's session, and that bookkeeping stays observable
+ * (recall observation, registry accounting). The over-budget remedy no
+ * longer piggybacks on any steer; the audit tool, the card, and the dream
+ * surfaces speak it, and the budget accounting itself is untouched.
  * @module dsh-plugin-obsidian-mem/events/turnEnd
  */
 
-import { homedir } from 'node:os'
-import { defaultVaultPath, isOverGlobalBudget, MEMORY_TOOL_NAMES, VAULT_MODE_SHARED } from '../../core/lib/index.js'
-import { compactionInstruction } from './budget.js'
-import type {
-  HookLogger,
-  LiveAgent,
-  MemoryEventsService,
-  ToolResultEvents,
-  TurnStoppingPayload,
-} from './host.js'
-import { makeNoticeMessage } from './host.js'
+import { MEMORY_TOOL_NAMES } from '../../core/lib/index.js'
+import type { HookLogger, ToolResultEvents } from './host.js'
 import type { SessionRegistry } from './sessions.js'
-import { messageIdFactory, runGuarded } from './toolkit.js'
+import { runGuarded } from './toolkit.js'
 
 /** First user text this long or shorter is trivial unless it carries a work marker. */
 export const TRIVIAL_TURN_MAX_CHARS = 24
@@ -49,117 +23,11 @@ export const TRIVIAL_TURN_MAX_CHARS = 24
 /** The WORK_MARKER rule: a path, separator, or code tick means real work. */
 export const WORK_MARKER = /[/\\`]/
 
-/**
- * TURN_END_REMINDER is the verbatim save/audit checklist (project spec,
- * PLAN TASK-044); `<FIRST_SHARED_VAULT>` is the only hole, filled with the
- * first shared vault's path. Do not reword: tests snapshot it byte-exact.
- */
-export const TURN_END_REMINDER = [
-  '1. When you have learned something durable worth knowing in a future session: confirm it isn\'t already in the repo / git / AGENTS.md and isn\'t a secret value. Don\'t duplicate the source of truth.',
-  '2. Use the `memory_search` tool and update an existing note rather than duplicate; otherwise write one atomic markdown file (one fact) with the `memory_write` tool.',
-  '3. New memories go in the most related shared vault.',
-  '4. The memory must carry a Why: line and a How to apply: line in the body.',
-  '5. Archive memories that turn out wrong with the `memory_write` tool.',
-  '6. Never store secret values, only where they live.',
-  '7. Evaluate your turn and find instances where existing memories would have assisted you.',
-  'Check if there were any significant patterns in your language that would indicate a use for the memory,',
-  'then update <FIRST_SHARED_VAULT>/.INTENTS.md with those intent(s).',
-  '8. Run the `memory_audit` tool.',
-].join('\n')
-
-/**
- * TurnEndReminder returns the verbatim checklist with `<FIRST_SHARED_VAULT>`
- * replaced by the first shared vault's path, falling back to the default
- * vault path (which provisioning registers as shared) when no shared vault
- * is registered. Pure: reads only the vault list handed to it.
- */
-export function turnEndReminder(
-  vaults: readonly { path: string, mode: string }[],
-  homedirValue: string = homedir(),
-): string {
-  const shared = vaults.find((vault) => vault.mode === VAULT_MODE_SHARED)
-  const vaultPath = shared?.path ?? defaultVaultPath(homedirValue)
-  return TURN_END_REMINDER.replace('<FIRST_SHARED_VAULT>', vaultPath)
-}
-
-/** Constructor dependencies; `homedir` is a test seam. */
-export interface TurnEndDeps {
-  agent: LiveAgent
-  memory: MemoryEventsService
-  registry: SessionRegistry
-  logger: HookLogger
-  /** Home dir for the no-shared-vault default path; defaults to os.homedir. */
-  homedir?: () => string
-  /** Message id factory; defaults to random UUIDs (test seam). */
-  newMessageId?: () => string
-}
-
-/**
- * InstallTurnEnd registers the per-agent `agent/turn-stopping` observer
- * (called from inside the caller's `agent.ctx.effect()`, per AGENTS.md
- * Event Facts) and answers its disposer. The once-per-turn fired marker is
- * install-scoped state: it dies with the agent effect, exactly like the
- * task file's WeakMap keyed by the agent.
- */
-export function installTurnEnd(deps: TurnEndDeps): () => void {
-  /** The turn that already received its steer; the anti-loop guard. */
-  let firedTurn: number | null = null
-  const newId = messageIdFactory(deps)
-
-  const listener = (payload: TurnStoppingPayload): void => {
-    // Serial dispatch: a throwing listener must not break the close.
-    runGuarded(deps.logger, 'turn-end reminder', () => {
-      const turn = typeof payload.turn === 'number' ? payload.turn : -1
-      if (firedTurn === turn) {
-        return
-      }
-      const agent = payload.agent ?? deps.agent
-      const sessionId = String(agent.id)
-      if (!deliverReminder(deps, sessionId)) {
-        return
-      }
-      // Claim the turn before steering: a steer keeps the turn open and
-      // re-fires this listener; anything throwing mid-steer still counts.
-      firedTurn = turn
-      const home = deps.homedir ?? homedir
-      const body = [turnEndReminder(deps.memory.listVaults(), home())]
-      // Q-PIGGYBACK (TASK-003): the budget section rides this steer, so it
-      // inherits the skips above; usage exactly at the cap stays quiet.
-      // One registry read serves both the gate and the text's numbers.
-      const budgetTokens = deps.memory.config.budgets.globalMemoryTokens
-      const usedTokens = deps.registry.totalRecallTokensUsed()
-      if (isOverGlobalBudget(usedTokens, budgetTokens)) {
-        body.push(compactionInstruction(usedTokens, budgetTokens))
-      }
-      agent.steer(makeNoticeMessage(
-        newId(),
-        'obsidian-mem: turn-end save/audit reminder',
-        body,
-      ))
-    })
-  }
-
-  const off = deps.agent.ctx.on('agent/turn-stopping', listener)
-  return () => { off() }
-}
-
-// Skip gates, in cheap-to-expensive order. False means "stay quiet".
-function deliverReminder(deps: TurnEndDeps, sessionId: string): boolean {
-  const registry = deps.registry
-  if (registry.isSubagent(sessionId)) {
-    return false
-  }
-  if (registry.memoryToolUsed(sessionId)) {
-    return false
-  }
-  return !isTrivialTurn(registry.firstUserText(sessionId))
-}
-
-/** IsTrivialTurn applies the WORK_MARKER rule from the task file. */
+/** IsTrivialTurn applies the WORK_MARKER rule: a short greeting is not work. */
 export function isTrivialTurn(firstUserText: string): boolean {
   const text = firstUserText.trim()
   if (text === '') {
-    // A turn whose user text never surfaced is not worth the reminder.
+    // A turn whose user text never surfaced is not worth any turn-end action.
     return true
   }
   return text.length <= TRIVIAL_TURN_MAX_CHARS && !WORK_MARKER.test(text)
@@ -177,9 +45,10 @@ const MEMORY_TOOL_SET: ReadonlySet<string> = new Set<string>(MEMORY_TOOL_NAMES)
 /**
  * InstallMemoryToolWatch registers the plugin-level `tools/result` observer
  * that flags per-turn memory_* usage keyed by the calling agent's session:
- * a turn that already reached for memory needs no reminder (the task file
- * rejected `tools/post-execute` additionalContexts — a tool-less turn is
- * exactly when the reminder matters).
+ * the memory watch that survives the TASK-010 steer removal, feeding recall
+ * observation (the task file rejected `tools/post-execute`
+ * additionalContexts — a tool-less turn is exactly when the observation
+ * matters).
  */
 export function installMemoryToolWatch(deps: MemoryToolWatchDeps): () => void {
   const off = deps.ctx.on('tools/result', (exec, result) => {

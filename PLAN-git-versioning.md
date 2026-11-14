@@ -76,7 +76,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 
 ### Phase D: events
 
- - [ ] [TASK-010-turn-end-reminder-removal](docs/PLAN-git-versioning-TASK-010-turn-end-reminder-removal.md)
+ - [x] [TASK-010-turn-end-reminder-removal](docs/PLAN-git-versioning-TASK-010-turn-end-reminder-removal.md)
 
 ### Phase E: card + docs
 

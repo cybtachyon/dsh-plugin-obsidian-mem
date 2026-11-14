@@ -66,6 +66,20 @@ describe('mountLifecycle (session registry wiring)', () => {
     tmp.cleanup()
   })
 
+  it('registers exactly the turn-start and Think listeners per agent and no turn-stopping (TASK-010)', () => {
+    const { ctx, tmp } = mount()
+    const agent = fakeAgent({ id: 'session-1' })
+    ctx.emit('agent/created', agent.asCreated())
+    expect([...agent.agentHandlers.keys()].sort()).toEqual([
+      'agent/assistant-stream',
+      'agent/pre-step',
+    ])
+    // Plugin ctx: the three tools/result observers (read intercept, memory
+    // watch, write ledger); the watch is all that rides turn end.
+    expect(ctx.handlers.get('tools/result') ?? []).toHaveLength(3)
+    tmp.cleanup()
+  })
+
   it('contains errors in the serial agent/created listener (never fails creation)', () => {
     const { ctx, tmp } = mount()
     const broken = {

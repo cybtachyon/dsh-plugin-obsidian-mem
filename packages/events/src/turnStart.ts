@@ -12,11 +12,11 @@
  *
  * The flow: ensureMemoryAccess (the one-time default-vault notice is
  * injected first), TASK-045's budget switch (an over-budget session is
- * suppressed: nothing below runs and the flow returns early; the compaction
- * reminder rides the turn-end steer instead), TASK-014's pinned injection
- * of each shared vault's global memory file within the remaining global
- * budget, one workspace manifest scan at
- * the agent's session cwd, search over the first user text alone (the
+ * suppressed: nothing below runs and the flow returns early; the
+ * over-budget remedy lives in the audit, card, and dream surfaces),
+ * TASK-014's pinned injection of each shared vault's global memory file
+ * within the remaining global budget, one workspace manifest scan at the
+ * agent's session cwd, search over the first user text alone (the
  * manifest text feeds only the guidance line; the TASK-015 A/B measured
  * its contamination of both search routes), budget trimming to
  * `budgets.turnStartRecallTokens`, the
@@ -104,8 +104,9 @@ export function installTurnStart(deps: TurnStartDeps): () => void {
 // whole; its agent/turn/step/messages fields are a group in every use here.
 function claimTurnStart(deps: TurnStartDeps, payload: PreStepPayload): void {
   const sessionId = String(payload.agent.id)
-  // The first user text rides into the registry for TASK-044's trivial-turn
-  // guard (the turn-stopping payload carries no messages).
+  // The first user text rides into the registry's per-turn bookkeeping
+  // (TASK-010 retired the turn-end guard that once read it; the field
+  // stays recorded and observable).
   deps.registry.noteTurn(sessionId, payload.turn, firstUserText(payload.messages))
   if (payload.step !== 1 || deps.registry.isTurnStartDone(sessionId)) {
     return
@@ -137,8 +138,8 @@ async function runTurnStartRecall(
 
   // TASK-045: the global memory budget. While the summed recall injections
   // since the last successful dream or host restart sit past
-  // `budgets.globalMemoryTokens`, fresh recall is suppressed; the compaction
-  // reminder moved to the turn-end steer (TASK-003), and the audit's
+  // `budgets.globalMemoryTokens`, fresh recall is suppressed; no reminder
+  // steers here (TASK-010 removed the turn-end steer), and the audit's
   // budget.over line still names the remedy with the same numbers.
   const budgetTokens = memory.config.budgets.globalMemoryTokens
   if (isOverGlobalBudget(registry.totalRecallTokensUsed(), budgetTokens)) {

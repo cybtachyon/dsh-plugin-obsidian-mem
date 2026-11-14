@@ -32,8 +32,8 @@
  * toolkit.ts, where a session never gets back what it itself wrote, no
  * matter which agent instance of that session wrote it), the per-turn
  * `budgets.thinkShotsPerTurn` gate via the registry counter, and
- * `wrapRecalled` envelopes through `agent.inject()` (never `steer`, never
- * wakes). A successful injection then sleeps: the NEXT completed think
+ * `wrapRecalled` envelopes through `agent.inject()` (never wakes). A
+ * successful injection then sleeps: the NEXT completed think
  * block is consumed unprocessed (`THINK_SLEEP_BLOCKS_AFTER_INJECTION`),
  * giving the agent room to absorb what arrived before another recall wave;
  * normal scanning resumes after that block. The listener never throws and

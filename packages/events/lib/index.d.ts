@@ -1,7 +1,7 @@
 /**
  * The lifecycle hooks for the Obsidian Mem capability: turn-start recall
  * injection through the per-agent channel, the Read-tool intercept, the
- * Think-stream keyword intercept, the turn-end save/audit reminder, and the
+ * Think-stream keyword intercept, the memory-tool watch, and the
  * global per-session recall budget that caps what all of them inject.
  *
  * Mount shape (mirrors the tools row): the static `inject` pins the
@@ -45,8 +45,8 @@ export declare function apply(ctx: Context, options?: MountOptions): void;
  * MountLifecycle wires one profile's lifecycle: session registry, seam
  * hookup, and the agent create/dispose pairing whose per-agent
  * `agent.ctx.effect()` carries every agent-scoped listener this row
- * installs (turn-start recall, the Think-stream intercept, and the turn-end
- * reminder). Answers the registry (tests assert on it).
+ * installs (turn-start recall and the Think-stream intercept). Answers the
+ * registry (tests assert on it).
  */
 export declare function mountLifecycle(scope: MemoryEventsScope, options?: MountOptions): SessionRegistry;
 /**
@@ -72,9 +72,8 @@ export { dirSignalsOf, fileTokensOf, HARNESS_READ_TOOL_NAME, importSnippetFrom, 
 export type { ReadInterceptDeps } from './readIntercept.js';
 export { extractCompletedThinkBlocks, installThinkIntercept, intentSentencesOf, readRecordedIntentTerms, THINK_QUERY_MAX_CHARS, THINK_SEARCH_TOP_K, THINK_SLEEP_BLOCKS_AFTER_INJECTION, } from './thinkIntercept.js';
 export type { ThinkInterceptDeps } from './thinkIntercept.js';
-export { installMemoryToolWatch, installTurnEnd, isTrivialTurn, TURN_END_REMINDER, TRIVIAL_TURN_MAX_CHARS, turnEndReminder, WORK_MARKER, } from './turnEnd.js';
-export type { MemoryToolWatchDeps, TurnEndDeps } from './turnEnd.js';
-export { compactionInstruction } from './budget.js';
+export { installMemoryToolWatch, isTrivialTurn, TRIVIAL_TURN_MAX_CHARS, WORK_MARKER, } from './turnEnd.js';
+export type { MemoryToolWatchDeps } from './turnEnd.js';
 export { installWriteLedger } from './writeLedger.js';
 export type { WriteLedgerDeps } from './writeLedger.js';
 //# sourceMappingURL=index.d.ts.map

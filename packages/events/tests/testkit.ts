@@ -31,7 +31,6 @@ import type {
   StreamChunkMirror,
   ToolExecutionMirror,
   ToolResultMirror,
-  TurnStoppingPayload,
 } from '../src/host.ts'
 
 // ---------------------------------------------------------------------------
@@ -202,16 +201,12 @@ export interface FakeAgent {
   /** The agent-ctx listener/effect registry, typed as the host slice. */
   ctx: AgentHostContext
   inject(message: InjectedUserMessage): void
-  steer(message: InjectedUserMessage): void
   injected: InjectedUserMessage[]
-  steered: InjectedUserMessage[]
   agentHandlers: Map<string, Array<(payload: never, next?: never) => unknown>>
   agentEffects: Array<{ label: string, dispose: () => unknown }>
   emitPreStep(payload: PreStepPayload, inner: () => Promise<PreStepDecision>): Promise<PreStepDecision[]>
   /** Fire the emit-style assistant-stream at the agent-ctx listeners. */
   emitAssistantStream(payload: AssistantStreamPayload): void
-  /** Fire the serial turn-stopping at the agent-ctx listeners, in order. */
-  emitTurnStopping(payload: TurnStoppingPayload): Promise<void>
   asCreated(): AgentCreatedPayload
   asDisposed(): AgentDisposedPayload
   asToolCaller(name: string, args: unknown): ToolExecutionMirror
@@ -219,7 +214,6 @@ export interface FakeAgent {
 
 export function fakeAgent(options: FakeAgentOptions): FakeAgent {
   const injected: InjectedUserMessage[] = []
-  const steered: InjectedUserMessage[] = []
   const agentHandlers = new Map<string, Array<(payload: never, next?: never) => unknown>>()
   const agentEffects: Array<{ label: string, dispose: () => unknown }> = []
   const agent = {
@@ -232,7 +226,6 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
       },
     },
     injected,
-    steered,
     agentHandlers,
     agentEffects,
     ctx: {
@@ -257,7 +250,6 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
       },
     },
     inject: (message: InjectedUserMessage) => { injected.push(message) },
-    steer: (message: InjectedUserMessage) => { steered.push(message) },
     async emitPreStep(payload: PreStepPayload, inner: () => Promise<PreStepDecision>) {
       const decisions: PreStepDecision[] = []
       // Compose the registered listeners around the inner next(), the way
@@ -280,12 +272,6 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
       // Emit dispatch: listeners run raw, in registration order.
       for (const listener of [...(agentHandlers.get('agent/assistant-stream') ?? [])]) {
         ;(listener as (p: AssistantStreamPayload) => void)(payload)
-      }
-    },
-    async emitTurnStopping(payload: TurnStoppingPayload) {
-      // Serial dispatch: awaited in registration order.
-      for (const listener of [...(agentHandlers.get('agent/turn-stopping') ?? [])]) {
-        await (listener as (p: TurnStoppingPayload) => unknown)(payload)
       }
     },
     asCreated: () => ({ agent: agent as never, source: 'startup' }),

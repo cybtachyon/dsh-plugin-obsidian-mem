@@ -4,9 +4,18 @@
 
 Shipped and frozen at best-observed values: sparse stop-word strip ON
 (`sparseQueryText`, eng+zho flat list, maximal Han runs, fail-open);
+sparse-leg wake gate ON (`SPARSE_WAKE_GATE_ENABLED = true`,
+docs/research/sparse-wake-gate-spec.md §"Gate definition");
 `DENSE_SEARCH_RADIUS` 0.78; `DENSE_RANGE_MAX` 1.0; `SPARSE_SEARCH_RADIUS`
-5.0; `FUSED_SCORE_FLOOR` 1/(k+2) = 0.016129; `RRF_RANKER_K` 60;
-`GLOBAL_MEMORY_TOKENS` 1500 (loop discipline: probe-first after restart).
+4.75 (the GATED-parity knee: lite 3.2.2 recomputes BM25 statistics over
+the scalar-filtered subset of every gated sparse search, so the 5.0
+TASK-006 knee below was tuned on the unfiltered distribution and does
+not transfer to the gated shape; TASK-018 same-session gated re-sweep,
+docs/research/sparse-wake-gate-spec.md §"Gated floor re-sweep (TASK-018,
+2026-11-13)", shipped by TASK-019 commit c7e4d40);
+`FUSED_SCORE_FLOOR` 1/(k+2) = 0.016129; `RRF_RANKER_K` 60;
+`GLOBAL_MEMORY_TOKENS` 1500 (loop discipline: probe-first after
+restart).
 Clean live evidence: iteration 3 (task-only turn-start query) delivered
 3/3 valid search rows + pinned GLOBAL + guidance, 0 forbidden, seed note
 R1 applied before its warned-about trap; decoys never fired in any

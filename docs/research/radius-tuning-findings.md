@@ -341,7 +341,7 @@ import them, commit 671b2bb):
 | --- | --- | --- |
 | dense ef | 64 | unchanged |
 | dense radius / range_filter | 0.78 / 1.0 | required per task; plateau in 0.78-0.84, 0.82+ cuts relevant |
-| sparse BM25 floor (client, -score) | 5.0 | PLAN-milvus-tuning converged at 2.5 (junk guard only, the sweep-table rows above measured it); PLAN-retune-injection TASK-006 strip-on re-sweep raised it to the 5.0 knee (stopword-strip-findings.md §"Sparse floor re-sweep (TASK-006)") |
+| sparse BM25 floor (client, -score) | 4.75 | PLAN-milvus-tuning converged at 2.5 (junk guard only, the sweep-table rows above measured it); PLAN-retune-injection TASK-006 strip-on re-sweep raised it to the 5.0 knee (stopword-strip-findings.md §"Sparse floor re-sweep (TASK-006)"); PLAN-wake-gate TASK-018/019 re-swept it on the GATED shape to the 4.75 knee (a floor tuned on the unfiltered distribution does not transfer to the gated leg; sparse-wake-gate-spec.md §"Gated floor re-sweep (TASK-018, 2026-11-13)") |
 | RRF k | 60 | k 10-60 indistinguishable at this corpus size |
 | fused score floor (default minScore) | 1/(k+2) | the working lever; knee of the floor sweep with planted notes in the labels |
 

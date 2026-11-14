@@ -252,7 +252,7 @@ pid 1091813 verified alive 2026-11-13).
 ### Phase C2: gated-parity floor re-sweep (Q5 answer)
 
  - [x] [TASK-018-gated-floor-sweep](docs/PLAN-wake-gate-TASK-018-gated-floor-sweep.md)
- - [ ] [TASK-019-ship-retuned-floor](docs/PLAN-wake-gate-TASK-019-ship-retuned-floor.md)
+ - [x] [TASK-019-ship-retuned-floor](docs/PLAN-wake-gate-TASK-019-ship-retuned-floor.md)
 
  TASK-018 result (2026-11-13, spec §"Gated floor re-sweep"):
  **recovery: YES, knee at SPARSE_SEARCH_RADIUS 4.75.** Same-session
@@ -270,12 +270,27 @@ pid 1091813 verified alive 2026-11-13).
  TASK-007-waived corpus artifact). zh canary byte-identical to the
  §Step 1.3 pin. Next: TASK-019 ships 4.75.
 
+ TASK-019 result (2026-11-13, spec §"Outcome (TASK-019, 2026-11-13)",
+ commit c7e4d40): shipped shape = wake gate ON +
+ `SPARSE_SEARCH_RADIUS = 4.75`, src + lib + specs in one commit; the
+ constant's docblock cites the TASK-018 sweep artifacts and keeps the
+ TASK-006 5.0-era sweep as superseded unfiltered-shape history; the
+ -score cutoff golden now imports the constant instead of pinning 5.0.
+ FINAL TUNING VALUES mirrors updated
+ (`stopword-strip-findings.md` row with the per-filtered-subset BM25
+ gated-parity rationale; `radius-tuning-findings.md` §Final shipped
+ tuning kept in lockstep). Gates green: build (lib in lockstep), full
+ test 854 passed / 2 skipped, lint. Zero live-collection access. Phase
+ D (TASK-013) un-superseded and next.
+
 ### Phase D: live confirmation (spec Step 4, sequencing per Q1 answer)
 
  - [ ] [TASK-013-live-confirmation-or-handoff](docs/PLAN-wake-gate-TASK-013-live-confirmation-or-handoff.md)
 
-  Status: superseded while the FAIL stands; un-superseded iff TASK-018
-  recovers and TASK-019 ships the retuned shape.
+  Status: un-superseded (TASK-018 recovered YES and TASK-019 shipped
+  the gate + 4.75 shape in c7e4d40). Phase D is next; its bundle
+  check now greps the shipped shape (gate AND `SPARSE_SEARCH_RADIUS =
+  4.75`) in the installed `service/lib/search.js`.
 
 ## Dependencies (tail)
 

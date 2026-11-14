@@ -758,10 +758,27 @@ retuned `SPARSE_SEARCH_RADIUS` 4.75 with the gate shipped, Phase D
 (TASK-013) un-supersedes iff that ships; Option 4 stays open and
 unspent.
 
+## Outcome (TASK-019, 2026-11-13): shipped shape = gate + 4.75 floor
+
+TASK-019 shipped (commit c7e4d40, src + lib + specs in one commit).
+The production shape is the wake gate ON
+(`SPARSE_WAKE_GATE_ENABLED = true`, §"Gate definition") with the
+gate-parity floor `SPARSE_SEARCH_RADIUS = 4.75` (§"Gated floor
+re-sweep (TASK-018, 2026-11-13)" knee); `FUSED_SCORE_FLOOR` stays
+1/(k+2) and every other knob is unchanged. The §Step 3 FAIL resolved
+through the Q5 route, so Option 4 stays open and unspent. The
+PASS-rule mirror ran on the retuned shape: `stopword-strip-findings.md`
+FINAL TUNING VALUES carries the gated 4.75 with the per-filtered-
+subset BM25 rationale, and `radius-tuning-findings.md` §Final shipped
+tuning agrees. Phase D (TASK-013, §Step 4) is un-superseded and next;
+its bundle check reads this shipped shape off the installed
+`service/lib/search.js`.
+
 ## Step 4: live confirmation (light)
 
 Restart DSH (user action; host code is startup-loaded), verify the
-profile bundle carries the gate (grep `SPARSE_WAKE_GATE` in
+profile bundle carries the shipped shape (grep `SPARSE_WAKE_GATE` and
+`SPARSE_SEARCH_RADIUS = 4.75` in
 `~/.dsh/profiles/web/node_modules/dsh-plugin-obsidian-mem/packages/
 service/lib/search.js`), then ONE live probe iteration with the
 restart-then-launch-first recipe (coding-only first message, protocol

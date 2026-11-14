@@ -155,6 +155,73 @@ empty-wake chunks 39 → 0 (18.6% → 0%), generic-label wake entries
 347 → 0, fragment-shape terms 27 → 0, distinct terms 179 → 578. The
 live reindex + wake-audit re-run that gates Phase B is TASK-015.
 
+### TASK-015 reindex refresh + re-audit (2026-11-13): GATE PASS, Phase B unblocked
+
+The live collection was reindexed through the indexer's own code path by
+`scripts/live-reindex.mjs` (new, durable): a standalone driver built the
+way `scripts/eval/recall-eval.mjs` builds its stack (on-disk
+`packages/*/lib` = post-376108d code, live `{port,pid}` from
+`.memlite.json`, real embedder, registry replayed through the service's
+own config defaults + `vaults.json`), then `IndexerManager.reindexAll()`.
+The forced re-diff runs through the indexer's documented `IndexerFs`
+seam (the in-memory state copy's `contentHash` fields are shadowed to
+zero at construction; chunkIds preserved, so every file still executes
+the indexer's own delete-old-ids → insert-fresh-rows pair). No state
+file was deleted or hand-edited, no raw upsert/delete/DDL, no
+drop/rebuild, dim and model unchanged. The LLM refiner never engaged:
+the script omits the `llm` option, so the codebase's disabled-by-default
+`LlmRefiner` (heuristics only) runs; the script refuses to run if the
+mounted config ever enables it. Run summary: 125 files re-embedded +
+inserted, 19 archived/empty notes settled, 0 errors, 213 → 213 rows.
+
+Re-run of `docs/research/probes/wake-audit-probe.mjs` (HARD READ-ONLY,
+chunk_id range-split windows) against the post-reindex collection:
+
+| measurement | value |
+| --- | --- |
+| collection rows (count guard) | 213 |
+| rows collected (scanComplete) | 213/213 |
+| rows with EMPTY `wake_keywords` | 0 |
+| empty-wake rate | **0.000%** |
+| STOP threshold (Step 1.1) | >5% |
+| decision | **no-STOP** (0% ≤ 5%) |
+
+Pollution re-check: a second read-only full scan counted the generic
+intent markers over all 213 rows: `who/what/when/where/why/how/`how to
+apply` = **0 occurrences corpus-wide** (pre-fix: when 95, how 91, why
+82). TERMS (585 distinct terms, top 20):
+
+| term | rows | term | rows |
+| --- | --- | --- | --- |
+| drupal11 | 22 | checkout | 12 |
+| mem | 20 | before | 11 |
+| obsidian | 20 | debug | 10 |
+| test | 17 | drush | 10 |
+| lywa | 16 | api | 9 |
+| config | 15 | entity | 9 |
+| kernel | 15 | is | 9 |
+| dsh | 14 | the | 9 |
+| guestwise | 13 | bigpipe | 8 |
+| not | 13 | drupalsettings | 8 |
+
+The top-20 is content vocabulary (file-slug words standing per
+TASK-014); the only residue is a few ordinary function words (`not`,
+`before`, `is`, `the`) carried by file-name slugs and content tokens,
+which `isUsableKeyword` bounds by shape, not by a stop-list. Not a gate
+concern.
+
+Reconciled count: the fresh post-reindex number is the truth: **213 live
+rows == 213 chunk ids in the indexer state file (144 files)**. The live
+side moved since the TASK-001 audit (210): notes recorded into the vault
+after the audit were indexed by the host's watchers (the
+milvus-lite-pagination note at +2 chunks took the TASK-014 replay's
+143-file/211-chunk vault to today's 144/213); the pre-reindex live count
+already read 213, so the reindex itself changed no row count, only wake
+content. No mid-run rowCount drift (213 before, 213 after, 213 at audit).
+
+**Decision: GATE PASS (0% ≤ 5%, markers absent from TERMS) — Phase B
+unblocked; resume this spec at Step 1.2.**
+
 ## Step 2: implement (TDD, single commit with lib)
 
 1. `packages/service/src/search.ts`: pure helper

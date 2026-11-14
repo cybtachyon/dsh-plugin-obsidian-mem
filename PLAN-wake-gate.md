@@ -79,7 +79,7 @@ pid 1091813 verified alive 2026-11-13).
 
  - [x] [TASK-014-wake-extraction-fix](docs/PLAN-wake-gate-TASK-014-wake-extraction-fix.md)
  - [x] [TASK-016-thinkintercept-spec-repair](docs/PLAN-wake-gate-TASK-016-thinkintercept-spec-repair.md)
- - [ ] [TASK-015-reindex-refresh](docs/PLAN-wake-gate-TASK-015-reindex-refresh.md)
+ - [x] [TASK-015-reindex-refresh](docs/PLAN-wake-gate-TASK-015-reindex-refresh.md)
 
  TASK-014 result (2026-11-13, spec "Pre-flight measurements", commit
  376108d): wake legality (one home, `isUsableKeyword`) drops the generic
@@ -95,6 +95,19 @@ pid 1091813 verified alive 2026-11-13).
  assertions to the `Memory related to: <queryString>.` shape, no
  src or behavior change. Full suite green again (833 passed, 2
  skipped); lint green. TASK-015 inherits a green baseline.
+
+ TASK-015 result (2026-11-13, spec "Pre-flight measurements"): live
+ collection reindexed through the indexer's own code path from a new
+ durable driver `scripts/live-reindex.mjs` (forced re-diff via the
+ `IndexerFs` state-read shadow; no state-file deletion, no raw
+ mutation; LLM refiner left on the codebase's disabled default).
+ Wake-audit re-run: 213 rows, 0 empty-wake (0.000% ≤ 5%), intent
+ markers 0 occurrences corpus-wide, TERMS top-20 content vocabulary.
+ Reconciled truth: 213 live rows == 213 state chunk ids (144 files;
+ the live side grew from the 210/211 audit/repair-time numbers via
+ post-audit vault notes indexed by the host's watchers). GATE PASS:
+ Phase B unblocked; TASK-002/003 inputs are now the post-reindex
+ wake arrays.
 
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 

@@ -85,6 +85,7 @@ never indexed, and these vault-root paths are reserved for the plugin:
 | `$HOME/.dsh/obsidian-mem/`           | The default shared vault (created if none are already added).   |
 | `$HOME/.dsh/obsidian-mem-db/`        | The memory search Milvus-Lite database (rebuildable on-demand; safe to delete).      |
 | `$HOME/.dsh/obsidian-mem-db/models/` | The memory search ONNX model cache.                        |
+| `$HOME/.dsh/obsidian-mem-db/state/`  | Plugin state: card settings overrides (`settings.json`), the vault registry (`vaults.json`), and session state. Stays here even when `milvus.dbPath` points elsewhere. |
 
 ## Configuration
 

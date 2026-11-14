@@ -39,7 +39,7 @@ export const CONFIG_FIELDS = [
         group: 'Retrieval',
         label: 'Search top K',
         kind: 'number',
-        tooltip: 'Result count memory_search returns when the caller omits topK',
+        tooltip: 'Result count memory_search returns when the caller omits limit',
         placeholder: '6',
     },
     {

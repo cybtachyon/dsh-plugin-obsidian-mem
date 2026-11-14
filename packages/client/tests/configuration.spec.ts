@@ -165,7 +165,7 @@ function ok(overrides: Partial<CardSettingsView> = {}): Answer {
   return { status: 200, body: view(overrides) }
 }
 
-const TOP_K_TITLE = 'Result count memory_search returns when the caller omits topK'
+const TOP_K_TITLE = 'Result count memory_search returns when the caller omits limit'
 const READ_SECTIONS_TITLE = 'Most sections a Read-tool recall may inject'
 const CACHE_DIR_TITLE = 'Directory transformers.js reads and downloads the model in'
 const MODEL_ID_TITLE = 'ONNX model id used to embed every note'

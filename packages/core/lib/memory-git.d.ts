@@ -32,6 +32,15 @@ export declare const GIT_DIR_NAME = ".git";
 export declare const MEMORY_GITIGNORE_TEXT: string;
 /** The message ensureRepo puts on a vault's very first commit. */
 export declare const INITIAL_COMMIT_MESSAGE = "obsidian-mem: initial memory commit";
+/**
+ * DatedCommitMessage renders the auto-commit subject convention every
+ * plugin-created commit follows: `<prefix> <subject> <ISO 8601>`. The
+ * write-commit and dream-commit call sites supply only their subject, so
+ * the timestamped shape has one home and cannot fork between them.
+ * @param subject - what the commit records, e.g. `dream` or `memory_write topic.md`.
+ * @param when - the commit instant; defaults to now.
+ */
+export declare function datedCommitMessage(subject: string, when?: Date): string;
 /** The outcome of one git call: the exit code plus the captured streams. */
 export interface GitRunResult {
     code: number;

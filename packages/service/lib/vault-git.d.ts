@@ -118,6 +118,7 @@ export declare class VaultGitManager {
     forget(vaultPath: string): void;
     private isShared;
     private managedGit;
+    private readShared;
     private ensureAdopted;
     private laneFor;
 }

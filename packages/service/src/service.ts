@@ -43,6 +43,7 @@ import type { MilvusClient } from '@zilliz/milvus2-sdk-node'
 import {
   classifyPath,
   contentHash,
+  datedCommitMessage,
   dbStateDir,
   firstSharedVault,
   formatLocalDate,
@@ -881,7 +882,7 @@ export class ObsidianMemService extends Service {
     // the memory file is the source of truth, so no catch here.
     await this.vaultGit.commitVault(
       classified.vault.path,
-      `obsidian-mem: memory_write ${relPath} ${new Date().toISOString()}`,
+      datedCommitMessage(`memory_write ${relPath}`),
     )
 
     return { path: target, created, vaultPath: classified.vault.path, relPath }

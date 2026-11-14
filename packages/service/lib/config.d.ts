@@ -45,6 +45,29 @@ export interface ResolvedVaultEntry {
     mode: string;
     globalFile: string;
 }
+/**
+ * MountedGitGroup is the `git` row as it arrives in config: the
+ * git-versioning gate plus the churn tunables, every leaf optional
+ * (validation defaults them from the core churn constants).
+ */
+export interface MountedGitGroup {
+    enabled?: boolean;
+    /** Whole percent; a path must churn in more than this share of the window to stress the dream. */
+    churnThresholdPercent?: number;
+    /** How many of the most recent commits the churn window inspects. */
+    churnWindowCommits?: number;
+}
+/**
+ * ResolvedGitGroup is the validated `git` group the service runs on, the
+ * card-editable slice shape, and the escalation swap shape: one
+ * declaration, so renaming a git knob touches one type instead of three
+ * (the CARD_SETTINGS_KEYS rows still list the leaves by path).
+ */
+export interface ResolvedGitGroup {
+    enabled: boolean;
+    churnThresholdPercent: number;
+    churnWindowCommits: number;
+}
 /** Mounted (pre-default) config shape: every field optional. */
 export interface ObsidianMemConfig {
     vaults?: MountedVaultEntry[];
@@ -82,13 +105,7 @@ export interface ObsidianMemConfig {
         /** Pairwise cosine at or above which notes join a merge cluster. */
         nearDuplicateThreshold?: number;
     };
-    git?: {
-        enabled?: boolean;
-        /** Whole percent; a path must churn in more than this share of the window to stress the dream. */
-        churnThresholdPercent?: number;
-        /** How many of the most recent commits the churn window inspects. */
-        churnWindowCommits?: number;
-    };
+    git?: MountedGitGroup;
 }
 /** The fully defaulted config the service runs on (paths still raw). */
 export interface ObsidianMemResolvedConfig {
@@ -127,11 +144,7 @@ export interface ObsidianMemResolvedConfig {
         nearDuplicateThreshold: number;
     };
     /** Gate for git-versioning shared vaults plus the churn tunables; every consumer reads this resolved group. */
-    git: {
-        enabled: boolean;
-        churnThresholdPercent: number;
-        churnWindowCommits: number;
-    };
+    git: ResolvedGitGroup;
 }
 /** The config after path resolution: vault paths and dbPath are absolute. */
 export interface ResolvedObsidianMemConfig extends ObsidianMemResolvedConfig {
@@ -197,11 +210,7 @@ export interface CardEditableConfig {
         model: string;
         apiKeyEnv: string;
     };
-    git: {
-        enabled: boolean;
-        churnThresholdPercent: number;
-        churnWindowCommits: number;
-    };
+    git: ResolvedGitGroup;
 }
 /**
  * CardEditablePartial is {@link CardEditableConfig} with every group and

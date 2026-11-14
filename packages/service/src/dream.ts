@@ -35,6 +35,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import {
   ARCHIVE_HISTORY_SUFFIX,
+  datedCommitMessage,
   dbStateDir,
   DEGRADATION_STEP,
   DREAM_PROMPT_FILE,
@@ -403,6 +404,27 @@ const RELEVANCY_DECAY_SCALE = 1000
 // Shared by blockedReason and the launch guard so the card banner and a
 // raced launch report one provider/model resolution failure.
 const NO_AGENT_MODEL_ROUTE = 'no provider/model can be resolved for the dream agent (mount the host agentDefaultModel service or set dreaming.model)'
+
+// The run-summary git fold abbreviates commit hashes to this width; the
+// full 40-char hash adds nothing a `git log` at the vault cannot print.
+const SUMMARY_HASH_ABBREV = 7
+
+/**
+ * GitSummaryFold renders the ok-path summary's `; git:` clause
+ * (PLAN-git-versioning TASK-006): one `<vault>=<abbrev>` pair per outcome,
+ * `clean` for a tree the pass had nothing to record. It returns '' when the
+ * pass committed nowhere (git off, trees clean), leaving the summary as it
+ * read before git existed.
+ */
+function gitSummaryFold(outcomes: readonly VaultGitCommitOutcome[]): string {
+  if (!outcomes.some((outcome) => outcome.hash !== null)) {
+    return ''
+  }
+  const pairs = outcomes.map((outcome) => (
+    `${outcome.vault}=${outcome.hash === null ? 'clean' : outcome.hash.slice(0, SUMMARY_HASH_ABBREV)}`
+  ))
+  return `; git: ${pairs.join(', ')}`
+}
 
 /** The deterministic post-pass counts, recorded onto DreamRunSummary. */
 interface DreamScoring {
@@ -820,12 +842,9 @@ export class DreamOrchestrator {
       scoring: DreamScoring | null,
       gitOutcomes: readonly VaultGitCommitOutcome[] = [],
     ): DreamRunSummary => {
-      // Git fold (TASK-006): committed vaults ride the summary as
-      // `<vault>=<hash7>`; a clean tree reads `clean`, and the clause
-      // appears only when the pass committed somewhere.
-      const gitNote = gitOutcomes.some((outcome) => outcome.hash !== null)
-        ? `; git: ${gitOutcomes.map((outcome) => `${outcome.vault}=${outcome.hash === null ? 'clean' : outcome.hash.slice(0, 7)}`).join(', ')}`
-        : ''
+      // Git fold (TASK-006): committed vaults ride the summary via
+      // gitSummaryFold; the clause appears only when the pass committed.
+      const gitNote = gitSummaryFold(gitOutcomes)
       const summary: DreamRunSummary = {
         id,
         startedAt,
@@ -898,7 +917,7 @@ export class DreamOrchestrator {
       // ok stays true.
       let gitOutcomes: VaultGitCommitOutcome[] = []
       try {
-        gitOutcomes = await this.deps.commitMemory(`obsidian-mem: dream ${String(new Date().toISOString())}`)
+        gitOutcomes = await this.deps.commitMemory(datedCommitMessage('dream'))
       } catch (error: unknown) {
         this.deps.log(`dream ${id}: memory git commit failed: ${describeError(error)}`)
       }

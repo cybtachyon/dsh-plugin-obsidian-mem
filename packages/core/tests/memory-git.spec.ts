@@ -11,6 +11,7 @@ import {
   MemoryGit,
   MemoryGitError,
   createGitRunner,
+  datedCommitMessage,
   type GitRunner,
 } from '../src/memory-git.ts'
 
@@ -55,6 +56,19 @@ function scriptedGit(replies: FakeReply[]): { run: GitRunner; calls: string[][] 
 
 /** An identity the host git config already answers, so no fallback lands. */
 const HOST_IDENTITY: FakeReply = { code: 0, stdout: 'dev@example.com\n' }
+
+describe('commit message convention', () => {
+  it('DatedCommitMessage renders the one auto-commit shape: prefix, subject, ISO 8601', () => {
+    const at = new Date('2026-11-14T08:00:00.000Z')
+    expect(datedCommitMessage('dream', at)).toBe('obsidian-mem: dream 2026-11-14T08:00:00.000Z')
+    expect(datedCommitMessage('memory_write topic.md', at))
+      .toBe('obsidian-mem: memory_write topic.md 2026-11-14T08:00:00.000Z')
+  })
+
+  it('the initial commit message shares the same prefix as the dated messages', () => {
+    expect(INITIAL_COMMIT_MESSAGE).toBe('obsidian-mem: initial memory commit')
+  })
+})
 
 const tempDirs: string[] = []
 

@@ -51,8 +51,25 @@ export const MEMORY_GITIGNORE_TEXT = [
   '',
 ].join('\n')
 
+// The subject prefix every plugin-authored commit carries. It has one home
+// here so `git log --grep` finds plugin commits by the prefix alone, and the
+// two message shapes below are its only renderings.
+const COMMIT_MESSAGE_PREFIX = 'obsidian-mem:'
+
 /** The message ensureRepo puts on a vault's very first commit. */
-export const INITIAL_COMMIT_MESSAGE = 'obsidian-mem: initial memory commit'
+export const INITIAL_COMMIT_MESSAGE = `${COMMIT_MESSAGE_PREFIX} initial memory commit`
+
+/**
+ * DatedCommitMessage renders the auto-commit subject convention every
+ * plugin-created commit follows: `<prefix> <subject> <ISO 8601>`. The
+ * write-commit and dream-commit call sites supply only their subject, so
+ * the timestamped shape has one home and cannot fork between them.
+ * @param subject - what the commit records, e.g. `dream` or `memory_write topic.md`.
+ * @param when - the commit instant; defaults to now.
+ */
+export function datedCommitMessage(subject: string, when: Date = new Date()): string {
+  return `${COMMIT_MESSAGE_PREFIX} ${subject} ${when.toISOString()}`
+}
 
 /** The header ensureRepo puts above any host-requested extra ignore lines. */
 const EXTRA_IGNORE_HEADER =

@@ -32,7 +32,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
-import { ARCHIVE_HISTORY_SUFFIX, dbStateDir, DEGRADATION_STEP, DREAM_PROMPT_FILE, DREAM_RUN_SUGGESTION, DREAM_SESSION_PREFIX, DREAMS_FILE, MANUAL_COMPACTION_APPROVAL, MANUAL_COMPACTION_RECIPE, metadataDir, NOTE_TIMELINE_BYTES, PLUGIN_METADATA_REL, RELEVANCY_BUMP_TARGET, RELEVANCY_FILE, SCOPE_GLOBAL, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
+import { ARCHIVE_HISTORY_SUFFIX, datedCommitMessage, dbStateDir, DEGRADATION_STEP, DREAM_PROMPT_FILE, DREAM_RUN_SUGGESTION, DREAM_SESSION_PREFIX, DREAMS_FILE, MANUAL_COMPACTION_APPROVAL, MANUAL_COMPACTION_RECIPE, metadataDir, NOTE_TIMELINE_BYTES, PLUGIN_METADATA_REL, RELEVANCY_BUMP_TARGET, RELEVANCY_FILE, SCOPE_GLOBAL, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { budgetProtectedOnly, dayEnd, dreamStatePath, globalBudgetReport, globalFileTargets, readLastDreamAt } from './audit.js';
 /**
@@ -186,6 +186,23 @@ const RELEVANCY_DECAY_SCALE = 1000;
 // Shared by blockedReason and the launch guard so the card banner and a
 // raced launch report one provider/model resolution failure.
 const NO_AGENT_MODEL_ROUTE = 'no provider/model can be resolved for the dream agent (mount the host agentDefaultModel service or set dreaming.model)';
+// The run-summary git fold abbreviates commit hashes to this width; the
+// full 40-char hash adds nothing a `git log` at the vault cannot print.
+const SUMMARY_HASH_ABBREV = 7;
+/**
+ * GitSummaryFold renders the ok-path summary's `; git:` clause
+ * (PLAN-git-versioning TASK-006): one `<vault>=<abbrev>` pair per outcome,
+ * `clean` for a tree the pass had nothing to record. It returns '' when the
+ * pass committed nowhere (git off, trees clean), leaving the summary as it
+ * read before git existed.
+ */
+function gitSummaryFold(outcomes) {
+    if (!outcomes.some((outcome) => outcome.hash !== null)) {
+        return '';
+    }
+    const pairs = outcomes.map((outcome) => (`${outcome.vault}=${outcome.hash === null ? 'clean' : outcome.hash.slice(0, SUMMARY_HASH_ABBREV)}`));
+    return `; git: ${pairs.join(', ')}`;
+}
 /** Cosine-similarity union-find clusters over the candidate vectors. */
 function similarityClusters(paths, vectors, threshold) {
     const usable = paths.filter((path) => vectors.has(path));
@@ -560,12 +577,9 @@ export class DreamOrchestrator {
     async drive(id, model) {
         const startedAt = Date.now();
         const finish = (ok, error, scoring, gitOutcomes = []) => {
-            // Git fold (TASK-006): committed vaults ride the summary as
-            // `<vault>=<hash7>`; a clean tree reads `clean`, and the clause
-            // appears only when the pass committed somewhere.
-            const gitNote = gitOutcomes.some((outcome) => outcome.hash !== null)
-                ? `; git: ${gitOutcomes.map((outcome) => `${outcome.vault}=${outcome.hash === null ? 'clean' : outcome.hash.slice(0, 7)}`).join(', ')}`
-                : '';
+            // Git fold (TASK-006): committed vaults ride the summary via
+            // gitSummaryFold; the clause appears only when the pass committed.
+            const gitNote = gitSummaryFold(gitOutcomes);
             const summary = {
                 id,
                 startedAt,
@@ -638,7 +652,7 @@ export class DreamOrchestrator {
             // ok stays true.
             let gitOutcomes = [];
             try {
-                gitOutcomes = await this.deps.commitMemory(`obsidian-mem: dream ${String(new Date().toISOString())}`);
+                gitOutcomes = await this.deps.commitMemory(datedCommitMessage('dream'));
             }
             catch (error) {
                 this.deps.log(`dream ${id}: memory git commit failed: ${describeError(error)}`);

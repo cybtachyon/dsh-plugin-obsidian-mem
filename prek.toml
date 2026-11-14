@@ -5,7 +5,11 @@
 [[repos]]
 repo = "builtin"
 hooks = [
-    { id = "trailing-whitespace" },
+    # The prepared-prompt carriers (PLAN-git-versioning source-of-truth
+    # constants): trailing spaces inside the shipped prompt literals are
+    # load-bearing bytes, so the fixer must pass over them; the regex names
+    # the six carrier files, never whole packages.
+    { id = "trailing-whitespace", exclude = "^packages/(service/(src|lib)/dream\\.(ts|js)|tools/(src|lib)/(prompt|audit)\\.(ts|js))$" },
     { id = "end-of-file-fixer" },
     { id = "check-added-large-files" },
 ]

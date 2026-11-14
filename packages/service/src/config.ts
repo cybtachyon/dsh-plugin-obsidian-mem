@@ -75,6 +75,31 @@ export interface ResolvedVaultEntry {
   globalFile: string
 }
 
+/**
+ * MountedGitGroup is the `git` row as it arrives in config: the
+ * git-versioning gate plus the churn tunables, every leaf optional
+ * (validation defaults them from the core churn constants).
+ */
+export interface MountedGitGroup {
+  enabled?: boolean
+  /** Whole percent; a path must churn in more than this share of the window to stress the dream. */
+  churnThresholdPercent?: number
+  /** How many of the most recent commits the churn window inspects. */
+  churnWindowCommits?: number
+}
+
+/**
+ * ResolvedGitGroup is the validated `git` group the service runs on, the
+ * card-editable slice shape, and the escalation swap shape: one
+ * declaration, so renaming a git knob touches one type instead of three
+ * (the CARD_SETTINGS_KEYS rows still list the leaves by path).
+ */
+export interface ResolvedGitGroup {
+  enabled: boolean
+  churnThresholdPercent: number
+  churnWindowCommits: number
+}
+
 /** Mounted (pre-default) config shape: every field optional. */
 export interface ObsidianMemConfig {
   vaults?: MountedVaultEntry[]
@@ -103,13 +128,7 @@ export interface ObsidianMemConfig {
     /** Pairwise cosine at or above which notes join a merge cluster. */
     nearDuplicateThreshold?: number
   }
-  git?: {
-    enabled?: boolean
-    /** Whole percent; a path must churn in more than this share of the window to stress the dream. */
-    churnThresholdPercent?: number
-    /** How many of the most recent commits the churn window inspects. */
-    churnWindowCommits?: number
-  }
+  git?: MountedGitGroup
 }
 
 /** The fully defaulted config the service runs on (paths still raw). */
@@ -131,7 +150,7 @@ export interface ObsidianMemResolvedConfig {
   llm: { enabled: boolean; baseUrl: string; model: string; apiKeyEnv: string }
   dreaming: { schedules: DreamingSchedule[]; model: string; nearDuplicateThreshold: number }
   /** Gate for git-versioning shared vaults plus the churn tunables; every consumer reads this resolved group. */
-  git: { enabled: boolean; churnThresholdPercent: number; churnWindowCommits: number }
+  git: ResolvedGitGroup
 }
 
 /** The config after path resolution: vault paths and dbPath are absolute. */
@@ -213,7 +232,7 @@ export interface CardEditableConfig {
     thinkShotsPerTurn: number
   }
   llm: { enabled: boolean; baseUrl: string; model: string; apiKeyEnv: string }
-  git: { enabled: boolean; churnThresholdPercent: number; churnWindowCommits: number }
+  git: ResolvedGitGroup
 }
 
 /**
@@ -434,46 +453,7 @@ function validateConfig(value: unknown): ObsidianMemConfigValidation {
   }
 
   if (value.git !== undefined) {
-    if (!isRecord(value.git)) {
-      issues.push({ message: 'git must be an object', path: ['git'] })
-    } else {
-      collectUnknown(value.git, ['git'], ['enabled', 'churnThresholdPercent', 'churnWindowCommits'], unknownKeys)
-      const enabled = value.git.enabled === undefined ? resolved.git.enabled : value.git.enabled
-      if (typeof enabled !== 'boolean') {
-        issues.push({ message: 'git.enabled must be a boolean', path: ['git', 'enabled'] })
-      }
-      const churnThresholdPercent = value.git.churnThresholdPercent
-      const percentOk = typeof churnThresholdPercent === 'number'
-        && Number.isInteger(churnThresholdPercent)
-        && churnThresholdPercent > 0
-        && churnThresholdPercent <= 100
-      if (churnThresholdPercent !== undefined && !percentOk) {
-        issues.push({
-          message: 'git.churnThresholdPercent must be an integer in (0, 100]',
-          path: ['git', 'churnThresholdPercent'],
-        })
-      }
-      let churnWindowCommits = resolved.git.churnWindowCommits
-      if (value.git.churnWindowCommits !== undefined) {
-        const parsed = positiveNumber(value.git.churnWindowCommits)
-        if (parsed === null) {
-          issues.push({
-            message: 'git.churnWindowCommits must be a positive number',
-            path: ['git', 'churnWindowCommits'],
-          })
-        } else {
-          // Same truncating rule as the budgets loop: 8.7 is 8 commits.
-          churnWindowCommits = Math.trunc(parsed)
-        }
-      }
-      resolved.git = {
-        enabled: typeof enabled === 'boolean' ? enabled : resolved.git.enabled,
-        churnThresholdPercent: percentOk
-          ? (churnThresholdPercent as number)
-          : resolved.git.churnThresholdPercent,
-        churnWindowCommits,
-      }
-    }
+    resolved.git = validateGit(value.git, resolved.git, unknownKeys, issues)
   }
 
   if (issues.length > 0) {
@@ -608,6 +588,62 @@ function validateSchedules(given: unknown, issues: Issue[]): DreamingSchedule[] 
     })
   })
   return schedules
+}
+
+/**
+ * ValidateGit validates and defaults the mounted `git` group: the boolean
+ * gate, the bounded whole-percent churn threshold, and the truncating
+ * positive commit window (same 8.7-is-8 rule as the budgets loop). Each
+ * failing leaf keeps its resolved default and reports at its ['git', leaf]
+ * path; a non-record group reports at ['git']. Unknown keys join the
+ * caller's list.
+ */
+function validateGit(
+  given: unknown,
+  fallback: ResolvedGitGroup,
+  unknownKeys: string[],
+  issues: Issue[],
+): ResolvedGitGroup {
+  if (!isRecord(given)) {
+    issues.push({ message: 'git must be an object', path: ['git'] })
+    return fallback
+  }
+  collectUnknown(given, ['git'], ['enabled', 'churnThresholdPercent', 'churnWindowCommits'], unknownKeys)
+  const enabled = given.enabled === undefined ? fallback.enabled : given.enabled
+  if (typeof enabled !== 'boolean') {
+    issues.push({ message: 'git.enabled must be a boolean', path: ['git', 'enabled'] })
+  }
+  const churnThresholdPercent = given.churnThresholdPercent
+  const percentOk = typeof churnThresholdPercent === 'number'
+    && Number.isInteger(churnThresholdPercent)
+    && churnThresholdPercent > 0
+    && churnThresholdPercent <= 100
+  if (churnThresholdPercent !== undefined && !percentOk) {
+    issues.push({
+      message: 'git.churnThresholdPercent must be an integer in (0, 100]',
+      path: ['git', 'churnThresholdPercent'],
+    })
+  }
+  let churnWindowCommits = fallback.churnWindowCommits
+  if (given.churnWindowCommits !== undefined) {
+    const parsed = positiveNumber(given.churnWindowCommits)
+    if (parsed === null) {
+      issues.push({
+        message: 'git.churnWindowCommits must be a positive number',
+        path: ['git', 'churnWindowCommits'],
+      })
+    } else {
+      // Same truncating rule as the budgets loop: 8.7 is 8 commits.
+      churnWindowCommits = Math.trunc(parsed)
+    }
+  }
+  return {
+    enabled: typeof enabled === 'boolean' ? enabled : fallback.enabled,
+    churnThresholdPercent: percentOk
+      ? (churnThresholdPercent as number)
+      : fallback.churnThresholdPercent,
+    churnWindowCommits,
+  }
 }
 
 /**

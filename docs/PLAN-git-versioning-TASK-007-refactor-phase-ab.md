@@ -18,6 +18,19 @@ The prepared prompt constants (`DEFAULT_DREAM_PROMPT`,
 OFF LIMITS to edits; the surrounding code in their host files stays
 editable.
 
+Additional carried item (TASK-006 handoff, fix in this task): prek's
+builtin trailing-whitespace hook REWRITES the protected prompt constants
+(trailing whitespace inside `DEFAULT_DREAM_PROMPT` is load-bearing
+source-of-truth bytes, and the same literals sit in the tracked `lib`
+emit). Add `exclude` patterns in `prek.toml` for the prepared-prompt
+carriers, src and lib forms (`packages/{service/src,service/lib,tools/src,tools/lib}/*`
+covering dream.ts/.js, prompt.ts/.js, audit.ts/.js by precise regex, not
+whole packages), verify with `prek run --files packages/service/src/dream.ts`
+(reports skipped) and that the constant is still byte-identical to
+a113305. If prek.toml's schema cannot express the exclude, fall back to a
+comment block at the top of prek.toml naming the never-pass paths, and
+append the same warning to this plan's Verification guidelines.
+
 Definition of Done: each risk above answered in the task commit message
 body (found+fixed, or absent); full service+core suites still green;
 `pnpm build` leaves the tree clean; src+lib committed together.

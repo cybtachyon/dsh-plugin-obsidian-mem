@@ -163,14 +163,7 @@ export class VaultGitManager {
    * not shared, never adopted, or a failed read).
    */
   async logShared(vaultPath: string, count: number): Promise<MemoryGitCommit[] | null> {
-    const git = this.managedGit(vaultPath)
-    if (git === null) return null
-    try {
-      return await git.log(count)
-    } catch (error: unknown) {
-      this.log.warn(`git log failed for vault ${vaultPath}: ${describeError(error)}`)
-      return null
-    }
+    return await this.readShared('log', vaultPath, (git) => git.log(count))
   }
 
   /**
@@ -179,14 +172,7 @@ export class VaultGitManager {
    * {@link VaultGitManager.logShared}.
    */
   async statusShared(vaultPath: string): Promise<MemoryGitStatus | null> {
-    const git = this.managedGit(vaultPath)
-    if (git === null) return null
-    try {
-      return await git.status()
-    } catch (error: unknown) {
-      this.log.warn(`git status failed for vault ${vaultPath}: ${describeError(error)}`)
-      return null
-    }
+    return await this.readShared('status', vaultPath, (git) => git.status())
   }
 
   /**
@@ -220,8 +206,27 @@ export class VaultGitManager {
     return this.handles.get(vaultPath) ?? null
   }
 
+  // ReadShared is the audit-read policy logShared and statusShared share:
+  // the managedGit gate, the operation, and the warn-and-null failure rule.
+  // `name` names the operation in the warn line.
+  private async readShared<T>(
+    name: string,
+    vaultPath: string,
+    op: (git: MemoryGit) => Promise<T>,
+  ): Promise<T | null> {
+    const git = this.managedGit(vaultPath)
+    if (git === null) return null
+    try {
+      return await op(git)
+    } catch (error: unknown) {
+      this.log.warn(`git ${name} failed for vault ${vaultPath}: ${describeError(error)}`)
+      return null
+    }
+  }
+
   // EnsureAdopted converges one vault onto a managed handle. Call it only
-  // inside the vault's lane. Absent roots log once (the live-store
+  // inside the vault's lane (no concurrent adoption can race this check).
+  // Absent roots log once (the live-store
   // guardrail: never git-init a directory that does not exist) and failed
   // adoptions delete the handle so the vault stays unmanaged and retryable.
   private async ensureAdopted(vaultPath: string): Promise<MemoryGit | null> {
@@ -234,11 +239,8 @@ export class VaultGitManager {
       }
       return null
     }
-    let git = this.handles.get(vaultPath)
-    if (git === undefined) {
-      git = new MemoryGit(vaultPath, this.gitRunner(vaultPath))
-      this.handles.set(vaultPath, git)
-    }
+    const git = new MemoryGit(vaultPath, this.gitRunner(vaultPath))
+    this.handles.set(vaultPath, git)
     try {
       await git.ensureRepo()
       return git

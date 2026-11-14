@@ -27,7 +27,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync
 import { homedir as osHomedir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
-import { classifyPath, contentHash, dbStateDir, firstSharedVault, formatLocalDate, globalFilePath, isOverGlobalBudget, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, stateDir, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
+import { classifyPath, contentHash, datedCommitMessage, dbStateDir, firstSharedVault, formatLocalDate, globalFilePath, isOverGlobalBudget, isReservedNonIndexed, isVaultMode, metadataDir, MILVUS_COLLECTION, MILVUS_FIELDS, modelCacheDir, parseNote, provisionDefaultVault, resolveGlobalFile, resolveVaults, seedIntentsFile, serializeNoteWithRaw, stateDir, validateMeta, VAULT_MODE_SHARED, VAULT_MODES, } from '../../core/lib/index.js';
 import { CARD_SETTINGS_KEYS, expandHomePath, globalFileShapeIssue, isRecord, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 import { cardEditableSlice, differingCardSettingsPaths, filterCardSettingsTree, mergeCardSettingsPatch, removeCardSettingsPath, validateMergedCardSettings, } from './card-settings.js';
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js';
@@ -493,7 +493,7 @@ export class ObsidianMemService extends Service {
         // null when git is off, the vault was never adopted, or the tree is
         // clean (an identical rewrite), and logs-and-nulls a failed commit:
         // the memory file is the source of truth, so no catch here.
-        await this.vaultGit.commitVault(classified.vault.path, `obsidian-mem: memory_write ${relPath} ${new Date().toISOString()}`);
+        await this.vaultGit.commitVault(classified.vault.path, datedCommitMessage(`memory_write ${relPath}`));
         return { path: target, created, vaultPath: classified.vault.path, relPath };
     }
     /**

@@ -63,7 +63,7 @@ committed as part of TASK-001's baseline commit, unchanged.
  - [x] [TASK-004-service-vault-git-manager](docs/PLAN-git-versioning-TASK-004-service-vault-git-manager.md)
  - [x] [TASK-005-write-commit](docs/PLAN-git-versioning-TASK-005-write-commit.md)
  - [x] [TASK-006-dream-commit-and-churn-tunables](docs/PLAN-git-versioning-TASK-006-dream-commit-and-churn-tunables.md)
- - [ ] [TASK-007-refactor-phase-ab](docs/PLAN-git-versioning-TASK-007-refactor-phase-ab.md)
+ - [x] [TASK-007-refactor-phase-ab](docs/PLAN-git-versioning-TASK-007-refactor-phase-ab.md)
 
 ### Phase C: audit checkpoint view + churn surfacing
 

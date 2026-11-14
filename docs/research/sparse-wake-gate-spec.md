@@ -222,6 +222,91 @@ content. No mid-run rowCount drift (213 before, 213 after, 213 at audit).
 **Decision: GATE PASS (0% ≤ 5%, markers absent from TERMS) — Phase B
 unblocked; resume this spec at Step 1.2.**
 
+### Step 1.2 expected-kill check (TASK-002): 5/6 collision rows die, 1 survives
+
+Probe `docs/research/probes/wake-kill-check-probe.mjs` (HARD READ-ONLY;
+the only RPCs issued are connectPromise, getVersion, count, query over
+chunk_id range-split windows) against the post-reindex collection.
+Measured state confirmed in-probe before any prediction: 213 rows,
+scanComplete 213/213, EMPTY wake rows 0, generic intent markers
+`who/what/when/where/why/how/`how to apply` = 0 occurrences corpus-wide
+(the same full scan carries this INVARIANT line, so the check cannot
+silently run on a re-polluted collection).
+
+Method: the 6 collision rows are derived at run time from
+`eval-split-strip-on-d078-s50-k60-m016129.json` (`routes: "sparse"`,
+`classification: "F"`, cross-checked against this §Problem table; all 6
+artifact chunk_ids still live). Per labeled query the token list is
+`sparseQueryText(query)` (imported from
+`packages/service/lib/search.js`) split on its single-space join, then
+the shipped gate's filter-token legality (lower-case, trim, len 2..64,
+cap 64); the raw split is tallied too and every verdict agrees between
+the two forms. Prediction per row: survives iff tokens ∩ stored
+`wake_keywords` ≠ ∅ (`ARRAY_CONTAINS_ANY` semantics).
+
+| query | row source_path (§section) | collision word | wake contains word? | tokens ∩ wake | predicted |
+| --- | --- | --- | --- | --- | --- |
+| dream-plan-runs-actually | drupal/bigpipe-streams-checkout-before-drupalsettings.md (drupalSettings…hydration) | checkout | **yes** | — | dies |
+| budget-reminder-end-of-turn | guestwise/drupal-installs-uid-1-has-no-global-roles-group-locked-entities-403-for-it.md | locked, roles | **yes, yes** | global | **survives** |
+| machinae-combat-systems | lywa/lywa-solr-pywsd-runner.md | runner, enemy | **runner yes**, enemy no | — | dies |
+| machinae-combat-systems | drupal/svg-overlay-swallowed-clicks.md | clicks, entities | **clicks yes**, entities no | — | dies |
+| machinae-save-restore | lywa/lywa-commerce-phpunit-infra.md (Lywa commerce PHPUnit…) | test, save | no, no | — | dies |
+| machinae-threejs-renderer | drupal/bigpipe-streams-checkout-before-drupalsettings.md (…› _wrapper_format…) | render | no | — | dies |
+
+Wake-list pollution call-outs (row wake array CONTAINS its §Problem
+collision word): rows 1–4, per the stored arrays (file-name slug words
+standing as wake keywords is the intended TASK-014 design):
+
+| row | stored wake_keywords |
+| --- | --- |
+| bigpipe §hydration | `bigpipe, streams, checkout, before, drupalsettings, debug` |
+| guestwise drupal-installs | `drupal, installs, uid, has, no, global, roles, group, locked, entities, for, it` |
+| lywa-solr-pywsd-runner | `lywa, solr, pywsd, runner` |
+| drupal-svg-overlay-swallowed-clicks | `svg, overlay, swallowed, clicks, debug` |
+| lywa-commerce-phpunit-infra | `lywa, commerce, phpunit, infra, dir` |
+| bigpipe §_wrapper_format | `bigpipe, streams, checkout, before, drupalsettings, drupalsettings in drupal 11 js: location, bindings, hydration, twice, last` |
+
+But pollution of the PARTIAL rule's kind (a collision word that keeps
+the row alive under the gate) is only row 2, and its survival is not
+even through its named collision words: `locked`/`roles` are not
+stripped tokens of the budget query, the surviving intersection is the
+slug word `global` ("Update the **global** memory budget reminder…" ∩
+slug "…has-no-**global**-roles…"). That is a genuine shared-vocabulary
+collision the gate cannot remove without deleting legitimate slug
+signal; wake hygiene has no lever here. Rows 1, 3, 4 carry their
+collision word in wake but the word is not a stripped token of the
+pulling query, so the gate still kills them. Observation for the §Problem
+table: its vocab column is row-side collision vocab, not stripped query
+tokens in 8 of its 10 listed words (only `enemy`, `save` are query
+stripped-tokens); the prediction above uses the full token ∩ wake
+intersection, which subsumes the vocab column.
+
+Relevant-row safety (the PASS rule "relevant-of-labeled ≥ baseline"):
+of the 15 artifact relevant rows visible on the sparse leg
+(`routes: sparse|both`), 14 are predicted to survive the gate:
+budget-reminder-end-of-turn (global, budget, not),
+lib-tracked-build-contract ×2 (lib, build, clean), typecheck-test-trees
+(6 shared tokens), session-transcript-probe (session, transcript,
+probe), subagent-zero-recall ×2 (6 shared tokens),
+layout-sidecar-model-cache (vault), machinae-combat-systems and
+machinae-threejs-renderer (typescript-simulation-style.md ×2, via
+`simulation`), lywa-synonym-service-di 1 of 2 chunks (`protected`),
+lywa-lightbox-pause ×2 (gallery, lightbox3), guestwise-ci-playwright
+(ci). The one predicted die, lywa-synonym-service-di chunk 61300563937
+24780 (`drupal/drupal11-entity-form-di.md`, wake `drupal11, entity,
+form, di`): none of the four words is a stripped query token (the
+query writes `EntityTypeManager` as one token, and says "dependency
+injection", not `di`), and the row rode `routes: "both"`, so its dense
+leg still carries it onto the page; relevant-of-labeled is predicted
+intact.
+
+**Prediction for the Step 3 A/B (to compare against TASK-011):
+sparse-only forbidden 6 → 1 (row 2 survives; ≤2 stays inside the PASS
+margin), relevant sparse-visible rows 15 → 14 with the loser still
+dense-carried, no marker-driven survivors.** A TASK-011 outcome of
+survivors >1 or relevant loss contradicts this prediction and points at
+harness/gate wiring, not at wake content.
+
 ## Step 2: implement (TDD, single commit with lib)
 
 1. `packages/service/src/search.ts`: pure helper

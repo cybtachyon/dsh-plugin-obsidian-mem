@@ -65,7 +65,7 @@ pid 1091813 verified alive 2026-11-13).
 ### Phase A: pre-flight measurements (spec Step 1, read-only, blocking)
 
  - [x] [TASK-001-empty-wake-audit](docs/PLAN-wake-gate-TASK-001-empty-wake-audit.md)
- - [ ] [TASK-002-expected-kill-check](docs/PLAN-wake-gate-TASK-002-expected-kill-check.md)
+ - [x] [TASK-002-expected-kill-check](docs/PLAN-wake-gate-TASK-002-expected-kill-check.md)
  - [ ] [TASK-003-zh-baseline-pin](docs/PLAN-wake-gate-TASK-003-zh-baseline-pin.md)
 
  TASK-001 result (2026-11-13, spec "Pre-flight measurements", commit
@@ -74,6 +74,21 @@ pid 1091813 verified alive 2026-11-13).
  wake-keyword extraction fix lands in core and the probe re-runs to
  ≤5%. TASK-002/003 are deferred: their inputs are the wake arrays the
  fix rewrites.
+
+ TASK-002 result (2026-11-13, spec "Pre-flight measurements" §Step
+ 1.2): new read-only companion probe
+ `docs/research/probes/wake-kill-check-probe.mjs` (its INVARIANT line
+ first re-confirmed the post-TASK-015 truth: 213 rows, 0 empty-wake,
+ intent markers 0 corpus-wide). Expected-kill check over the 6 §Problem
+ collision rows: 5 die, 1 survives; the survivor
+ (guestwise/drupal-installs-uid-1…) keeps its sparse leg through slug
+ word `global`, not its named collision words. Wake-list pollution
+ (§Problem word present in the stored wake array) flagged on rows 1–4;
+ only row 2's is gate-relevant. Relevant-row safety: 14 of 15 relevant
+ sparse-visible rows survive; the lone loser rode `routes: both` so its
+ dense leg still carries it. Predicted A/B shape for TASK-011:
+ sparse-only forbidden 6 → 1, relevant-of-labeled intact. Full table +
+ stored wake arrays in the spec doc.
 
 ### Phase A2: wake-extraction fix (spec Step 1.1 STOP consequence)
 
@@ -169,6 +184,12 @@ pid 1091813 verified alive 2026-11-13).
   (`section_header` not in `TriggerInput`). Both are follow-up
   candidates outside this plan; TASK-015 should just note whether the
   live reindex engaged the refiner.
+- NOTED (TASK-002): the spec §Problem table's vocab column is mis-titled
+  "the query token that pulled each": 8 of its 10 listed words are not
+  stripped tokens of their queries (only `enemy`, `save` are); the
+  column names row-side collision vocab. Step 1.2 predicts from the
+  full token ∩ wake intersection, which subsumes it; the table wording
+  stays as historical evidence, corrected in the §Step 1.2 record.
 - RECIPE for TASK-006 fixture edits (vault note
   `dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig`):
   after changing fixture shapes, typecheck the test trees with the

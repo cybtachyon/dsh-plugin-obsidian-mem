@@ -38,13 +38,13 @@
  * Run: node docs/research/probes/zh-analyzer-probe.mjs [--wake-gate]
  * WITHOUT --wake-gate (default OFF) the output is byte-identical to the
  * TASK-003 pin. WITH --wake-gate every SEARCH carries the production
- * sparse-leg wake gate as its scalar expr, built the way dispatchRoutes
- * builds it (ARRAY_CONTAINS_ANY(wake_keywords, [sparseWakeFilterTokens
- * (sparseQueryTokens(text))]) via buildFilterExpr, fail-open to no expr
- * when no token survives; the imported SPARSE_WAKE_GATE_ENABLED kill
- * switch is honored, --wake-gate then a noted no-op), and the SEARCH
- * lines echo that expr. This is the TASK-010/011 zh comparison form
- * (PLAN-wake-gate TASK-007).
+ * sparse-leg wake gate as its scalar expr, the dispatchRoutes merge
+ * itself (the imported sparseWakeGateExpr:
+ * ARRAY_CONTAINS_ANY(wake_keywords, [filter tokens]) over an absent base,
+ * fail-open to no expr when no token survives; the imported
+ * SPARSE_WAKE_GATE_ENABLED kill switch is honored, --wake-gate then a
+ * noted no-op), and the SEARCH lines echo that expr. This is the
+ * TASK-010/011 zh comparison form (PLAN-wake-gate TASK-007).
  * Output: one JSON object per line on stdout (BOOT, two LOCATE context
  * lines, one SEARCH line per pinned text with its surviving
  * {chunk_id, source_path, score} digest, then a SUMMARY roll-up);
@@ -69,10 +69,8 @@ const {
 } = await import('../../../packages/core/lib/index.js')
 const {
   SPARSE_WAKE_GATE_ENABLED,
-  buildFilterExpr,
   sparseQueryText,
-  sparseQueryTokens,
-  sparseWakeFilterTokens,
+  sparseWakeGateExpr,
 } = await import('../../../packages/service/lib/search.js')
 
 // --wake-gate is the only accepted flag; default OFF keeps the output
@@ -87,20 +85,6 @@ function parseWakeGate(argv) {
     wakeGate = true
   }
   return wakeGate
-}
-
-// wakeGateExpr builds the production sparse-leg wake gate for one probe
-// text exactly as search.ts dispatchRoutes merges it
-// (docs/research/sparse-wake-gate-spec.md §"Gate definition"): the
-// clause is buildFilterExpr({ wakeKeywords }) over
-// sparseWakeFilterTokens(sparseQueryTokens(text)) with the shipped
-// quoteExpr/listLiteral escaping. There is no base expr here (the probe
-// dispatches ungated otherwise), and fail-open is the same shape: no
-// usable token survives legality → no clause → the search keeps today's
-// no-expr form (single-codepoint texts gate empty, exactly the
-// spec §Step 1.3 reading).
-function wakeGateExpr(text) {
-  return buildFilterExpr({ wakeKeywords: sparseWakeFilterTokens(sparseQueryTokens(text)) })
 }
 
 const PORT_FILE = process.env.MEMLITE_JSON
@@ -225,9 +209,15 @@ async function main() {
       log({ probe: id, text, note, skipped: 'empty after strip; production fail-open would send the original' })
       continue
     }
-    // Production-merged gate expr per SEARCH when --wake-gate (default
-    // OFF: expr undefined, request and output byte-identical to today).
-    const expr = wakeGate ? wakeGateExpr(text) : undefined
+    // Production-merged gate expr per SEARCH when --wake-gate: the
+    // imported sparseWakeGateExpr IS dispatchRoutes' merge (spec
+    // §"Gate definition"); the base is undefined (the probe dispatches
+    // ungated otherwise) and fail-open is the same shape: no usable
+    // token survives legality → no clause → the search keeps today's
+    // no-expr form (single-codepoint texts gate empty, exactly the
+    // spec §Step 1.3 reading). Default OFF: expr undefined, request and
+    // output byte-identical to the TASK-003 pin.
+    const expr = wakeGate ? sparseWakeGateExpr(undefined, text, true) : undefined
     const response = await client.search({
       collection_name: MILVUS_COLLECTION,
       ...(expr === undefined ? {} : { expr }),

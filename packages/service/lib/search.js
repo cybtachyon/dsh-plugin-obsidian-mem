@@ -46,7 +46,7 @@
 import { isAbsolute, join } from 'node:path';
 import { MetricType } from '@zilliz/milvus2-sdk-node';
 import { eng, removeStopwords, zho } from 'stopword';
-import { approxCharsForTokens, clampInt, MILVUS_ARRAY_ELEMENT_MAX_LENGTHS, MILVUS_COLLECTION, MILVUS_CONSISTENCY_LEVEL, MILVUS_FIELDS, normalizeExtension, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, SEARCH_DEFAULT_TOP_K, SEARCH_MAX_RESULTS, } from '../../core/lib/index.js';
+import { approxCharsForTokens, clampInt, MILVUS_ARRAY_ELEMENT_MAX_LENGTHS, MILVUS_COLLECTION, MILVUS_CONSISTENCY_LEVEL, MILVUS_FIELDS, normalizeExtension, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, SEARCH_DEFAULT_TOP_K, SEARCH_MAX_RESULTS, WAKE_KEYWORD_MIN_LENGTH, } from '../../core/lib/index.js';
 import { describeError } from './errors.js';
 import { assertOk } from './milvus/ok.js';
 /**
@@ -304,20 +304,19 @@ export function sparseQueryTokens(query) {
 }
 /**
  * SparseWakeFilterTokens turns a token list into the wake gate's filter
- * tokens: trimmed, lower-cased, shorter-than-2 and longer-than-the
- * wakeKeywords element cap dropped (the legality floor/ceiling mirrors
- * core/triggers.ts's isUsableKeyword bounds against
- * MILVUS_ARRAY_ELEMENT_MAX_LENGTHS: imported, never restated; the
- * shape rules cannot reject a SPARSE_TOKEN_RUN token anyway), deduped,
- * and capped at {@link SPARSE_WAKE_GATE_MAX_TOKENS} in first-seen order.
- * Pure.
+ * tokens: trimmed, lower-cased, shorter than core's WAKE_KEYWORD_MIN_LENGTH
+ * and longer than the wakeKeywords element cap dropped (both legality
+ * bounds are the ones core/triggers.ts's isUsableKeyword enforces,
+ * imported from core, never restated; the shape rules cannot reject a
+ * SPARSE_TOKEN_RUN token anyway), deduped, and capped at
+ * {@link SPARSE_WAKE_GATE_MAX_TOKENS} in first-seen order. Pure.
  */
 export function sparseWakeFilterTokens(tokens) {
     const usable = [];
     const seen = new Set();
     for (const token of tokens) {
         const word = token.trim().toLowerCase();
-        if (word.length < 2 || word.length > MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords) {
+        if (word.length < WAKE_KEYWORD_MIN_LENGTH || word.length > MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords) {
             continue;
         }
         if (seen.has(word)) {

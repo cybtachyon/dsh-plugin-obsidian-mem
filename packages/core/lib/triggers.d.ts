@@ -42,6 +42,15 @@ export interface Triggers {
     wake_keywords: string[];
 }
 /**
+ * WAKE_KEYWORD_MIN_LENGTH is the shortest term the legality gate accepts:
+ * a single character carries no retrieval signal. Exported because the
+ * service sparse wake gate applies the SAME legality floor to query tokens
+ * (search.ts sparseWakeFilterTokens) and imports it rather than restating
+ * the number; the element ceiling is the shared
+ * MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords.
+ */
+export declare const WAKE_KEYWORD_MIN_LENGTH = 2;
+/**
  * ExtractTriggers computes the three trigger lists for one chunk.
  * Overrides win wholesale: a frontmatter `trigger_extensions:` or
  * `trigger_frameworks:` replaces the heuristics for that field (the

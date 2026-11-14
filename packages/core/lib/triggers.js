@@ -194,6 +194,15 @@ const HAN_RUN = /[\p{Script=Han}]+/gu;
 // Wake-keyword shape bounds: 8 words caps runaway sentences, and 64 chars
 // is the schema element cap (MILVUS_ARRAY_ELEMENT_MAX_LENGTHS repeats it).
 const MAX_WAKE_KEYWORD_WORDS = 8;
+/**
+ * WAKE_KEYWORD_MIN_LENGTH is the shortest term the legality gate accepts:
+ * a single character carries no retrieval signal. Exported because the
+ * service sparse wake gate applies the SAME legality floor to query tokens
+ * (search.ts sparseWakeFilterTokens) and imports it rather than restating
+ * the number; the element ceiling is the shared
+ * MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords.
+ */
+export const WAKE_KEYWORD_MIN_LENGTH = 2;
 // Generic section labels the note house format sprinkles everywhere. The
 // format mandates a "Why:" and a "How to apply:" line, and headers arrive
 // as "Why:", "How:", "Where:", so these interrogative labels land in the
@@ -428,7 +437,7 @@ function normalizePhrase(raw) {
 // symbol-led cut fragments cannot pass (the same audit's tail: "0 of 54",
 // "2/(k+1", "+ `field.field`", a 54-char em-dashed sentence fragment).
 function isUsableKeyword(keyword) {
-    if (keyword.length < 2 || keyword.length > MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords) {
+    if (keyword.length < WAKE_KEYWORD_MIN_LENGTH || keyword.length > MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords) {
         return false;
     }
     if (keyword.split(' ').length > MAX_WAKE_KEYWORD_WORDS) {

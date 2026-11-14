@@ -47,9 +47,9 @@
  * gate, docs/research/sparse-wake-gate-spec.md) merges the production
  * sparse-leg wake gate into the split-rrf sparse route's scalar filter:
  * ARRAY_CONTAINS_ANY(wake_keywords, [<stripped query tokens>]) computed
- * from the SAME lib pieces dispatchRoutes uses
- * (sparseQueryTokens/sparseWakeFilterTokens/buildFilterExpr, honoring
- * the imported SPARSE_WAKE_GATE_ENABLED kill switch), fail-open when no
+ * through the imported sparseWakeGateExpr (the ONE home of the merge,
+ * dispatchRoutes' own call, honoring the imported
+ * SPARSE_WAKE_GATE_ENABLED kill switch), fail-open when no
  * token survives. routeMembership's sparse probe mirrors the expr so the
  * route flags describe the gated route. The legacy-hybrid BM25 route
  * lives inside one hybridSearch that cannot carry a per-route filter, so
@@ -103,10 +103,8 @@ const {
   DENSE_SEARCH_EF,
   CANDIDATE_OVERSAMPLE,
   SPARSE_WAKE_GATE_ENABLED,
-  buildFilterExpr,
   sparseQueryText,
-  sparseQueryTokens,
-  sparseWakeFilterTokens,
+  sparseWakeGateExpr,
 } = await import('../../packages/service/lib/search.js')
 const { assertOk } = await import('../../packages/service/lib/milvus/ok.js')
 const {
@@ -257,19 +255,18 @@ function sparseText(query, opts) {
 }
 
 // wakeGateExpr merges the production sparse-leg wake gate into a
-// sparse route's base filter expr exactly as search.ts dispatchRoutes
-// does (docs/research/sparse-wake-gate-spec.md §"Gate definition"):
-// clause = buildFilterExpr({ wakeKeywords: sparseWakeFilterTokens
-// (sparseQueryTokens(query)) }) joined after the base with ` and `.
-// Fail-open: flag off, the imported SPARSE_WAKE_GATE_ENABLED kill switch
-// false (mirrors production; main() notes it once), or no usable token
-// surviving legality → base expr unchanged, clause absent.
+// sparse route's base filter expr through the imported
+// sparseWakeGateExpr (docs/research/sparse-wake-gate-spec.md §"Gate
+// definition") — dispatchRoutes' own call, never a restated copy of the
+// clause build or the ` and ` join. Fail-open: flag off, the imported
+// SPARSE_WAKE_GATE_ENABLED kill switch false (mirrors production;
+// main() notes it once), or no usable token surviving legality → base
+// expr unchanged, clause absent.
 function wakeGateExpr(baseExpr, query, opts) {
-  if (!opts.wakeGate || !SPARSE_WAKE_GATE_ENABLED) {
+  if (!opts.wakeGate) {
     return baseExpr
   }
-  const gate = buildFilterExpr({ wakeKeywords: sparseWakeFilterTokens(sparseQueryTokens(query)) })
-  return gate === undefined ? baseExpr : (baseExpr === undefined ? gate : `${baseExpr} and ${gate}`)
+  return sparseWakeGateExpr(baseExpr, query, SPARSE_WAKE_GATE_ENABLED)
 }
 
 // legacyHybrid replays the retired pre-split dispatchHybrid shape: one

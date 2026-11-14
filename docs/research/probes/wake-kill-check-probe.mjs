@@ -34,10 +34,10 @@
  * count-guard). Token discipline per spec §Gate definition: token
  * source is `sparseQueryText(query)` split on single spaces (the
  * strip's join shape, imported from packages/service/lib/search.js,
- * never restated), then lower-cased, trimmed, len<2 and len>64 dropped,
- * capped at 64 (the shipped filter-token legality/cap the gate will
- * use). The RAW split is tallied too; a verdict that differs between
- * the two token forms is reported, never hidden.
+ * never restated), then run through the shipped `sparseWakeFilterTokens`
+ * itself (the gate's own legality and cap, imported, not restated). The
+ * RAW split is tallied too; a verdict that differs between the two
+ * token forms is reported, never hidden.
  *
  * Collision rows are derived from the artifact at run time (the
  * routes/classification filter), never hand-copied; the §Problem table
@@ -72,8 +72,10 @@ const {
   MILVUS_CONSISTENCY_LEVEL,
   MILVUS_FIELDS,
 } = await import('../../../packages/core/lib/index.js')
-// The shipped strip is the token source; import it, do not re-implement.
-const { sparseQueryText } = await import('../../../packages/service/lib/search.js')
+// The shipped strip is the token source and the shipped
+// sparseWakeFilterTokens is the filter-token legality/cap; both are
+// imported, neither is re-implemented.
+const { sparseQueryText, sparseWakeFilterTokens } = await import('../../../packages/service/lib/search.js')
 // The committed labeled query set the eval harness replays.
 const { EVAL_QUERIES } = await import('../../../scripts/eval/queries-labels.mjs')
 
@@ -93,10 +95,6 @@ const EMPTY_RATE_STOP_PCT = 5
 // AUDIT holds its own copy on purpose: it measures stored rows against
 // the words, it does not reuse production code.
 const GENERIC_WAKE_TERMS = Object.freeze(['who', 'what', 'when', 'where', 'why', 'how', 'how to apply'])
-// Shipped-filter-token legality per spec §Gate definition (mirrors the
-// gate the probe predicts; the clause itself does not exist yet).
-const GATE_TOKEN_MAX = 64
-const GATE_TOKEN_MIN = 2
 
 // spec §Problem "the 6 collision rows and the query token that pulled
 // each" — the collision VOCAB columns, keyed by query + row source_path
@@ -116,26 +114,17 @@ const progress = (msg) => console.error(`[wake-kill-check-probe] ${msg}`)
 
 /**
  * gateTokens recomputes one query's shipped filter-token list: the
- * production strip split on its single-space join, then the legality
- * rules the gate will apply (lower-case, trim, length bounds, cap).
- * Returns { raw, normalized }: `raw` is the task-mandated split of
- * sparseQueryText output; `normalized` is what the shipped clause will
- * actually send in ARRAY_CONTAINS_ANY.
+ * production strip split on its single-space join, then the shipped
+ * sparseWakeFilterTokens (imported from packages/service/lib — the
+ * legality and cap the gate itself applies). Returns { raw, normalized }:
+ * `raw` is the task-mandated split of sparseQueryText output;
+ * `normalized` is what the shipped clause actually sends in
+ * ARRAY_CONTAINS_ANY.
  */
 function gateTokens(query) {
   const stripped = sparseQueryText(query)
   const raw = stripped === '' ? [] : stripped.split(' ')
-  const seen = new Set()
-  const normalized = []
-  for (const token of raw) {
-    const t = token.trim().toLowerCase()
-    if (t.length < GATE_TOKEN_MIN || t.length > 64) continue
-    if (seen.has(t)) continue
-    seen.add(t)
-    normalized.push(t)
-    if (normalized.length >= GATE_TOKEN_MAX) break
-  }
-  return { raw, normalized }
+  return { raw, normalized: sparseWakeFilterTokens(raw) }
 }
 
 /**

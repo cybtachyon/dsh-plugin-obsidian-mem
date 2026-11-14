@@ -366,13 +366,12 @@ export declare function sparseQueryText(query: string): string;
 export declare function sparseQueryTokens(query: string): string[];
 /**
  * SparseWakeFilterTokens turns a token list into the wake gate's filter
- * tokens: trimmed, lower-cased, shorter-than-2 and longer-than-the
- * wakeKeywords element cap dropped (the legality floor/ceiling mirrors
- * core/triggers.ts's isUsableKeyword bounds against
- * MILVUS_ARRAY_ELEMENT_MAX_LENGTHS: imported, never restated; the
- * shape rules cannot reject a SPARSE_TOKEN_RUN token anyway), deduped,
- * and capped at {@link SPARSE_WAKE_GATE_MAX_TOKENS} in first-seen order.
- * Pure.
+ * tokens: trimmed, lower-cased, shorter than core's WAKE_KEYWORD_MIN_LENGTH
+ * and longer than the wakeKeywords element cap dropped (both legality
+ * bounds are the ones core/triggers.ts's isUsableKeyword enforces,
+ * imported from core, never restated; the shape rules cannot reject a
+ * SPARSE_TOKEN_RUN token anyway), deduped, and capped at
+ * {@link SPARSE_WAKE_GATE_MAX_TOKENS} in first-seen order. Pure.
  */
 export declare function sparseWakeFilterTokens(tokens: readonly string[]): string[];
 /**

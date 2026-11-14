@@ -75,6 +75,11 @@ pid 1091813 verified alive 2026-11-13).
  ≤5%. TASK-002/003 are deferred: their inputs are the wake arrays the
  fix rewrites.
 
+### Phase A2: wake-extraction fix (spec Step 1.1 STOP consequence)
+
+ - [ ] [TASK-014-wake-extraction-fix](docs/PLAN-wake-gate-TASK-014-wake-extraction-fix.md)
+ - [ ] [TASK-015-reindex-refresh](docs/PLAN-wake-gate-TASK-015-reindex-refresh.md)
+
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 
  - [ ] [TASK-004-unit-tests-red](docs/PLAN-wake-gate-TASK-004-unit-tests-red.md)
@@ -96,10 +101,12 @@ pid 1091813 verified alive 2026-11-13).
 
 ## Dependencies
 
-- TASK-001 gates everything: a >5% empty-wake rate STOPs Phase B and
-  files the wake-extraction fix first.
-- TASK-001 -> TASK-002 (shared wake-array fetch; TASK-002 needs the
-  committed spec doc section).
+- TASK-001 fired its >5% STOP: TASK-014 (core wake-extraction fix) then
+  TASK-015 (reindex + re-audit ≤5%) now block everything downstream.
+  Phase B (TASK-004..008) stays frozen until TASK-015's gate passes.
+- TASK-002 and TASK-003 run AFTER TASK-015: their inputs are the stored
+  wake arrays the reindex rewrites, and the zh pin must sit on the
+  post-reindex collection to be a valid TASK-011 control.
 - TASK-003 pins the zh control consumed by TASK-011 and TASK-012.
 - TASK-004 -> TASK-005 -> TASK-006 -> TASK-007 -> TASK-008 (red, green,
   fakes, harness); TASK-004..007 land inside the single TASK-008 commit.
@@ -108,3 +115,12 @@ pid 1091813 verified alive 2026-11-13).
 - TASK-008 -> TASK-009 (refactor keeps tests green, behavior preserved).
 - TASK-009 -> TASK-010 -> TASK-011 (back to back, same session) ->
   TASK-012 -> TASK-013 (conditional on the TASK-012 decision).
+
+## Discovered issues ledger
+
+- RECORDED (vault note `milvus-lite-3-2-2-query-pagination-by-pk-cursor-silently-loses-rows`
+  + wake-audit-probe docblock): milvus-lite 3.2.2 `query` answers in
+  segment order; PK-cursor pagination silently loses rows and `order_by`
+  is ignored. Full-enumeration probes must use chunk_id range-split
+  windows (wake-audit-probe pattern); TASK-002 and any future
+  row-enumerating harness code follows that pattern.

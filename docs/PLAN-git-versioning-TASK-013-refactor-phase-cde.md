@@ -25,6 +25,15 @@ Carried items to adjudicate in this task:
   (answer null), so audit's git-error detail is generic wording; decide
   whether widening the accessor to carry the error string into
   AuditGitFacts is worth the churn (TASK-008 note) and record the call.
+- firstSharedVaultPath (tools/audit.ts, TASK-009) is the surviving copy of
+  the removed events pick; lift it to core (+ tools barrel export) if it
+  earns a second consumer, else leave it local and record the call.
+- Test-tier type gating is absent repo-wide (every package tsconfig only
+  includes src; vitest strips types; TASK-011 evidence: a required `git`
+  fixture key went uncaught since TASK-003). Fixing the one
+  service.spec.ts:1683 annotation is in scope; DESIGNING a
+  tests-typecheck project is a parent judgment call, out of this plan if
+  too large.
 
 Definition of Done: each risk answered in the task commit message body
 (found+fixed, or absent); full suite green; `pnpm build` leaves the tree

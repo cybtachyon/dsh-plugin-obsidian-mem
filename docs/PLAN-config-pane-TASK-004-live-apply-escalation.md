@@ -47,6 +47,20 @@ wait on `this.access.promise` first. Keep every restart behind the existing
 dangling on a failed embedder recreation (log + answer the validation-style
 error, previous config stays applied).
 
+## Inherited from TASK-003 (commit 4367d24)
+
+- Fill the existing `escalateCardSettings(changed)` call site (currently a
+  TODO stub); do not add a second call site.
+- INVARIANT: escalation mutates `this.config` only, NEVER the private
+  `rowConfig` (the row-only base the card-settings view and the validation
+  draft are computed from).
+- Test-expectation fix owed: `card-settings.spec.ts` "clears every override
+  back to the row values" currently pins the stub-stage
+  `restartPending = ['llm.enabled', 'vectorDim']` (every changed key shows
+  as pending while escalation is a no-op). With real escalation, only
+  `milvus.dbPath` changes may stay pending; update that expectation (and
+  any sibling assertions) in this task's commit.
+
 ## Tests
 
 - budgets patch: `turnStart`-style read path sees the new value immediately

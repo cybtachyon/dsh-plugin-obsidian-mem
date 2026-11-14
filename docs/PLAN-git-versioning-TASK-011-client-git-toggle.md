@@ -21,6 +21,12 @@ Row spec (data-driven list, same shape as `llm.enabled`):
   commits"). Placeholder copy follows the existing pattern of pinning
   against the config defaults, not restating literals.
 
+Known-red assignment (from TASK-003 handoff): `packages/client/tests/
+configuration.spec.ts` "covers exactly the service CARD_SETTINGS_KEYS
+paths" is RED since commit 5ff21f2 (the whitelist gained the three
+`git.*` leaves); this task's three Git-pane rows turn it GREEN in the
+same commit.
+
 Notes:
 - The card toggles flow through the existing settings GET/POST/DELETE
   routes via `CARD_SETTINGS_KEYS` (TASK-003 whitelisted the path); no

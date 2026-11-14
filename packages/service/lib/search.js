@@ -106,17 +106,38 @@ export const DENSE_RANGE_MAX = 1.0;
  * `-score >= SPARSE_SEARCH_RADIUS`; raising it raises required
  * relevancy and has no ceiling.
  *
- * TASK-006 strip-on re-sweep (2026-11-13, docs/research/stopword-
- * strip-findings.md §"Sparse floor re-sweep (TASK-006)"): the old 2.5
- * was INERT on the post-strip page (trimmed 0 of 193 fetched-window
+ * The shipped value is the GATED-parity knee, measured with
+ * `SPARSE_WAKE_GATE_ENABLED = true`: lite 3.2.2 recomputes BM25
+ * corpus statistics over the scalar-filtered subset of every gated
+ * sparse search (docs/research/sparse-wake-gate-spec.md §"Step 3 A/B
+ * executed"), so a floor tuned on the unfiltered distribution does
+ * not transfer to the gated leg. The TASK-018 gated re-sweep
+ * (2026-11-13, same spec §"Gated floor re-sweep (TASK-018,
+ * 2026-11-13)"; winner artifact
+ * docs/research/eval-split-strip-on-d078-s475-k60-m016129-wakegate.json,
+ * commit 39d7f33) puts the knee at 4.75: the highest
+ * radius passing all three recovery gates, relevant-of-labeled 15/22
+ * equal to the same-session ungated baseline with the identical
+ * missed-label set, forbidden 7 at rate 0.109, P@k 0.375. The gated
+ * 5.0 anchor reproduces the §Step 3 FAIL (14/22: the gate rescales
+ * a relevant row's BM25 11.70 -> 4.97, which a 5.0 floor trims and a
+ * 4.75 floor keeps). Below 4.75 the forbidden count stays a constant
+ * 7 and the grid admits only noise, so 4.75 is the least-noise
+ * admitting setting.
+ *
+ * Superseded history (the unfiltered-shape sweep; still the record
+ * for a gate-off deployment): the TASK-006 strip-on re-sweep
+ * (2026-11-13, docs/research/stopword-strip-findings.md §"Sparse
+ * floor re-sweep (TASK-006)") raised the shipped 2.5 to 5.0. 2.5 was
+ * INERT on the post-strip page (trimmed 0 of 193 fetched-window
  * candidates; the stop-word strip shifted BM25 mass −15.6%), so it
- * enforced no gate. The sweep knee is 5.0: engaged (trims 19/193),
- * forbidden rows 21 -> 19 (forbidden-rate 0.266 -> 0.250), P@k
- * 0.241 -> 0.250, and label-granularity recall unchanged at 14/22
- * with an identical missed-label set at every grid point. 5.5 trims
- * further (23/193) with zero page movement, so 5.0 is the knee.
+ * enforced no gate. That sweep's knee was 5.0: engaged (trims
+ * 19/193), forbidden rows 21 -> 19 (forbidden-rate 0.266 -> 0.250),
+ * P@k 0.241 -> 0.250, and label-granularity recall unchanged at
+ * 14/22 with an identical missed-label set at every grid point; 5.5
+ * trimmed further (23/193) with zero page movement.
  */
-export const SPARSE_SEARCH_RADIUS = 5.0;
+export const SPARSE_SEARCH_RADIUS = 4.75;
 /**
  * SPARSE_QUERY_STOPWORDS is the stop-word list sparseQueryText removes
  * from the BM25 route's query text: stopword's English `eng` (108) plus

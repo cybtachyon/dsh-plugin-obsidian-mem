@@ -4,6 +4,7 @@ import { MILVUS_ARRAY_ELEMENT_MAX_LENGTHS, MILVUS_FIELDS } from '../../core/lib/
 import { fakeEmbedder } from '../src/embedder.ts'
 import {
   IndexOfflineError,
+  SPARSE_SEARCH_RADIUS,
   SPARSE_WAKE_GATE_ENABLED,
   SPARSE_WAKE_GATE_MAX_TOKENS,
   SEARCH_OUTPUT_FIELDS,
@@ -557,18 +558,22 @@ describe('client RRF fusion', () => {
 })
 
 describe('sparse BM25 client cutoff on -score', () => {
-  it('keeps a hit whose -score equals the 5.0 floor and drops one below it', async () => {
+  it('keeps a hit whose -score equals the SPARSE_SEARCH_RADIUS floor and drops one below it', async () => {
     const { client } = stubMilvus({
       denseResults: [],
       sparseResults: [
-        row({ [MILVUS_FIELDS.chunkId]: 1, score: -5.0 }),
-        row({ [MILVUS_FIELDS.chunkId]: 2, [MILVUS_FIELDS.sectionHeader]: 'B', score: -4.9999 }),
+        row({ [MILVUS_FIELDS.chunkId]: 1, score: -SPARSE_SEARCH_RADIUS }),
+        row({
+          [MILVUS_FIELDS.chunkId]: 2,
+          [MILVUS_FIELDS.sectionHeader]: 'B',
+          score: -(SPARSE_SEARCH_RADIUS - 0.0001),
+        }),
       ],
     })
 
     const results = await hybridSearch(deps(client), { query: 'x' })
 
-    // -(-5.0) == 5.0 survives; -(-4.9999) < 5.0 drops.
+    // -(-R) == R survives; -(-(R - 0.0001)) < R drops.
     expect(results.map((result) => result.chunk_id)).toEqual([1])
     expect(results[0]!.score).toBe(1 / 61)
   })

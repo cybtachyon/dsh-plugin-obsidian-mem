@@ -66,7 +66,7 @@ pid 1091813 verified alive 2026-11-13).
 
  - [x] [TASK-001-empty-wake-audit](docs/PLAN-wake-gate-TASK-001-empty-wake-audit.md)
  - [x] [TASK-002-expected-kill-check](docs/PLAN-wake-gate-TASK-002-expected-kill-check.md)
- - [ ] [TASK-003-zh-baseline-pin](docs/PLAN-wake-gate-TASK-003-zh-baseline-pin.md)
+ - [x] [TASK-003-zh-baseline-pin](docs/PLAN-wake-gate-TASK-003-zh-baseline-pin.md)
 
  TASK-001 result (2026-11-13, spec "Pre-flight measurements", commit
  0285a65): 39/210 rows (18.571%) carry empty wake arrays, above the 5%
@@ -89,6 +89,20 @@ pid 1091813 verified alive 2026-11-13).
  dense leg still carries it. Predicted A/B shape for TASK-011:
  sparse-only forbidden 6 → 1, relevant-of-labeled intact. Full table +
  stored wake arrays in the spec doc.
+
+ TASK-003 result (2026-11-13, spec "Pre-flight measurements" §Step
+ 1.3): zh baseline SUMMARY pinned verbatim (probe
+ `docs/research/probes/zh-analyzer-probe.mjs` run UNCHANGED; HARD
+ READ-ONLY; BOOT/SUMMARY rowCount 213; wake-audit invariants
+ re-verified in-session first: 213 rows, scanComplete 213/213, empty
+ wake 0, marker rows 0). This is the TASK-010/011 zh comparison
+ control. Key observation: the three Han-hitting chunks
+ (`2725569707718867`, `5384054551459882`, `266388258919095`) carry NO
+ Han in their stored `wake_keywords` (Latin slug words only), so the
+ gate predicts exactly three probes lose hits (`run-记忆`,
+ `run-智能体`, `run-的共享记忆`: 2 hits → 0 each); every
+ single-codepoint shape gates to an empty token list and fails open
+ unchanged. Full prediction in spec §Step 1.3.
 
 ### Phase A2: wake-extraction fix (spec Step 1.1 STOP consequence)
 
@@ -190,6 +204,17 @@ pid 1091813 verified alive 2026-11-13).
   column names row-side collision vocab. Step 1.2 predicts from the
   full token ∩ wake intersection, which subsumes it; the table wording
   stays as historical evidence, corrected in the §Step 1.2 record.
+- NOTED (TASK-003, spec §Step 1.3): the three Han-hitting zh chunks
+  store NO Han wake keys (wake extraction harvests Latin slug words),
+  so the gate as specified is predicted to kill the three
+  maximal-run zh probes (`run-记忆`, `run-智能体`, `run-的共享记忆`)
+  while single-codepoint/stopword-only shapes fail open unchanged.
+  TASK-011 must read a zh drop of exactly those three probes as the
+  predicted wake-extraction Han gap, not gate wiring; the Decision
+  rules' FAIL condition names "zh hits drop". Minor docblock nuance:
+  the zh probe says "exactly two Han-bearing chunks"; that is the
+  LOCATE-word pair, a third chunk (`266388258919095`) carries the
+  standalone `的` character and answers `cp-的`.
 - RECIPE for TASK-006 fixture edits (vault note
   `dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig`):
   after changing fixture shapes, typecheck the test trees with the

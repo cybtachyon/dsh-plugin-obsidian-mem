@@ -307,6 +307,67 @@ dense-carried, no marker-driven survivors.** A TASK-011 outcome of
 survivors >1 or relevant loss contradicts this prediction and points at
 harness/gate wiring, not at wake content.
 
+### Step 1.3 zh baseline (TASK-003): the zh control pin for the TASK-010/011 A/B
+
+Probe `docs/research/probes/zh-analyzer-probe.mjs` run UNCHANGED (the
+`--wake-gate` flag ships in TASK-007; not used here), HARD READ-ONLY (the
+only RPCs issued are connectPromise, getVersion, count, query, search)
+against the live post-reindex milvus-lite 3.2.2. Invariants verified in
+the same session before pinning: `wake-audit-probe.mjs` FINAL line 213
+rows, scanComplete 213/213, EMPTY wake rows 0 (0.000%, no-STOP), and a
+companion read-only `ARRAY_CONTAINS_ANY(wake_keywords,
+["who","what","when","where","why","how","how to apply"])` query matched
+0 rows (intent markers 0 corpus-wide). No live-reindex repair was needed.
+The probe's BOOT and SUMMARY lines independently read `rowCount: 213`.
+
+**This is the TASK-011 comparison control.** TASK-010 (baseline half)
+expect its zh hits equal to this pin; TASK-011 (gated run) is scored
+against it by the "zh probe hits unchanged" PASS criterion. SUMMARY line
+pinned verbatim:
+
+```json
+{"probe":"SUMMARY","server":{"status":{"extra_info":{},"error_code":"Success","reason":"","code":0,"retriable":false,"detail":""},"version":"milvus_lite-3.2.2"},"rowCount":213,"shippedStripText":"智能体的共享记忆","hits":[{"probe":"raw-joined","text":"智能体的共享记忆","hitChunkIds":[]},{"probe":"t002-strip-out","text":"智 能 体 享 记 忆","hitChunkIds":["5384054551459882"]},{"probe":"split-unstripped","text":"智 能 体 的 共 享 记 忆","hitChunkIds":["5384054551459882","2725569707718867","266388258919095"]},{"probe":"cp-智","text":"智","hitChunkIds":[]},{"probe":"cp-能","text":"能","hitChunkIds":[]},{"probe":"cp-体","text":"体","hitChunkIds":[]},{"probe":"cp-共","text":"共","hitChunkIds":[]},{"probe":"cp-享","text":"享","hitChunkIds":[]},{"probe":"cp-记","text":"记","hitChunkIds":["5384054551459882"]},{"probe":"cp-忆","text":"忆","hitChunkIds":["5384054551459882"]},{"probe":"cp-的","text":"的","hitChunkIds":["5384054551459882","2725569707718867","266388258919095"]},{"probe":"run-记忆","text":"记忆","hitChunkIds":["5384054551459882","2725569707718867"]},{"probe":"run-智能体","text":"智能体","hitChunkIds":["5384054551459882","2725569707718867"]},{"probe":"run-的共享记忆","text":"的共享记忆","hitChunkIds":["2725569707718867","5384054551459882"]},{"probe":"substr-共享记忆","text":"共享记忆","hitChunkIds":[]},{"probe":"shipped-strip-out","text":"智能体的共享记忆","hitChunkIds":[]}]}
+```
+
+Han-bearing chunks: both LOCATE lines (`记忆`, `智能体`) return the same
+two rows, `2725569707718867`
+(`chinese-copy-plugin-description-grammar-rules.md`) and
+`5384054551459882` (`stopword-3-1-5-api-shape-and-zh-list-limits.md`).
+A third chunk id appears in the SUMMARY hit union: `266388258919095`, a
+second chunk of the same stopword file, reached only through the
+standalone `的` token (`cp-的`, `split-unstripped`); a companion
+read-only `chunk_text like "%的%"` query returned exactly these three
+rows. The probe docblock's "exactly two Han-bearing chunks" is the
+LOCATE pair strictly: three chunks carry Han text, only two carry Han
+words.
+
+Wake arrays of the Han-hitting chunks (read-only `chunk_id in […]`
+query; the two same-file chunks store identical arrays):
+
+| chunk_id | source_path | wake_keywords | Han-containing wake entries |
+| --- | --- | --- | --- |
+| 2725569707718867 | chinese-copy-plugin-description-grammar-rules.md | chinese, copy, plugin, description, grammar, rules | none |
+| 5384054551459882 | stopword-3-1-5-api-shape-and-zh-list-limits.md | stopword, api, shape, and, zh, list, limits | none |
+| 266388258919095 | stopword-3-1-5-api-shape-and-zh-list-limits.md (2nd chunk) | stopword, api, shape, and, zh, list, limits | none |
+
+**Observation, the gate's predicted zh impact (recorded for
+TASK-010/011):** none of the three Han-hitting chunks' wake arrays
+contains ANY Han run; wake extraction harvests Latin file-name-slug
+words here. The zh query tokens the gate checks are sparseQueryText's
+maximal Han runs, so with the shipped filter-token legality (drop
+len<2, drop len>64, empty list ⇒ no clause ⇒ fail-open) the gated run
+is predicted to differ from this control on exactly three probes:
+`run-记忆`, `run-智能体`, `run-的共享记忆` (gated Han tokens of length
+2, 3, 5; wake ∩ tokens = ∅ ⇒ 2 hits → 0 each). Every single-codepoint
+shape (`t002-strip-out`, `split-unstripped`, `cp-记`, `cp-忆`, `cp-的`;
+`的` is also a zho stopword) gates to an empty token list and fails
+open, keeping its control hits; the already-empty rows (`raw-joined`,
+`substr-共享记忆`, `shipped-strip-out`) stay empty. If TASK-011's gated
+run reproduces this, the loss of the three maximal-run probes is the
+Decision rules' named FAIL condition ("zh hits drop") realized as
+predicted, and the root cause is wake extraction emitting no Han wake
+keys, not gate wiring.
+
 ## Step 2: implement (TDD, single commit with lib)
 
 1. `packages/service/src/search.ts`: pure helper

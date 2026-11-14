@@ -26,6 +26,16 @@ contract tests green.
     method+path+body through a stubbed fetch; error envelope → ApiError with
     the code.
 
+## Inherited from TASK-004 (via TASK-006's route codes)
+
+- The host awaits a single apply per POST/DELETE; the answer already is the
+  fresh view (no follow-up GET needed after success).
+- A busy apply answers 409 with the in-flight code (mirror it in
+  `ERROR_CODES`); the Configuration section branches on it to keep the
+  controls disabled instead of flashing a red banner.
+- `restartPending` in the payload is `[]` or `['milvus.dbPath']`; type it
+  `string[]` anyway (the host owns the vocabulary).
+
 ## Definition of Done
 
 - `pnpm build` emit in the same commit (client lib is tracked even though the

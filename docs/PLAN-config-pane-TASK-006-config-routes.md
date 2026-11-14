@@ -30,6 +30,19 @@ card can read and edit them.
   400 with code), DELETE answer.
 - `packages/ui/tests/testkit.ts` fake service extended.
 
+## Inherited from TASK-004 (commit 5455271)
+
+- `updateCardSettings` / `resetCardSettings` are PROMISE APIs: `await` them
+  inside the route runs; ALL failures are rejections (whitelist, schema,
+  in-flight guard "another apply is still in flight", escalation). Catch
+  and map: in-flight rejections → 409 with a stable code
+  (e.g. `settings_busy`); validation-style rejections → 400
+  `settings_invalid`/`config_invalid` with the service message verbatim
+  (the `vaultAnswer` substring-mapping precedent; the in-flight phrase is
+  the coupling). `cardSettings()` stays sync.
+- `restartPending` after a settled store is `[]` or `['milvus.dbPath']`
+  only; the route just passes it through.
+
 ## Definition of Done
 
 - `pnpm build` emit (packages/ui/lib) in the same commit; `pnpm test` green;

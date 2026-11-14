@@ -22,6 +22,20 @@ files) lands on a type-clean base.
   further hits the same way (narrow the union properly, complete fixture
   literals, cast at the fake seam, never `as any`).
 
+## Follow-on section (added from TASK-004 findings, commit 5455271)
+
+The service.spec `stubClient` keeps two DOCUMENTED fidelity quirks (the
+describeCollection field-name one was already fixed):
+- `search` routes `anns_field === 'content_vector'` as the dense route
+  although `search.ts` sends `dense_vector`, so both stub routes answer the
+  -6.0 score and fusion tests only ever pin ranks.
+- `createCollection` records `dim = null`, so a stub-created collection
+  reports not-exists to the next `hasCollection`.
+
+Fix them ONLY when cheap and test-safe (align field names, record the dim;
+run the full suite; if a rank-based fusion test would change outcome,
+leave that quirk and say why in the commit message).
+
 ## Explicitly OUT of scope
 
 - Do NOT add a new tsc project, package script, or CI gate for the tests

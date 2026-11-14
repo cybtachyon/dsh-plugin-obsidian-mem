@@ -2,7 +2,9 @@
  * LlmRefiner runs the optional Q3 pass over the core heuristics: one
  * OpenAI-compatible chat completion per chunk asking for extra
  * wake_keywords and trigger_frameworks, merged onto (never replacing) what
- * extractTriggers already found.
+ * extractTriggers already found. Endpoint wake terms re-pass core's
+ * isUsableKeyword and both merged lists re-pass core's capColumn; the
+ * endpoint is an advisor, never a second legality home.
  *
  * It is an upgrade path, never a dependency: absent config, a missing API
  * key, a bad status, or unparseable JSON all fall back to the heuristics
@@ -67,8 +69,12 @@ export declare class LlmRefiner {
     resetRun(): void;
     /**
      * Refine merges the endpoint's wake_keywords and trigger_frameworks onto
-     * the heuristic lists, heuristic-first and deduped. It returns `base`
-     * unchanged whenever the pass is off, unconfigured, or failing.
+     * the heuristic lists, heuristic-first and deduped. Endpoint wake terms
+     * pass core's isUsableKeyword legality (the one gate), and both merged
+     * lists re-run core's capColumn, so an endpoint can never inject generic
+     * or fragment vocabulary nor overflow an Array column's capacity. It
+     * returns `base` unchanged whenever the pass is off, unconfigured, or
+     * failing.
      */
     refine(chunkText: string, base: Triggers): Promise<Triggers>;
     private fetchReply;

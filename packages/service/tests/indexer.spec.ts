@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
-import { MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS } from '../../core/lib/index.js'
+import { MILVUS_ARRAY_CAPACITIES, MILVUS_FIELDS, MILVUS_SCALAR_MAX_LENGTHS } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
 import type { Embedder } from '../src/embedder.ts'
 import {
@@ -544,6 +544,54 @@ describe('LLM refinement', () => {
     expect(alphaRow[MILVUS_FIELDS.wakeKeywords]).toContain('quantum')
     expect(alphaRow[MILVUS_FIELDS.wakeKeywords]).toContain('rate limiter')
     expect(alphaRow[MILVUS_FIELDS.triggerFrameworks]).toContain('solidjs')
+  })
+
+  it('routes endpoint vocabulary through core legality and re-caps both columns', async () => {
+    // The loophole this closes: refine merged endpoint lists WITHOUT the
+    // isUsableKeyword gate or capColumn, so a live endpoint could re-add the
+    // generic markers and fragments the wake cleanup removed, and overflow
+    // the Array columns (wakeKeywords cap 96, triggerFrameworks cap 64).
+    const junkWake = [
+      'quantum', // legal: must survive
+      ' How ', // generic marker + padding: title/mixed forms too
+      'HOW TO APPLY',
+      'how',
+      '2fast',
+      '0 of 54',
+      'unbalanced (paren',
+      'glued—one—dash—fragment',
+      `${'x'.repeat(70)}`, // past the element max length
+    ]
+    const junkFrameworks = Array.from({ length: 70 }, (_unused, index) => `framework-${index}`)
+    const fetchImpl: LlmFetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({ wake_keywords: junkWake, trigger_frameworks: junkFrameworks }),
+          },
+        }],
+      }),
+    })
+    const { writer, indexer } = makeFixture({
+      llm: { ...llmConfig, apiKeyEnv: undefined },
+      fetch: fetchImpl,
+    })
+
+    await indexer.reindex()
+
+    const rows = writer.calls.filter((call) => call.method === 'insert').flatMap((call) => call.request.data!)
+    const alphaRow = rows.find((row) => row[MILVUS_FIELDS.sourcePath] === 'a.md')!
+    const wake = alphaRow[MILVUS_FIELDS.wakeKeywords] as string[]
+    expect(wake).toContain('quantum')
+    expect(wake).toContain('rate limiter') // heuristics survive intact
+    for (const junk of ['how', 'how to apply', '2fast', '0 of 54', 'unbalanced (paren', 'glued—one—dash—fragment']) {
+      expect(wake).not.toContain(junk)
+    }
+    expect(wake.length).toBeLessThanOrEqual(MILVUS_ARRAY_CAPACITIES.wakeKeywords)
+    const frameworks = alphaRow[MILVUS_FIELDS.triggerFrameworks] as string[]
+    expect(frameworks.length).toBeLessThanOrEqual(MILVUS_ARRAY_CAPACITIES.triggerFrameworks)
   })
 
   it('caps the chunk text pasted into the prompt at 6000 chars', async () => {

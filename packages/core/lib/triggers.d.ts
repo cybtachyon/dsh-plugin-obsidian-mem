@@ -70,6 +70,32 @@ export declare function extractTriggers(input: TriggerInput): Triggers;
  * match a stored trigger_extensions element.
  */
 export declare function normalizeExtension(raw: string): string | null;
+/**
+ * IsUsableKeyword is the ONE legality gate every wake candidate passes,
+ * whichever path harvested it (frontmatter, file name, header, emphasis,
+ * intent marker, Han run). Exported so external merges (the service
+ * LlmRefiner) run endpoint vocabulary through this same gate, never a
+ * second one. A keyword must be at least 2 chars, at most the
+ * schema element cap, and few enough words to behave like a keyword, not a
+ * sentence; must not be a generic house-format label (the TASK-001 audit
+ * showed those dominating the corpus wake vocabulary); must not be entirely
+ * Han function-word characters (the TASK-017 Han harvest mirrors the
+ * analyzer-strip's whole-run noise rule); must open with a letter, balance
+ * its parens/brackets/braces, and carry no internal em dash, so digit- and
+ * symbol-led cut fragments cannot pass (the same audit's tail: "0 of 54",
+ * "2/(k+1", "+ `field.field`", a 54-char em-dashed sentence fragment).
+ */
+export declare function isUsableKeyword(keyword: string): boolean;
 /** One Array<VarChar> trigger column, keyed as in the constants records. */
 export type TriggerArrayColumn = keyof typeof MILVUS_ARRAY_CAPACITIES;
+/**
+ * CapColumn enforces one column's contract on a trigger list: it drops
+ * elements longer than the column's max_length, then keeps
+ * max_capacity entries. Both limits are read from the same column key, so a
+ * list can never be capped against the wrong column (constants.ts).
+ * Exported for the same reason as isUsableKeyword: a caller that appends
+ * to a heuristic list (the service LlmRefiner merge) re-caps through this
+ * function instead of trusting the list it received as already final.
+ */
+export declare function capColumn(values: readonly string[], column: TriggerArrayColumn): string[];
 //# sourceMappingURL=triggers.d.ts.map

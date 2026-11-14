@@ -504,18 +504,22 @@ function normalizePhrase(raw: string): string {
     .replace(KEYWORD_EDGES, '')
 }
 
-// isUsableKeyword is the ONE legality gate every wake candidate passes,
-// whichever path harvested it (frontmatter, file name, header, emphasis,
-// intent marker, Han run). A keyword must be at least 2 chars, at most the
-// schema element cap, and few enough words to behave like a keyword, not a
-// sentence; must not be a generic house-format label (the TASK-001 audit
-// showed those dominating the corpus wake vocabulary); must not be entirely
-// Han function-word characters (the TASK-017 Han harvest mirrors the
-// analyzer-strip's whole-run noise rule); must open with a letter, balance
-// its parens/brackets/braces, and carry no internal em dash, so digit- and
-// symbol-led cut fragments cannot pass (the same audit's tail: "0 of 54",
-// "2/(k+1", "+ `field.field`", a 54-char em-dashed sentence fragment).
-function isUsableKeyword(keyword: string): boolean {
+/**
+ * IsUsableKeyword is the ONE legality gate every wake candidate passes,
+ * whichever path harvested it (frontmatter, file name, header, emphasis,
+ * intent marker, Han run). Exported so external merges (the service
+ * LlmRefiner) run endpoint vocabulary through this same gate, never a
+ * second one. A keyword must be at least 2 chars, at most the
+ * schema element cap, and few enough words to behave like a keyword, not a
+ * sentence; must not be a generic house-format label (the TASK-001 audit
+ * showed those dominating the corpus wake vocabulary); must not be entirely
+ * Han function-word characters (the TASK-017 Han harvest mirrors the
+ * analyzer-strip's whole-run noise rule); must open with a letter, balance
+ * its parens/brackets/braces, and carry no internal em dash, so digit- and
+ * symbol-led cut fragments cannot pass (the same audit's tail: "0 of 54",
+ * "2/(k+1", "+ `field.field`", a 54-char em-dashed sentence fragment).
+ */
+export function isUsableKeyword(keyword: string): boolean {
   if (keyword.length < WAKE_KEYWORD_MIN_LENGTH || keyword.length > MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords) {
     return false
   }
@@ -553,8 +557,11 @@ export type TriggerArrayColumn = keyof typeof MILVUS_ARRAY_CAPACITIES
  * elements longer than the column's max_length, then keeps
  * max_capacity entries. Both limits are read from the same column key, so a
  * list can never be capped against the wrong column (constants.ts).
+ * Exported for the same reason as isUsableKeyword: a caller that appends
+ * to a heuristic list (the service LlmRefiner merge) re-caps through this
+ * function instead of trusting the list it received as already final.
  */
-function capColumn(values: readonly string[], column: TriggerArrayColumn): string[] {
+export function capColumn(values: readonly string[], column: TriggerArrayColumn): string[] {
   return values
     .filter((value) => value.length <= MILVUS_ARRAY_ELEMENT_MAX_LENGTHS[column])
     .slice(0, MILVUS_ARRAY_CAPACITIES[column])

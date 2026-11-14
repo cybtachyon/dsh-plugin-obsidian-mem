@@ -173,3 +173,14 @@ pid 1091813 verified alive 2026-11-13).
   `dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig`):
   after changing fixture shapes, typecheck the test trees with the
   throwaway root tsconfig recipe and diff against the ~82-error baseline.
+- LIVE HAZARD (TASK-015, commit 2474f02): the running host (pre-fix
+  core lib in memory) re-indexes any vault note dirtied AFTER the
+  refresh with OLD extraction, and its `memory_read` read-stat bump
+  dirties notes by itself. ACTIVE PROTOCOL until Phase C completes: no
+  memory_search/memory_read/memory_write against the obsidian-mem vault
+  (read vault files by path instead); the session memory checkpoint is
+  deferred to Finalize. Post-reindex truth to defend: 213 rows, 0
+  empty-wake, markers 0 corpus-wide. If any pin or the A/B finds
+  re-pollution, re-run `node scripts/live-reindex.mjs` (~15 s, durable)
+  + wake-audit re-check, then proceed. TASK-002/003/010/011 agents get
+  the same no-memory-tools instruction.

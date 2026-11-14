@@ -75,7 +75,7 @@ README/AGENTS docs.
 
 ### Phase 4: docs and gates
 
- - [ ] [TASK-010-docs-readme-agents](docs/PLAN-config-pane-TASK-010-docs-readme-agents.md)
+ - [x] [TASK-010-docs-readme-agents](docs/PLAN-config-pane-TASK-010-docs-readme-agents.md)
  - [ ] [TASK-011-gates-and-live-verify](docs/PLAN-config-pane-TASK-011-gates-and-live-verify.md)
 
 ## Dependencies

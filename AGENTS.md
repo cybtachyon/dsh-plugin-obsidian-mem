@@ -16,9 +16,15 @@
     sidecars (indexer state, `DREAMS.md`) live under
     `<vault>/.obsidian-mem/metadata/`; the model cache lives under
     `<dbDir>/models/` (relocatable via service config `model.cacheDir`;
-    the `''` default sentinel resolves to `modelCacheDir(homedir)`)
-  - `VaultConfig` (path, `shared` | `readonly` mode, `globalFile` relative
-    to the vault root, default `GLOBAL.md`) and the vault registry model
+    the `''` default sentinel resolves to `modelCacheDir(homedir)`);
+    the card overrides file `settings.json` lives under
+    `<default dbDir>/state/` (`stateDir(homedir)`) regardless of a
+    custom `milvus.dbPath`: that file stores the pending dbPath
+    override itself, so its location is the bootstrap anchor and can
+    never move with the knob it carries
+  - `VaultConfig` (path, `shared` | `read-only` mode, `globalFile`
+    relative to the vault root, default `GLOBAL.md`) and the vault
+    registry model
   - The memory-note Markdown format: frontmatter (`gray-matter`) and body
   - The Markdown chunker (heading-aware split), workspace manifest reading,
     chunk-id hashing
@@ -38,8 +44,16 @@
     `query:` prefixes, `vectorDim` knob), Milvus-Lite lifecycle (uv/uvx
     auto-spawn, localhost port), indexer manager, hybrid search, and the
     audit/dream compaction engine.
+  - Card settings overrides: `CARD_SETTINGS_KEYS` (`config.ts`) whitelists
+    the card-editable config paths, the values persist to `settings.json`
+    under the fixed core `stateDir`, and the store merges them over the
+    validated profile row config with the card winning per leaf key
+    (restart-pending covers `milvus.dbPath` only). `vaults.json` stays
+    dbPath-derived and is carried forward when a dbPath override lands.
 - **ui** carries the host web routes (`/obsidian-mem/*`) behind the settings
-  card: vault registry CRUD, index state, audit/dream state.
+  card: vault registry CRUD, the card settings view plus its apply and
+  reset-all mutations (`/obsidian-mem/settings` GET/POST/DELETE), index
+  state, audit/dream state.
 - **tools** registers the five model-facing tools:
   - `memory_read`, `memory_search`, `memory_write`, `memory_dream`,
     `memory_audit`, plus the system-prompt section that tells the agent when

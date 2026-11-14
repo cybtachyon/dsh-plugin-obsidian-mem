@@ -49,7 +49,7 @@ Or add from the DSH Plugin Marketplace.
    vaults. Or just use a default shared vault at `$HOME/.dsh/obsidian-mem/`!
  - **Vault permissions.** Safeguard your Markdown as a vault as **Read-only**
    (agents query but never write) or work together with **Adopt and Share**
-   (agents read and write). 
+   (agents read and write).
  - **Configurable settings.** The "Obsidian Mem" card in the Web GUI manages
    your list of vaults and file preferences. Adjust search and set up automatic
    Dreaming on a schedule. Of course, you can also ask your agent to set all of
@@ -88,17 +88,40 @@ never indexed, and these vault-root paths are reserved for the plugin:
 
 ## Configuration
 
-The settings card is available in the DSH plugin configuration:
+Every knob below is a real config path. Set them in the plugin's config
+row of your DSH profile, or edit the same keys in the "Obsidian Mem"
+card's Configuration pane (below Vaults), which persists them as card
+overrides in the plugin's state directory
+(`$HOME/.dsh/obsidian-mem-db/state/settings.json`; the file stays there
+even when `milvus.dbPath` points elsewhere). Card overrides win over the
+same key in the profile row; "Reset all to profile settings" clears them.
 
-| Knob                    | Default                              | Notes                                                            |
-| ----------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `vaults[]`              | `$HOME/.dsh/obsidian-mem/` | Each vault: `path`, `mode` (`shared` \| `readonly`), `globalFile` (vault-root relative; blank = `GLOBAL.md`) |
-| `vectorDim`             | `384`                                | Full e5-small width; `128`..`320` are lossy; change = re-index   |
-| `embeddingModel`        | `Xenova/multilingual-e5-small`       | ONNX q8, `passage:` / `query:` prefixes                        |
-| `modelCacheDir`         | `$HOME/.dsh/obsidian-mem-db/models`  | transformers.js `env.cacheDir`                                   |
-| `dbDir`                 | `$HOME/.dsh/obsidian-mem-db`         | Milvus-Lite data directory                                       |
-| `keywordLlm`            | off                                  | Optional OpenAI-compatible endpoint that augments heuristic wake-keyword extraction |
-| `recallBudget`          | per plan                             | Caps injected recall context per turn                            |
+| Knob | Default | Notes |
+| ---- | ------- | ----- |
+| `vaults[]` | `$HOME/.dsh/obsidian-mem/` | Each vault: `path`, `mode` (`shared` \| `read-only`), `globalFile` (vault-root relative; blank = `GLOBAL.md`). The card's Vaults pane and the profile row both manage the list; the default shared vault is created on first use when nothing is registered. |
+| `vectorDim` | `384` | Full e5-small width; `128` / `192` / `256` / `320` are lossy truncations that trade recall for speed; a change forces a full re-index. |
+| `model.id` | `Xenova/multilingual-e5-small` | ONNX q8 embedder, `passage:` / `query:` prefixes; changing it re-embeds every note. |
+| `model.cacheDir` | `$HOME/.dsh/obsidian-mem-db/models` | transformers.js download cache; first use of a new directory re-downloads the model. |
+| `milvus.dbPath` | `$HOME/.dsh/obsidian-mem-db` | Milvus-Lite data directory; a change applies on the next host restart and rebuilds the search index at the new location. |
+| `llm.enabled` / `llm.baseUrl` / `llm.model` / `llm.apiKeyEnv` | off | Optional OpenAI-compatible endpoint that augments the heuristic wake-keyword extraction. `llm.apiKeyEnv` names the environment variable holding the API key; the key value itself is never stored or logged. |
+| `budgets.turnStartRecallTokens` | `1200` | Token budget one turn-start recall injection may spend. |
+| `budgets.globalMemoryTokens` | `1500` | Token ceiling for all recall injected across one session, counting the global memory file. |
+| `budgets.readSections` | `2` | Most sections a Read-tool recall may inject. |
+| `budgets.readSectionTokens` | `350` | Token budget each injected Read-tool section may spend. |
+| `budgets.searchTopK` | `6` | Result count `memory_search` returns when the call omits `limit`. |
+| `budgets.thinkShotsPerTurn` | `3` | Most keyword-extraction shots one turn may spend. |
+
+Everything except `milvus.dbPath` applies to the running process on
+Apply: budgets and the keyword LLM take effect on the next call, and a
+`vectorDim` or `model.id` change starts its re-index right away.
+`milvus.dbPath` takes effect on the next host restart; until then the
+card shows a "restart to apply" chip.
+
+The pane shows effective values, so to hand one knob back to the profile
+row, blank the overridden text field: blanking deletes the override key
+and the profile value returns. A blank number field sends nothing, and a
+cleared override never writes an empty string, because an empty string
+is the built-in default for a path knob.
 
 ## Technical Background
 
@@ -139,7 +162,7 @@ architecture and the verification commands.
  - Per-test timeouts are a generous 180 s to absorb cold caches.
  - Everything it writes lands in temporary directories; only the model cache is
    reused.
- 
+
 Run it with:
 
 ```

@@ -13,6 +13,13 @@ Then address and resolve each risk.
 
 ## Notes for this pass
 
+- TASK-008 carry-ins: lift the shared `TOAST_HOLD_MS` currently imported by
+  `configuration.tsx` from `sections/dreaming.js` into a shared home
+  (styles.ts or a small toast module); consider the `.gitignore` hygiene
+  line for one-off typecheck artifacts (e.g.
+  `packages/*/lib/tsconfig.*.tsbuildinfo`) since TASK-012's throwaway
+  recipes can drop them there.
+
 - Prime suspects in `configuration.tsx`: five near-identical field blocks
   (lift a declarative field-descriptor table: key, control kind, options,
   warning copy, restart/custom badge wiring; one renderer loop), the

@@ -36,6 +36,16 @@ question is settled by the shipped feature: all README knobs are wired).
 - Keep every statement the single source of truth; no duplication between
   README and AGENTS (README = user behavior, AGENTS = build/architecture).
 
+## Wording constraints (from TASK-008's shipped behavior)
+
+- Do NOT promise per-field "revert to profile value": the view shows only
+  the effective value, so the card clears an override by BLANKING an
+  overridden text field (blank = delete the key = row value returns); a
+  blank number field sends nothing; the bulk path is "Reset all to profile
+  settings".
+- State that clearing an override is deleting the key, never sending `''`
+  (`''` means the core default for path knobs).
+
 ## Definition of Done
 
 - Both files read consistently with the shipped code (verify each claim

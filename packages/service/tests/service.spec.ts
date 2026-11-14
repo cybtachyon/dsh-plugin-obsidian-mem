@@ -1498,17 +1498,44 @@ describe('vault git wiring', () => {
     for (const dir of gitDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   })
 
-  /** RecordingGit answers like a healthy adopted repo and logs every call's root. */
-  function recordingGit(options: { adoptionFails?: boolean } = {}) {
+  /**
+   * RecordingGit answers like a healthy adopted repo and logs every call's
+   * root. markDirty scripts the change a write lands for the next status
+   * probe (a clean tree is what commitAll answers null on); a recorded
+   * commit cleans the tree again like real git; commitFails scripts git
+   * refusing the commit itself.
+   */
+  function recordingGit(options: { adoptionFails?: boolean; commitFails?: boolean } = {}) {
     const calls: Array<{ root: string; argv: string[] }> = []
+    let dirty = false
     const gitRunner = (root: string): GitRunner => async (argv) => {
       calls.push({ root, argv })
       if (options.adoptionFails === true) {
         return { code: 128, stdout: '', stderr: 'fatal: fake adoption failure' }
       }
+      if (argv.includes('status')) {
+        return { code: 0, stdout: dirty ? '?? pending.md\n' : '', stderr: '' }
+      }
+      if (argv.includes('commit')) {
+        if (options.commitFails === true) {
+          return { code: 1, stdout: '', stderr: 'fatal: fake commit failure' }
+        }
+        dirty = false
+        return { code: 0, stdout: '', stderr: '' }
+      }
+      if (argv[0] === 'rev-parse' && argv[1] === 'HEAD') {
+        return { code: 0, stdout: `${'f'.repeat(40)}\n`, stderr: '' }
+      }
       return { code: 0, stdout: '', stderr: '' }
     }
-    return { calls, gitRunner }
+    return {
+      calls,
+      gitRunner,
+      /** MarkDirty scripts a working-tree change for the next status probe. */
+      markDirty(): void {
+        dirty = true
+      },
+    }
   }
 
   /** Flush drains the floating addVault adoption promise (microtask-only chain). */
@@ -1632,5 +1659,137 @@ describe('vault git wiring', () => {
     await h.service.removeVault(vault)
     expect(h.service.vaultGit.adoptedRoots()).toEqual([])
     await expect(h.service.vaultGit.statusShared(vault)).resolves.toBeNull()
+  })
+
+  // Write-commit seam (TASK-005): applyWrite ends every successful write
+  // with one commit in the owning shared vault, serialized per vault by
+  // the manager (Q3 answer; no debounce, no tools-layer changes).
+
+  /** WriteHarness: a git-enabled service over one real temp-dir shared vault. */
+  function writeHarness(git: ReturnType<typeof recordingGit>) {
+    const vault = gitTempDir()
+    const h = harness({
+      gitEnabled: true,
+      seedDirs: [vault],
+      config: { vaults: [{ path: vault }] },
+      gitRunner: git.gitRunner,
+    })
+    return { ...h, vault }
+  }
+
+  /** CommitMessages lists the -m message of every recorded `commit` call. */
+  function commitMessages(git: ReturnType<typeof recordingGit>): string[] {
+    return git.calls
+      .filter((call) => call.argv.includes('commit'))
+      .map((call) => call.argv[call.argv.indexOf('-m') + 1])
+  }
+
+  it('one successful write lands exactly one commit with the pinned message shape', async () => {
+    const git = recordingGit()
+    const h = writeHarness(git)
+    await h.service.ensureMemoryAccess()
+    git.calls.length = 0
+
+    git.markDirty()
+    const result = await h.service.write({
+      path: join(h.vault, 'topic.md'), meta: testMeta(), body: 'the fact, stated plainly\n',
+    })
+
+    expect(result.created).toBe(true)
+    expect(result.vaultPath).toBe(h.vault)
+    expect(commitMessages(git)).toEqual([
+      expect.stringMatching(
+        /^obsidian-mem: memory_write topic\.md \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+      ),
+    ])
+    expect(h.ctx.errors).toEqual([])
+  })
+
+  it('an identical-content rewrite (clean tree) commits nothing and still returns written', async () => {
+    const git = recordingGit()
+    const h = writeHarness(git)
+    await h.service.ensureMemoryAccess()
+
+    git.markDirty()
+    const request = {
+      path: join(h.vault, 'again.md'), meta: testMeta(), body: 'same bytes\n',
+    }
+    const first = await h.service.write(request)
+    expect(first.created).toBe(true)
+    expect(commitMessages(git)).toHaveLength(1)
+
+    // The recorded commit cleaned the fake tree, which is what an
+    // identical rewrite looks like to git: commitVault answers null and
+    // the write still returns.
+    const second = await h.service.write(request)
+    expect(second.created).toBe(false)
+    expect(commitMessages(git)).toHaveLength(1)
+    expect(h.ctx.errors).toEqual([])
+  })
+
+  it('git disabled: the write never reaches the git boundary and still returns', async () => {
+    const git = recordingGit()
+    const vault = gitTempDir()
+    const h = harness({
+      seedDirs: [vault],
+      config: { vaults: [{ path: vault }] },
+      gitRunner: git.gitRunner,
+    })
+    await h.service.ensureMemoryAccess()
+
+    const result = await h.service.write({
+      path: join(vault, 'off.md'), meta: testMeta(), body: 'b\n',
+    })
+
+    expect(result.created).toBe(true)
+    expect(git.calls).toEqual([])
+  })
+
+  it('a failing commit still returns the written result; the manager logs it', async () => {
+    const git = recordingGit({ commitFails: true })
+    const h = writeHarness(git)
+    await h.service.ensureMemoryAccess()
+    git.calls.length = 0
+
+    git.markDirty()
+    const result = await h.service.write({
+      path: join(h.vault, 'kept.md'), meta: testMeta(), body: 'b\n',
+    })
+
+    expect(result.created).toBe(true)
+    expect(result.relPath).toBe('kept.md')
+    expect(h.ctx.errors.join('\n')).toContain(`git commit failed for vault ${h.vault}`)
+  })
+
+  it('an archive write commits like any other write', async () => {
+    const git = recordingGit()
+    const h = writeHarness(git)
+    await h.service.ensureMemoryAccess()
+    git.calls.length = 0
+
+    git.markDirty()
+    await h.service.write({
+      path: join(h.vault, 'retired.md'), meta: testMeta({ archive: true }), body: 'b\n',
+    })
+
+    expect(parseNote(h.fs.content(join(h.vault, 'retired.md')) ?? '').meta.archive).toBe(true)
+    expect(commitMessages(git)).toHaveLength(1)
+  })
+
+  it('a read-only vault write is refused before git is ever consulted', async () => {
+    const git = recordingGit()
+    const shared = gitTempDir()
+    const readOnly = gitTempDir()
+    const h = harness({
+      gitEnabled: true,
+      seedDirs: [shared, readOnly],
+      config: { vaults: [{ path: shared }, { path: readOnly, mode: 'read-only' }] },
+      gitRunner: git.gitRunner,
+    })
+    await h.service.ensureMemoryAccess()
+
+    await expect(h.service.applyWrite(join(readOnly, 'x.md'), testMeta(), 'b'))
+      .rejects.toThrow(/read-only vault/)
+    expect(git.calls.filter((call) => call.root === readOnly)).toEqual([])
   })
 })

@@ -811,8 +811,15 @@ export class ObsidianMemService extends Service {
    * before serializing (TASK-025 carry-over #1: serializeNote renders the
    * modelled keys only, so keywords/trigger_extensions and every other
    * un-modelled author key would otherwise be silently dropped on
-   * rewrite), writes atomically, updates the read registry, and hands the
-   * path to the indexer's write-through queue. Read-only vaults refuse.
+   * rewrite), writes atomically, updates the read registry, hands the path
+   * to the indexer's write-through queue, and records one git commit in the
+   * owning shared vault (Q3: one commit per successful write, serialized
+   * per vault, no debounce). Read-only vaults refuse. The commit rides
+   * inside applyWrite for both the memory_write tool path and this service
+   * write() path (the UI); a commit failure logs in the VaultGitManager and
+   * settles to null, so it never unwinds the write. applyWrite already
+   * awaits the write-through index, so one serialized commit fits the same
+   * latency envelope (WRITE_TIMEOUT_MS in the tool bounds that budget).
    */
   async applyWrite(
     path: string,
@@ -867,6 +874,16 @@ export class ObsidianMemService extends Service {
         this.log.warn(`write-through index failed for ${target}: ${describeError(error)}`)
       })
     }
+
+    // One commit per successful write (Q3). commitVault answers a settled
+    // null when git is off, the vault was never adopted, or the tree is
+    // clean (an identical rewrite), and logs-and-nulls a failed commit:
+    // the memory file is the source of truth, so no catch here.
+    await this.vaultGit.commitVault(
+      classified.vault.path,
+      `obsidian-mem: memory_write ${relPath} ${new Date().toISOString()}`,
+    )
+
     return { path: target, created, vaultPath: classified.vault.path, relPath }
   }
 

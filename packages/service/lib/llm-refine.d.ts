@@ -39,7 +39,7 @@ export type LlmFetch = (url: string, init: {
 export interface LlmRefinerOptions {
     /** Absent or disabled means the pass never runs and never counts. */
     config?: LlmRefineConfig;
-    /** Fetch seam; absent means the pass never runs. */
+    /** Fetch seam; defaults to the process-global fetch (Node 18+). Only a runtime without a global fetch keeps the pass inert. */
     fetch?: LlmFetch;
     /** Env for the api-key lookup; default process.env. */
     env?: Record<string, string | undefined>;

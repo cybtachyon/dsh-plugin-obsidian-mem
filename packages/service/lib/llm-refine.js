@@ -36,7 +36,14 @@ export class LlmRefiner {
     failureCount = 0;
     constructor(options = {}) {
         this.config = options.config ?? { enabled: false, baseUrl: '', model: '' };
-        this.fetchImpl = options.fetch ?? null;
+        // The production call seam defaults here, like env and log below: the
+        // service mounts the indexer with config only, and a pass that waited
+        // for someone to hand it a fetch silently never ran (found 2026-11-13
+        // enabling the basalt endpoint). Resolved through globalThis at call
+        // time, so tests can stub the global.
+        this.fetchImpl = options.fetch ?? (typeof globalThis.fetch === 'function'
+            ? (url, init) => globalThis.fetch(url, init)
+            : null);
         this.env = options.env ?? process.env;
         this.log = options.log ?? ((message) => console.warn(`[obsidian-mem llm] ${message}`));
     }

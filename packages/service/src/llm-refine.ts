@@ -40,7 +40,7 @@ export type LlmFetch = (
 export interface LlmRefinerOptions {
   /** Absent or disabled means the pass never runs and never counts. */
   config?: LlmRefineConfig
-  /** Fetch seam; absent means the pass never runs. */
+  /** Fetch seam; defaults to the process-global fetch (Node 18+). Only a runtime without a global fetch keeps the pass inert. */
   fetch?: LlmFetch
   /** Env for the api-key lookup; default process.env. */
   env?: Record<string, string | undefined>
@@ -77,7 +77,14 @@ export class LlmRefiner {
 
   constructor(options: LlmRefinerOptions = {}) {
     this.config = options.config ?? { enabled: false, baseUrl: '', model: '' }
-    this.fetchImpl = options.fetch ?? null
+    // The production call seam defaults here, like env and log below: the
+    // service mounts the indexer with config only, and a pass that waited
+    // for someone to hand it a fetch silently never ran (found 2026-11-13
+    // enabling the basalt endpoint). Resolved through globalThis at call
+    // time, so tests can stub the global.
+    this.fetchImpl = options.fetch ?? (typeof globalThis.fetch === 'function'
+      ? (url, init) => globalThis.fetch(url, init as RequestInit)
+      : null)
     this.env = options.env ?? process.env
     this.log = options.log ?? ((message) => console.warn(`[obsidian-mem llm] ${message}`))
   }

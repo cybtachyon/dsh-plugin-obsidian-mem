@@ -16,6 +16,7 @@ import {
   VaultIndexer,
   WATCH_DEBOUNCE_MS,
 } from '../src/indexer.ts'
+import { LlmRefiner } from '../src/llm-refine.ts'
 import type {
   IndexChunkRow,
   IndexDirEntry,
@@ -544,6 +545,34 @@ describe('LLM refinement', () => {
     expect(alphaRow[MILVUS_FIELDS.wakeKeywords]).toContain('quantum')
     expect(alphaRow[MILVUS_FIELDS.wakeKeywords]).toContain('rate limiter')
     expect(alphaRow[MILVUS_FIELDS.triggerFrameworks]).toContain('solidjs')
+  })
+
+  it('defaults the fetch seam to the process-global fetch', async () => {
+    // Regression found live 2026-11-13: the service mounts the indexer with
+    // config only, so with fetch defaulted to null the enabled pass silently
+    // never ran (no merges, no failures).
+    vi.stubGlobal('fetch', async (_url: string) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: '{"wake_keywords":["globalfetch"],"trigger_frameworks":[]}' } }],
+      }),
+    }))
+    try {
+      const refiner = new LlmRefiner({
+        config: { enabled: true, baseUrl: 'https://glob.test/v1', model: 'm' },
+      })
+      const merged = await refiner.refine('chunk text', {
+        wake_keywords: ['base'],
+        trigger_extensions: [],
+        trigger_frameworks: [],
+      })
+      expect(refiner.failures).toBe(0)
+      expect(merged.wake_keywords).toContain('base')
+      expect(merged.wake_keywords).toContain('globalfetch')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('routes endpoint vocabulary through core legality and re-caps both columns', async () => {

@@ -6,6 +6,11 @@ node_modules/
 # leave the tracked lib output clean.
 packages/*/tsconfig.tsbuildinfo
 
+# One-off throwaway typecheck recipes (tsc over the tests tier) can drop
+# extra tsbuildinfo files next to the tracked lib output; they are state,
+# never artifacts.
+packages/*/lib/tsconfig*.tsbuildinfo
+
 # Generated client bundle intermediate (scripts/build-client.mjs)
 dsh/.build/
 

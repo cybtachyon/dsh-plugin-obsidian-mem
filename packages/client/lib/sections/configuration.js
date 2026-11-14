@@ -16,15 +16,15 @@
  * @module dsh-plugin-obsidian-mem/client/sections/configuration
  */
 import { ERROR_CODES, errorText, fetchCardSettings, isApiError, resetCardSettings, updateCardSettings, } from '../api.js';
-import { renderButton, renderInput, renderSegmented, renderTag, renderToast, } from '../primitives.js';
+import { renderButton, renderInput, renderSegmented, renderTag, } from '../primitives.js';
 import { react } from '../react.js';
 import { RowHint } from '../cardRoot.js';
-import { TOAST_HOLD_MS } from './dreaming.js';
+import { useToast } from '../toast.js';
 import { ERROR_BANNER_STYLE, GROUP_HEADING_STYLE, HINT_STYLE, KEY_STYLE, ROW_STYLE, WARNING_BANNER_STYLE, } from '../styles.js';
 // The field table drives seed, dirty diff, rows, and the patch in one pass;
-// the group order and copy follow the TASK-008 layout. Defaults are display
-// copy only (core constants and the config schema stay authoritative; the
-// placeholder surfaces them only while a draft is blank).
+// the group order and copy follow the TASK-008 layout. Placeholder defaults
+// are display copy only (core constants and the config schema stay
+// authoritative); configuration.spec.ts pins them so the copies cannot drift.
 export const CONFIG_FIELDS = [
     {
         path: 'vectorDim',
@@ -122,6 +122,7 @@ export const CONFIG_FIELDS = [
         kind: 'text',
         tooltip: 'OpenAI-compatible endpoint base URL',
         placeholder: 'https://api.example.com/v1',
+        gatedBy: 'llm.enabled',
     },
     {
         path: 'llm.model',
@@ -130,6 +131,7 @@ export const CONFIG_FIELDS = [
         kind: 'text',
         tooltip: 'Model name the keyword extraction asks for',
         placeholder: 'gpt-4o-mini',
+        gatedBy: 'llm.enabled',
     },
     {
         path: 'llm.apiKeyEnv',
@@ -138,6 +140,7 @@ export const CONFIG_FIELDS = [
         kind: 'text',
         tooltip: 'Name of the environment variable holding the key; never the key itself',
         placeholder: 'OPENAI_API_KEY',
+        gatedBy: 'llm.enabled',
     },
 ];
 const VECTOR_DIM_OPTIONS = [
@@ -151,6 +154,9 @@ const LLM_OPTIONS = [
     { value: 'off', label: 'Off' },
     { value: 'on', label: 'On' },
 ];
+// The reset button copy the armed (Confirm reset) and disarmed (Reset all
+// to profile settings) buttons share.
+const RESET_ALL_TITLE = 'Drop every card override; the profile settings win again';
 // PickFieldPath walks one dot-path through a settings view or the override
 // tree; a missing or non-object intermediate answers undefined (unset).
 function pickFieldPath(source, path) {
@@ -248,7 +254,7 @@ export function ConfigurationSection() {
     const [error, setError] = react.useState(null);
     const [busy, setBusy] = react.useState(false);
     const [confirmReset, setConfirmReset] = react.useState(false);
-    const [toast, setToast] = react.useState(null);
+    const toast = useToast();
     react.useEffect(() => {
         let cancelled = false;
         fetchCardSettings().then((payload) => {
@@ -267,14 +273,6 @@ export function ConfigurationSection() {
         };
         // One read per mount; every mutation re-seeds from the view it answers.
     }, []);
-    // The applied-settings toast unmounts on the Toast's own finish or this timer.
-    react.useEffect(() => {
-        if (toast === null) {
-            return;
-        }
-        const timer = setTimeout(() => setToast(null), TOAST_HOLD_MS);
-        return () => clearTimeout(timer);
-    }, [toast]);
     const setField = (path, text) => {
         setDrafts((current) => current === null ? current : { ...current, [path]: text });
     };
@@ -285,7 +283,7 @@ export function ConfigurationSection() {
         setBusy(false);
         setView(fresh);
         setDrafts(seedDrafts(fresh.settings));
-        setToast('Settings applied');
+        toast.show('Settings applied');
     };
     const reject = (failure) => {
         setBusy(false);
@@ -307,7 +305,7 @@ export function ConfigurationSection() {
         setConfirmReset(false);
         resetCardSettings().then(accept, reject);
     };
-    const toastNode = toast === null ? null : renderToast(toast, () => setToast(null));
+    const toastNode = toast.node;
     if (view === null || drafts === null) {
         return (react.createElement(react.Fragment, null,
             toastNode,
@@ -319,7 +317,6 @@ export function ConfigurationSection() {
     // trip, so Apply stays gated exactly like an unchanged form does.
     const patch = buildSettingsPatch(fieldDrafts(view, drafts));
     const patchEmpty = Object.keys(patch.set).length === 0 && patch.unset.length === 0;
-    const llmOn = (drafts['llm.enabled'] ?? 'off') === 'on';
     const restartPending = view.restartPending;
     const body = [];
     let lastGroup = '';
@@ -328,7 +325,8 @@ export function ConfigurationSection() {
             lastGroup = spec.group;
             body.push(react.createElement("div", { key: `group-${spec.group}`, style: GROUP_HEADING_STYLE }, spec.group));
         }
-        const disabled = busy || (spec.group === 'Keyword LLM' && spec.path !== 'llm.enabled' && !llmOn);
+        const disabled = busy
+            || (spec.gatedBy !== undefined && (drafts[spec.gatedBy] ?? 'off') !== 'on');
         const draft = drafts[spec.path] ?? '';
         const control = spec.kind === 'dim' || spec.kind === 'toggle'
             ? renderSegmented({
@@ -351,8 +349,7 @@ export function ConfigurationSection() {
             react.createElement("span", { style: KEY_STYLE }, spec.label),
             isCustomField(view.overrides, spec.path) && renderTag('info', 'custom'),
             control,
-            spec.path === 'milvus.dbPath' && restartPending.includes('milvus.dbPath')
-                && renderTag('warning', 'restart to apply')));
+            restartPending.includes(spec.path) && renderTag('warning', 'restart to apply')));
         if (spec.hint !== undefined) {
             body.push(react.createElement("div", { key: `hint-${spec.path}`, style: HINT_STYLE }, spec.hint));
         }
@@ -375,13 +372,13 @@ export function ConfigurationSection() {
                     label: 'Confirm reset',
                     variant: 'outline',
                     busy,
-                    title: 'Drop every card override; the profile settings win again',
+                    title: RESET_ALL_TITLE,
                     onClick: resetAll,
                 }),
                 renderButton({ label: 'Cancel', onClick: () => setConfirmReset(false) }))) : (renderButton({
                 label: 'Reset all to profile settings',
                 busy,
-                title: 'Drop every card override; the profile settings win again',
+                title: RESET_ALL_TITLE,
                 onClick: () => setConfirmReset(true),
             }))),
         error !== null && react.createElement("div", { style: ERROR_BANNER_STYLE }, error)));

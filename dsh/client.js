@@ -607,8 +607,338 @@ function AuditSection(props) {
   )));
 }
 
-// packages/client/src/sections/dreaming.tsx
+// packages/client/src/toast.ts
 var TOAST_HOLD_MS = 4e3;
+function useToast() {
+  const [message, setMessage] = react.useState(null);
+  react.useEffect(() => {
+    if (message === null) {
+      return;
+    }
+    const timer = setTimeout(() => setMessage(null), TOAST_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [message]);
+  return {
+    node: message === null ? null : renderToast(message, () => setMessage(null)),
+    show: setMessage
+  };
+}
+
+// packages/client/src/sections/configuration.tsx
+var CONFIG_FIELDS = [
+  {
+    path: "vectorDim",
+    group: "Retrieval",
+    label: "Vector width",
+    kind: "dim",
+    tooltip: "Embedding width stored per note; the full 384 or a lossy truncation",
+    hint: "Lossy widths trade recall for speed; changes force a full re-index."
+  },
+  {
+    path: "budgets.searchTopK",
+    group: "Retrieval",
+    label: "Search top K",
+    kind: "number",
+    tooltip: "Result count memory_search returns when the caller omits topK",
+    placeholder: "6"
+  },
+  {
+    path: "budgets.turnStartRecallTokens",
+    group: "Recall budgets",
+    label: "Turn-start tokens",
+    kind: "number",
+    tooltip: "Token budget one turn-start recall injection may spend",
+    placeholder: "1200"
+  },
+  {
+    path: "budgets.globalMemoryTokens",
+    group: "Recall budgets",
+    label: "Global memory tokens",
+    kind: "number",
+    tooltip: "Token ceiling for all recall injected across one session",
+    placeholder: "1500"
+  },
+  {
+    path: "budgets.readSections",
+    group: "Recall budgets",
+    label: "Read sections",
+    kind: "number",
+    tooltip: "Most sections a Read-tool recall may inject",
+    placeholder: "2"
+  },
+  {
+    path: "budgets.readSectionTokens",
+    group: "Recall budgets",
+    label: "Read section tokens",
+    kind: "number",
+    tooltip: "Token budget each injected Read-tool section may spend",
+    placeholder: "350"
+  },
+  {
+    path: "budgets.thinkShotsPerTurn",
+    group: "Recall budgets",
+    label: "Think shots per turn",
+    kind: "number",
+    tooltip: "Most keyword-extraction shots one turn may spend",
+    placeholder: "3"
+  },
+  {
+    path: "model.id",
+    group: "Embedding model",
+    label: "Model id",
+    kind: "text",
+    tooltip: "ONNX model id used to embed every note",
+    placeholder: "Xenova/multilingual-e5-small",
+    hint: "Changing the model re-embeds every note."
+  },
+  {
+    path: "model.cacheDir",
+    group: "Embedding model",
+    label: "Model cache dir",
+    kind: "text",
+    tooltip: "Directory transformers.js reads and downloads the model in",
+    placeholder: "~/.dsh/obsidian-mem-db/models",
+    hint: "The model is downloaded here on first use."
+  },
+  {
+    path: "milvus.dbPath",
+    group: "Database",
+    label: "Database path",
+    kind: "text",
+    tooltip: "Milvus-Lite data directory; the running server picks it up on the next host restart",
+    placeholder: "~/.dsh/obsidian-mem-db"
+  },
+  {
+    path: "llm.enabled",
+    group: "Keyword LLM",
+    label: "Keyword LLM",
+    kind: "toggle",
+    tooltip: "Optional OpenAI-compatible endpoint augmenting wake-keyword extraction"
+  },
+  {
+    path: "llm.baseUrl",
+    group: "Keyword LLM",
+    label: "Base URL",
+    kind: "text",
+    tooltip: "OpenAI-compatible endpoint base URL",
+    placeholder: "https://api.example.com/v1",
+    gatedBy: "llm.enabled"
+  },
+  {
+    path: "llm.model",
+    group: "Keyword LLM",
+    label: "LLM model",
+    kind: "text",
+    tooltip: "Model name the keyword extraction asks for",
+    placeholder: "gpt-4o-mini",
+    gatedBy: "llm.enabled"
+  },
+  {
+    path: "llm.apiKeyEnv",
+    group: "Keyword LLM",
+    label: "API key env",
+    kind: "text",
+    tooltip: "Name of the environment variable holding the key; never the key itself",
+    placeholder: "OPENAI_API_KEY",
+    gatedBy: "llm.enabled"
+  }
+];
+var VECTOR_DIM_OPTIONS = [
+  { value: "384", label: "384 full" },
+  { value: "320", label: "320 lossy" },
+  { value: "256", label: "256 lossy" },
+  { value: "192", label: "192 lossy" },
+  { value: "128", label: "128 lossy" }
+];
+var LLM_OPTIONS = [
+  { value: "off", label: "Off" },
+  { value: "on", label: "On" }
+];
+var RESET_ALL_TITLE = "Drop every card override; the profile settings win again";
+function pickFieldPath(source, path) {
+  let current = source;
+  for (const part of path.split(".")) {
+    if (typeof current !== "object" || current === null) return void 0;
+    current = current[part];
+  }
+  return current;
+}
+function formatFieldSeed(value) {
+  if (typeof value === "boolean") return value ? "on" : "off";
+  return String(value ?? "");
+}
+function seedDrafts(settings) {
+  const drafts = {};
+  for (const spec of CONFIG_FIELDS) {
+    drafts[spec.path] = formatFieldSeed(pickFieldPath(settings, spec.path));
+  }
+  return drafts;
+}
+function isCustomField(overrides, path) {
+  return pickFieldPath(overrides, path) !== void 0;
+}
+function parseFieldValue(kind, trimmed) {
+  if (kind === "number" || kind === "dim") {
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : null;
+  }
+  if (kind === "toggle") return trimmed === "on";
+  return trimmed;
+}
+function setNestedPath(target, path, value) {
+  const parts = path.split(".");
+  let node = target;
+  for (const part of parts.slice(0, -1)) {
+    const existing = node[part];
+    const nested = typeof existing === "object" && existing !== null && !Array.isArray(existing) ? existing : {};
+    node[part] = nested;
+    node = nested;
+  }
+  node[parts[parts.length - 1]] = value;
+}
+function buildSettingsPatch(fields) {
+  const set = {};
+  const unset = [];
+  for (const field of fields) {
+    if (field.draft === field.baseline) continue;
+    const trimmed = field.draft.trim();
+    if (trimmed === "") {
+      if (field.custom && field.kind === "text") unset.push(field.path);
+      continue;
+    }
+    const value = parseFieldValue(field.kind, trimmed);
+    if (value === null) continue;
+    setNestedPath(set, field.path, value);
+  }
+  return { set, unset };
+}
+function fieldDrafts(view, drafts) {
+  const seed = seedDrafts(view.settings);
+  return CONFIG_FIELDS.map((spec) => ({
+    path: spec.path,
+    kind: spec.kind,
+    baseline: seed[spec.path] ?? "",
+    draft: drafts[spec.path] ?? "",
+    custom: isCustomField(view.overrides, spec.path)
+  }));
+}
+function ConfigurationSection() {
+  const [view, setView] = react.useState(null);
+  const [drafts, setDrafts] = react.useState(null);
+  const [loadError, setLoadError] = react.useState(null);
+  const [error, setError] = react.useState(null);
+  const [busy, setBusy] = react.useState(false);
+  const [confirmReset, setConfirmReset] = react.useState(false);
+  const toast = useToast();
+  react.useEffect(() => {
+    let cancelled = false;
+    fetchCardSettings().then(
+      (payload) => {
+        if (!cancelled) {
+          setView(payload);
+          setDrafts(seedDrafts(payload.settings));
+          setLoadError(null);
+        }
+      },
+      (failure) => {
+        if (!cancelled) {
+          setLoadError(errorText(failure));
+        }
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const setField = (path, text) => {
+    setDrafts((current) => current === null ? current : { ...current, [path]: text });
+  };
+  const accept = (fresh) => {
+    setBusy(false);
+    setView(fresh);
+    setDrafts(seedDrafts(fresh.settings));
+    toast.show("Settings applied");
+  };
+  const reject = (failure) => {
+    setBusy(false);
+    if (!isApiError(failure) || failure.code !== ERROR_CODES.settingsBusy) {
+      setError(errorText(failure));
+    }
+  };
+  const applyChanges = (patch2) => {
+    if (view === null || drafts === null) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    updateCardSettings(patch2.set, patch2.unset).then(accept, reject);
+  };
+  const resetAll = () => {
+    setBusy(true);
+    setError(null);
+    setConfirmReset(false);
+    resetCardSettings().then(accept, reject);
+  };
+  const toastNode = toast.node;
+  if (view === null || drafts === null) {
+    return /* @__PURE__ */ react.createElement(react.Fragment, null, toastNode, loadError !== null && /* @__PURE__ */ react.createElement("div", { style: ERROR_BANNER_STYLE }, loadError), /* @__PURE__ */ react.createElement(RowHint, { text: loadError === null ? "Loading configuration\u2026" : "Configuration not loaded." }));
+  }
+  const patch = buildSettingsPatch(fieldDrafts(view, drafts));
+  const patchEmpty = Object.keys(patch.set).length === 0 && patch.unset.length === 0;
+  const restartPending = view.restartPending;
+  const body = [];
+  let lastGroup = "";
+  for (const spec of CONFIG_FIELDS) {
+    if (spec.group !== lastGroup) {
+      lastGroup = spec.group;
+      body.push(/* @__PURE__ */ react.createElement("div", { key: `group-${spec.group}`, style: GROUP_HEADING_STYLE }, spec.group));
+    }
+    const disabled = busy || spec.gatedBy !== void 0 && (drafts[spec.gatedBy] ?? "off") !== "on";
+    const draft = drafts[spec.path] ?? "";
+    const control = spec.kind === "dim" || spec.kind === "toggle" ? renderSegmented({
+      id: `obsidian-mem-config-${spec.path}`,
+      label: spec.label,
+      value: draft,
+      options: spec.kind === "dim" ? VECTOR_DIM_OPTIONS : LLM_OPTIONS,
+      disabled,
+      onChange: (next) => setField(spec.path, next)
+    }) : renderInput({
+      value: draft,
+      type: spec.kind === "number" ? "number" : "text",
+      placeholder: spec.placeholder,
+      title: spec.tooltip,
+      disabled,
+      onChange: (text) => setField(spec.path, text)
+    });
+    body.push(
+      /* @__PURE__ */ react.createElement("div", { key: spec.path, style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, spec.label), isCustomField(view.overrides, spec.path) && renderTag("info", "custom"), control, restartPending.includes(spec.path) && renderTag("warning", "restart to apply"))
+    );
+    if (spec.hint !== void 0) {
+      body.push(/* @__PURE__ */ react.createElement("div", { key: `hint-${spec.path}`, style: HINT_STYLE }, spec.hint));
+    }
+  }
+  return /* @__PURE__ */ react.createElement(react.Fragment, null, toastNode, restartPending.length > 0 && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, `Restart the host to apply: ${restartPending.join(", ")}`), body, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, renderButton({
+    label: "Apply changes",
+    variant: "primary",
+    busy,
+    disabled: patchEmpty,
+    title: "Save the edited fields as card overrides",
+    onClick: () => applyChanges(patch)
+  }), confirmReset ? /* @__PURE__ */ react.createElement(react.Fragment, null, renderButton({
+    label: "Confirm reset",
+    variant: "outline",
+    busy,
+    title: RESET_ALL_TITLE,
+    onClick: resetAll
+  }), renderButton({ label: "Cancel", onClick: () => setConfirmReset(false) })) : renderButton({
+    label: "Reset all to profile settings",
+    busy,
+    title: RESET_ALL_TITLE,
+    onClick: () => setConfirmReset(true)
+  })), error !== null && /* @__PURE__ */ react.createElement("div", { style: ERROR_BANNER_STYLE }, error));
+}
+
+// packages/client/src/sections/dreaming.tsx
 var PLAN_PREVIEW_CHARS = 2e3;
 function lastRunFailureText(lastRun) {
   if (lastRun === null || lastRun.ok) {
@@ -624,7 +954,7 @@ function DreamingSection(props) {
   const [busyPlan, setBusyPlan] = react.useState(false);
   const [busyRun, setBusyRun] = react.useState(false);
   const [runError, setRunError] = react.useState(null);
-  const [toast, setToast] = react.useState(null);
+  const toast = useToast();
   const [schedules, setSchedules] = react.useState(null);
   const [scheduleError, setScheduleError] = react.useState(null);
   react.useEffect(() => {
@@ -656,13 +986,6 @@ function DreamingSection(props) {
   react.useEffect(() => {
     reloadSchedules();
   }, []);
-  react.useEffect(() => {
-    if (toast === null) {
-      return;
-    }
-    const timer = setTimeout(() => setToast(null), TOAST_HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [toast]);
   const showPlan = () => {
     setBusyPlan(true);
     setPlanNote(null);
@@ -684,7 +1007,7 @@ function DreamingSection(props) {
     runDream().then(
       (accepted) => {
         setBusyRun(false);
-        setToast(`Dream run ${accepted.id} accepted; it continues in the background.`);
+        toast.show(`Dream run ${accepted.id} accepted; it continues in the background.`);
         props.refresh();
       },
       (failure) => {
@@ -700,7 +1023,7 @@ function DreamingSection(props) {
   const running = dream?.state === "running";
   const lastDreamAt = dream?.lastDreamAt ?? null;
   const failedRun = lastRunFailureText(dream?.lastRun ?? null);
-  return /* @__PURE__ */ react.createElement(react.Fragment, null, toast !== null && renderToast(toast, () => setToast(null)), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Last dream"), /* @__PURE__ */ react.createElement("span", null, formatAge(lastDreamAt, Date.now())), running && renderTag("info", "run in flight"), promptPath !== null && /* @__PURE__ */ react.createElement(react.Fragment, null, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Prompt"), /* @__PURE__ */ react.createElement("span", { style: MONO_STYLE, title: promptPath }, truncate(promptPath, 56)))), blocked !== null && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, `Dreaming cannot launch: ${blocked}`), failedRun !== null && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, failedRun), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, renderButton({
+  return /* @__PURE__ */ react.createElement(react.Fragment, null, toast.node, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Last dream"), /* @__PURE__ */ react.createElement("span", null, formatAge(lastDreamAt, Date.now())), running && renderTag("info", "run in flight"), promptPath !== null && /* @__PURE__ */ react.createElement(react.Fragment, null, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, "Prompt"), /* @__PURE__ */ react.createElement("span", { style: MONO_STYLE, title: promptPath }, truncate(promptPath, 56)))), blocked !== null && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, `Dreaming cannot launch: ${blocked}`), failedRun !== null && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, failedRun), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, renderButton({
     label: "Preview plan",
     busy: busyPlan,
     disabled: blocked !== null,
@@ -869,324 +1192,6 @@ function validateScheduleForm(form) {
     return "Name the session this trigger should wake (the schedule service needs one).";
   }
   return null;
-}
-
-// packages/client/src/sections/configuration.tsx
-var CONFIG_FIELDS = [
-  {
-    path: "vectorDim",
-    group: "Retrieval",
-    label: "Vector width",
-    kind: "dim",
-    tooltip: "Embedding width stored per note; the full 384 or a lossy truncation",
-    hint: "Lossy widths trade recall for speed; changes force a full re-index."
-  },
-  {
-    path: "budgets.searchTopK",
-    group: "Retrieval",
-    label: "Search top K",
-    kind: "number",
-    tooltip: "Result count memory_search returns when the caller omits topK",
-    placeholder: "6"
-  },
-  {
-    path: "budgets.turnStartRecallTokens",
-    group: "Recall budgets",
-    label: "Turn-start tokens",
-    kind: "number",
-    tooltip: "Token budget one turn-start recall injection may spend",
-    placeholder: "1200"
-  },
-  {
-    path: "budgets.globalMemoryTokens",
-    group: "Recall budgets",
-    label: "Global memory tokens",
-    kind: "number",
-    tooltip: "Token ceiling for all recall injected across one session",
-    placeholder: "1500"
-  },
-  {
-    path: "budgets.readSections",
-    group: "Recall budgets",
-    label: "Read sections",
-    kind: "number",
-    tooltip: "Most sections a Read-tool recall may inject",
-    placeholder: "2"
-  },
-  {
-    path: "budgets.readSectionTokens",
-    group: "Recall budgets",
-    label: "Read section tokens",
-    kind: "number",
-    tooltip: "Token budget each injected Read-tool section may spend",
-    placeholder: "350"
-  },
-  {
-    path: "budgets.thinkShotsPerTurn",
-    group: "Recall budgets",
-    label: "Think shots per turn",
-    kind: "number",
-    tooltip: "Most keyword-extraction shots one turn may spend",
-    placeholder: "3"
-  },
-  {
-    path: "model.id",
-    group: "Embedding model",
-    label: "Model id",
-    kind: "text",
-    tooltip: "ONNX model id used to embed every note",
-    placeholder: "Xenova/multilingual-e5-small",
-    hint: "Changing the model re-embeds every note."
-  },
-  {
-    path: "model.cacheDir",
-    group: "Embedding model",
-    label: "Model cache dir",
-    kind: "text",
-    tooltip: "Directory transformers.js reads and downloads the model in",
-    placeholder: "~/.dsh/obsidian-mem-db/models",
-    hint: "The model is downloaded here on first use."
-  },
-  {
-    path: "milvus.dbPath",
-    group: "Database",
-    label: "Database path",
-    kind: "text",
-    tooltip: "Milvus-Lite data directory; the running server picks it up on the next host restart",
-    placeholder: "~/.dsh/obsidian-mem-db"
-  },
-  {
-    path: "llm.enabled",
-    group: "Keyword LLM",
-    label: "Keyword LLM",
-    kind: "toggle",
-    tooltip: "Optional OpenAI-compatible endpoint augmenting wake-keyword extraction"
-  },
-  {
-    path: "llm.baseUrl",
-    group: "Keyword LLM",
-    label: "Base URL",
-    kind: "text",
-    tooltip: "OpenAI-compatible endpoint base URL",
-    placeholder: "https://api.example.com/v1"
-  },
-  {
-    path: "llm.model",
-    group: "Keyword LLM",
-    label: "LLM model",
-    kind: "text",
-    tooltip: "Model name the keyword extraction asks for",
-    placeholder: "gpt-4o-mini"
-  },
-  {
-    path: "llm.apiKeyEnv",
-    group: "Keyword LLM",
-    label: "API key env",
-    kind: "text",
-    tooltip: "Name of the environment variable holding the key; never the key itself",
-    placeholder: "OPENAI_API_KEY"
-  }
-];
-var VECTOR_DIM_OPTIONS = [
-  { value: "384", label: "384 full" },
-  { value: "320", label: "320 lossy" },
-  { value: "256", label: "256 lossy" },
-  { value: "192", label: "192 lossy" },
-  { value: "128", label: "128 lossy" }
-];
-var LLM_OPTIONS = [
-  { value: "off", label: "Off" },
-  { value: "on", label: "On" }
-];
-function pickFieldPath(source, path) {
-  let current = source;
-  for (const part of path.split(".")) {
-    if (typeof current !== "object" || current === null) return void 0;
-    current = current[part];
-  }
-  return current;
-}
-function formatFieldSeed(value) {
-  if (typeof value === "boolean") return value ? "on" : "off";
-  return String(value ?? "");
-}
-function seedDrafts(settings) {
-  const drafts = {};
-  for (const spec of CONFIG_FIELDS) {
-    drafts[spec.path] = formatFieldSeed(pickFieldPath(settings, spec.path));
-  }
-  return drafts;
-}
-function isCustomField(overrides, path) {
-  return pickFieldPath(overrides, path) !== void 0;
-}
-function parseFieldValue(kind, trimmed) {
-  if (kind === "number" || kind === "dim") {
-    const value = Number(trimmed);
-    return Number.isFinite(value) ? value : null;
-  }
-  if (kind === "toggle") return trimmed === "on";
-  return trimmed;
-}
-function setNestedPath(target, path, value) {
-  const parts = path.split(".");
-  let node = target;
-  for (const part of parts.slice(0, -1)) {
-    const existing = node[part];
-    const nested = typeof existing === "object" && existing !== null && !Array.isArray(existing) ? existing : {};
-    node[part] = nested;
-    node = nested;
-  }
-  node[parts[parts.length - 1]] = value;
-}
-function buildSettingsPatch(fields) {
-  const set = {};
-  const unset = [];
-  for (const field of fields) {
-    if (field.draft === field.baseline) continue;
-    const trimmed = field.draft.trim();
-    if (trimmed === "") {
-      if (field.custom && field.kind === "text") unset.push(field.path);
-      continue;
-    }
-    const value = parseFieldValue(field.kind, trimmed);
-    if (value === null) continue;
-    setNestedPath(set, field.path, value);
-  }
-  return { set, unset };
-}
-function fieldDrafts(view, drafts) {
-  const seed = seedDrafts(view.settings);
-  return CONFIG_FIELDS.map((spec) => ({
-    path: spec.path,
-    kind: spec.kind,
-    baseline: seed[spec.path] ?? "",
-    draft: drafts[spec.path] ?? "",
-    custom: isCustomField(view.overrides, spec.path)
-  }));
-}
-function ConfigurationSection() {
-  const [view, setView] = react.useState(null);
-  const [drafts, setDrafts] = react.useState(null);
-  const [loadError, setLoadError] = react.useState(null);
-  const [error, setError] = react.useState(null);
-  const [busy, setBusy] = react.useState(false);
-  const [confirmReset, setConfirmReset] = react.useState(false);
-  const [toast, setToast] = react.useState(null);
-  react.useEffect(() => {
-    let cancelled = false;
-    fetchCardSettings().then(
-      (payload) => {
-        if (!cancelled) {
-          setView(payload);
-          setDrafts(seedDrafts(payload.settings));
-          setLoadError(null);
-        }
-      },
-      (failure) => {
-        if (!cancelled) {
-          setLoadError(errorText(failure));
-        }
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  react.useEffect(() => {
-    if (toast === null) {
-      return;
-    }
-    const timer = setTimeout(() => setToast(null), TOAST_HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [toast]);
-  const setField = (path, text) => {
-    setDrafts((current) => current === null ? current : { ...current, [path]: text });
-  };
-  const accept = (fresh) => {
-    setBusy(false);
-    setView(fresh);
-    setDrafts(seedDrafts(fresh.settings));
-    setToast("Settings applied");
-  };
-  const reject = (failure) => {
-    setBusy(false);
-    if (!isApiError(failure) || failure.code !== ERROR_CODES.settingsBusy) {
-      setError(errorText(failure));
-    }
-  };
-  const applyChanges = (patch2) => {
-    if (view === null || drafts === null) {
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    updateCardSettings(patch2.set, patch2.unset).then(accept, reject);
-  };
-  const resetAll = () => {
-    setBusy(true);
-    setError(null);
-    setConfirmReset(false);
-    resetCardSettings().then(accept, reject);
-  };
-  const toastNode = toast === null ? null : renderToast(toast, () => setToast(null));
-  if (view === null || drafts === null) {
-    return /* @__PURE__ */ react.createElement(react.Fragment, null, toastNode, loadError !== null && /* @__PURE__ */ react.createElement("div", { style: ERROR_BANNER_STYLE }, loadError), /* @__PURE__ */ react.createElement(RowHint, { text: loadError === null ? "Loading configuration\u2026" : "Configuration not loaded." }));
-  }
-  const patch = buildSettingsPatch(fieldDrafts(view, drafts));
-  const patchEmpty = Object.keys(patch.set).length === 0 && patch.unset.length === 0;
-  const llmOn = (drafts["llm.enabled"] ?? "off") === "on";
-  const restartPending = view.restartPending;
-  const body = [];
-  let lastGroup = "";
-  for (const spec of CONFIG_FIELDS) {
-    if (spec.group !== lastGroup) {
-      lastGroup = spec.group;
-      body.push(/* @__PURE__ */ react.createElement("div", { key: `group-${spec.group}`, style: GROUP_HEADING_STYLE }, spec.group));
-    }
-    const disabled = busy || spec.group === "Keyword LLM" && spec.path !== "llm.enabled" && !llmOn;
-    const draft = drafts[spec.path] ?? "";
-    const control = spec.kind === "dim" || spec.kind === "toggle" ? renderSegmented({
-      id: `obsidian-mem-config-${spec.path}`,
-      label: spec.label,
-      value: draft,
-      options: spec.kind === "dim" ? VECTOR_DIM_OPTIONS : LLM_OPTIONS,
-      disabled,
-      onChange: (next) => setField(spec.path, next)
-    }) : renderInput({
-      value: draft,
-      type: spec.kind === "number" ? "number" : "text",
-      placeholder: spec.placeholder,
-      title: spec.tooltip,
-      disabled,
-      onChange: (text) => setField(spec.path, text)
-    });
-    body.push(
-      /* @__PURE__ */ react.createElement("div", { key: spec.path, style: ROW_STYLE }, /* @__PURE__ */ react.createElement("span", { style: KEY_STYLE }, spec.label), isCustomField(view.overrides, spec.path) && renderTag("info", "custom"), control, spec.path === "milvus.dbPath" && restartPending.includes("milvus.dbPath") && renderTag("warning", "restart to apply"))
-    );
-    if (spec.hint !== void 0) {
-      body.push(/* @__PURE__ */ react.createElement("div", { key: `hint-${spec.path}`, style: HINT_STYLE }, spec.hint));
-    }
-  }
-  return /* @__PURE__ */ react.createElement(react.Fragment, null, toastNode, restartPending.length > 0 && /* @__PURE__ */ react.createElement("div", { style: WARNING_BANNER_STYLE }, `Restart the host to apply: ${restartPending.join(", ")}`), body, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, renderButton({
-    label: "Apply changes",
-    variant: "primary",
-    busy,
-    disabled: patchEmpty,
-    title: "Save the edited fields as card overrides",
-    onClick: () => applyChanges(patch)
-  }), confirmReset ? /* @__PURE__ */ react.createElement(react.Fragment, null, renderButton({
-    label: "Confirm reset",
-    variant: "outline",
-    busy,
-    title: "Drop every card override; the profile settings win again",
-    onClick: resetAll
-  }), renderButton({ label: "Cancel", onClick: () => setConfirmReset(false) })) : renderButton({
-    label: "Reset all to profile settings",
-    busy,
-    title: "Drop every card override; the profile settings win again",
-    onClick: () => setConfirmReset(true)
-  })), error !== null && /* @__PURE__ */ react.createElement("div", { style: ERROR_BANNER_STYLE }, error));
 }
 
 // packages/client/src/sections/indexStatus.tsx

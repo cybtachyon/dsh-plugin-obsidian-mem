@@ -18,8 +18,6 @@
 import type { ReactNode } from 'react';
 import type { DreamRunSummary } from '../../../service/lib/dream.js';
 import { type StatusPayload } from '../api.js';
-/** How long the accepted-run toast stays up. */
-export declare const TOAST_HOLD_MS = 4000;
 /**
  * LastRunFailureText turns the orchestrator's last recorded run into the
  * warning banner copy: `null` (render nothing) when there is no run yet or

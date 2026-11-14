@@ -51,9 +51,11 @@ export const CARD_SETTINGS_KEYS = [
 // Known keys of a mounted `vaults` row; anything else lands in
 // UNKNOWN_CONFIG_KEYS.
 const VAULT_ENTRY_KEYS = ['path', 'mode', 'globalFile'];
-// The default budgets table (core constants are the single source;
-// thinkShotsPerTurn has no core constant: TASK-043 is its consumer).
-const DEFAULT_BUDGETS = {
+/** The default budgets table (core constants are the single source;
+ * thinkShotsPerTurn has no core constant: TASK-043 is its consumer).
+ * Exported so the Configuration pane's placeholder copy pins against it
+ * (client configuration.spec.ts) instead of drifting as a second literal. */
+export const DEFAULT_BUDGETS = {
     turnStartRecallTokens: RECALL_TURN_START_TOKENS,
     globalMemoryTokens: GLOBAL_MEMORY_TOKENS,
     readSections: RECALL_READ_MAX_SECTIONS,

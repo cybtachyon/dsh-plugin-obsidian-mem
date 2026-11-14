@@ -266,17 +266,14 @@ function isRecord(value: unknown): value is SettingsRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-/** MergeSettings deep-merges an override tree onto a base tree, leaf by leaf. */
+/** MergeSettings deep-merges an override tree onto a base tree, leaf by leaf, leaving the base untouched. */
 function mergeSettings(base: SettingsRecord, patch: SettingsRecord): SettingsRecord {
-  const merged: SettingsRecord = { ...base }
-  for (const [key, value] of Object.entries(patch)) {
-    const held = merged[key]
-    merged[key] = isRecord(value) && isRecord(held) ? mergeSettings(held, value) : value
-  }
+  const merged = cloneRecord(base)
+  mergeInto(merged, patch)
   return merged
 }
 
-/** MergeInto deep-merges a patch onto a stored override tree in place. */
+/** MergeInto deep-merges a patch onto a stored tree in place; the one walker the settings fake uses. */
 function mergeInto(target: SettingsRecord, patch: SettingsRecord): void {
   for (const [key, value] of Object.entries(patch)) {
     const held = target[key]

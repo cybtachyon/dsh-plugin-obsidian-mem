@@ -13,68 +13,17 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { StatusPayload } from '../src/api.ts'
 import { setPrimitivesModule } from '../src/primitives.tsx'
-import { setReactModule, type ReactLike } from '../src/react.ts'
+import { setReactModule } from '../src/react.ts'
 import { VaultsSection } from '../src/sections/vaults.tsx'
-
-interface Element {
-  type: unknown
-  props: Record<string, unknown>
-  children: unknown[]
-}
-
-/** FakeReact records the element tree and serves hook state from slots. */
-function fakeReact(): ReactLike {
-  const slots: unknown[] = []
-  let cursor = 0
-  return {
-    createElement: (type, props, ...children) =>
-      ({ type, props: (props ?? {}) as Record<string, unknown>, children }) as Element,
-    Fragment: 'Fragment',
-    useState<S>(initial: S | (() => S)): [S, (next: S | ((prev: S) => S)) => void] {
-      const index = cursor
-      cursor += 1
-      if (!(index in slots)) {
-        slots[index] = typeof initial === 'function' ? (initial as () => S)() : initial
-      }
-      return [
-        slots[index] as S,
-        (next: S | ((prev: S) => S)) => {
-          slots[index] = typeof next === 'function' ? (next as (prev: S) => S)(slots[index] as S) : next
-        },
-      ]
-    },
-    useRef<T>(initialValue: T): { current: T } {
-      const index = cursor
-      cursor += 1
-      if (!(index in slots)) {
-        slots[index] = { current: initialValue }
-      }
-      return slots[index] as { current: T }
-    },
-    useEffect: () => {},
-  }
-}
+import { descendants, fakeReact, type Element } from './testkit.ts'
 
 /** Render VaultsSection with fresh initial state and return its element tree. */
 function render(status: Partial<StatusPayload>): Element {
-  setReactModule(fakeReact())
+  // A fresh fake per render is the fresh-state render the spec wants: the
+  // section keeps no host data and reads everything from props.
+  setReactModule(fakeReact().react)
   setPrimitivesModule(null)
   return VaultsSection({ status: status as StatusPayload, refresh: () => {} }) as unknown as Element
-}
-
-/** Descendants flattens the recorded tree: every element, Fragments spliced, child arrays recursed. */
-function descendants(node: unknown): Element[] {
-  if (Array.isArray(node)) {
-    return node.flatMap((item) => descendants(item))
-  }
-  if (node === null || typeof node !== 'object' || !('type' in node)) {
-    return []
-  }
-  const element = node as Element
-  if (element.type === 'Fragment') {
-    return element.children.flatMap((child) => descendants(child))
-  }
-  return [element, ...element.children.flatMap((child) => descendants(child))]
 }
 
 function inputsWithPlaceholder(root: unknown, placeholder: string): Element[] {
@@ -88,7 +37,7 @@ const GLOBAL_FILE_PLACEHOLDER = 'Global memory relative file path e.g. GLOBAL.md
 beforeEach(() => {
   // The shim throws until a fake react is wired; null primitives keep the
   // native fallback renderers (plain 'input' / 'span' types) assertable.
-  setReactModule(fakeReact())
+  setReactModule(fakeReact().react)
   setPrimitivesModule(null)
 })
 

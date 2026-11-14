@@ -28,10 +28,15 @@ export interface ConfigFieldSpec {
     kind: ConfigFieldKind;
     /** The one-line hover tooltip. */
     tooltip: string;
-    /** The schema default shown as placeholder while the draft is empty. */
+    /** The placeholder shown while the draft is blank: the host default when
+     * one exists (configuration.spec.ts pins those copies against the service
+     * and core constants), an example for knobs whose default is empty. */
     placeholder?: string;
     /** A quiet hint line rendered under the field row. */
     hint?: string;
+    /** A toggle's dot-path that gates this row: the control stays disabled
+     * while that draft is not on (the Keyword LLM rows behind llm.enabled). */
+    gatedBy?: string;
 }
 export declare const CONFIG_FIELDS: readonly ConfigFieldSpec[];
 /** One knob's diff input: the loaded baseline, the current draft, and its override state. */

@@ -13,93 +13,19 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { DEFAULT_MODEL_ID, dbDir, modelCacheDir } from '../../core/lib/index.js'
 import type { CardEditableConfig, CardSettingsView } from '../../service/lib/index.js'
-import { CARD_SETTINGS_KEYS } from '../../service/lib/index.js'
+import { CARD_SETTINGS_KEYS, DEFAULT_BUDGETS } from '../../service/lib/index.js'
 import type { CardSettingsPayload } from '../src/api.ts'
 import { setPrimitivesModule } from '../src/primitives.tsx'
-import { setReactModule, type ReactLike } from '../src/react.ts'
+import { setReactModule } from '../src/react.ts'
 import {
   buildSettingsPatch,
   CONFIG_FIELDS,
   ConfigurationSection,
   type ConfigFieldDraft,
 } from '../src/sections/configuration.tsx'
-
-interface Element {
-  type: unknown
-  props: Record<string, unknown>
-  children: unknown[]
-}
-
-interface FakeReact {
-  react: ReactLike
-  /** begin resets the hook cursor for one more manual render pass. */
-  begin: () => void
-  /** dispose runs every live effect cleanup (the toast timer especially). */
-  dispose: () => void
-}
-
-// FakeReact records the element tree, serves hook state from slots, and runs
-// useEffect with the real one's dep comparison: a stable dep list runs the
-// effect once (the mount fetch), changed deps clean up before rerun, so the
-// toast timer never duplicates within a test or outlives it.
-function fakeReact(): FakeReact {
-  const slots: unknown[] = []
-  const effects: Array<{ deps: readonly unknown[] | undefined, cleanup?: () => void } | undefined> = []
-  let cursor = 0
-  const react: ReactLike = {
-    createElement: (type, props, ...children) =>
-      ({ type, props: (props ?? {}) as Record<string, unknown>, children }) as unknown as Element,
-    Fragment: 'Fragment',
-    useState<S>(initial: S | (() => S)): [S, (next: S | ((prev: S) => S)) => void] {
-      const index = cursor
-      cursor += 1
-      if (!(index in slots)) {
-        slots[index] = typeof initial === 'function' ? (initial as () => S)() : initial
-      }
-      return [
-        slots[index] as S,
-        (next: S | ((prev: S) => S)) => {
-          slots[index] = typeof next === 'function' ? (next as (prev: S) => S)(slots[index] as S) : next
-        },
-      ]
-    },
-    useRef<T>(initialValue: T): { current: T } {
-      const index = cursor
-      cursor += 1
-      if (!(index in slots)) {
-        slots[index] = { current: initialValue }
-      }
-      return slots[index] as { current: T }
-    },
-    useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void {
-      const index = cursor
-      cursor += 1
-      const stored = effects[index]
-      const unchanged = stored !== undefined && stored.deps !== undefined && deps !== undefined
-        && stored.deps.length === deps.length
-        && stored.deps.every((value, at) => Object.is(value, deps[at]))
-      if (unchanged) {
-        return
-      }
-      stored?.cleanup?.()
-      const cleanup = effect()
-      effects[index] = { deps, ...(cleanup === undefined ? {} : { cleanup }) }
-    },
-  }
-  return {
-    react,
-    begin: () => {
-      cursor = 0
-    },
-    dispose: () => {
-      for (const effect of effects) {
-        effect?.cleanup?.()
-      }
-      effects.length = 0
-    },
-  }
-}
+import { descendants, fakeReact, type Element, type FakeReact } from './testkit.ts'
 
 // liveFake holds the mounted fake so afterEach can run its effect cleanups
 // (a mounted component with a visible toast owns a 4 s timer).
@@ -170,21 +96,6 @@ async function mount(answers: { get: Answer, post?: Answer, del?: Answer }): Pro
 /** flush drains the stubbed fetch promises and their .then chains. */
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0))
-}
-
-/** Descendants flattens the recorded tree: every element, Fragments spliced. */
-function descendants(node: unknown): Element[] {
-  if (Array.isArray(node)) {
-    return node.flatMap((item) => descendants(item))
-  }
-  if (node === null || typeof node !== 'object' || !('type' in node)) {
-    return []
-  }
-  const element = node as Element
-  if (element.type === 'Fragment') {
-    return element.children.flatMap((child) => descendants(child))
-  }
-  return [element, ...element.children.flatMap((child) => descendants(child))]
 }
 
 function inputByTitle(root: unknown, title: string): Element {
@@ -264,6 +175,28 @@ describe('whitelist and field table', () => {
   it('covers exactly the service CARD_SETTINGS_KEYS paths', () => {
     expect(CONFIG_FIELDS.map((field) => field.path).sort())
       .toEqual([...CARD_SETTINGS_KEYS].sort())
+  })
+
+  // The table's placeholder defaults are display copy; these pins are what
+  // keep the copies from drifting away from the host's real defaults.
+  it('mirrors the service and core defaults in the placeholder copy', () => {
+    const placeholder = (path: string): string | undefined =>
+      CONFIG_FIELDS.find((field) => field.path === path)?.placeholder
+    expect(placeholder('budgets.turnStartRecallTokens')).toBe(String(DEFAULT_BUDGETS.turnStartRecallTokens))
+    expect(placeholder('budgets.globalMemoryTokens')).toBe(String(DEFAULT_BUDGETS.globalMemoryTokens))
+    expect(placeholder('budgets.readSections')).toBe(String(DEFAULT_BUDGETS.readSections))
+    expect(placeholder('budgets.readSectionTokens')).toBe(String(DEFAULT_BUDGETS.readSectionTokens))
+    expect(placeholder('budgets.searchTopK')).toBe(String(DEFAULT_BUDGETS.searchTopK))
+    expect(placeholder('budgets.thinkShotsPerTurn')).toBe(String(DEFAULT_BUDGETS.thinkShotsPerTurn))
+    expect(placeholder('model.id')).toBe(DEFAULT_MODEL_ID)
+    expect(placeholder('model.cacheDir')).toBe(modelCacheDir('~'))
+    expect(placeholder('milvus.dbPath')).toBe(dbDir('~'))
+  })
+
+  it('gives no placeholder to the segmented controls', () => {
+    for (const path of ['vectorDim', 'llm.enabled']) {
+      expect(CONFIG_FIELDS.find((field) => field.path === path)?.placeholder).toBeUndefined()
+    }
   })
 })
 

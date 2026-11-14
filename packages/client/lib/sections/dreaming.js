@@ -17,12 +17,11 @@
  */
 import { deleteSchedule, ERROR_CODES, errorText, fetchDreamPlan, fetchDreamState, fetchSchedules, isApiError, runDream, upsertSchedule, } from '../api.js';
 import { formatAge, formatLocalDate, slugId, truncate } from '../format.js';
-import { renderButton, renderInput, renderToast, renderTag, } from '../primitives.js';
+import { renderButton, renderInput, renderTag, } from '../primitives.js';
 import { react } from '../react.js';
 import { RowHint } from '../cardRoot.js';
+import { useToast } from '../toast.js';
 import { ERROR_BANNER_STYLE, HINT_STYLE, KEY_STYLE, MONO_STYLE, PRE_STYLE, ROW_STYLE, WARNING_BANNER_STYLE, } from '../styles.js';
-/** How long the accepted-run toast stays up. */
-export const TOAST_HOLD_MS = 4_000;
 /** The plan text preview cap (the full plan lives on the host side). */
 const PLAN_PREVIEW_CHARS = 2_000;
 /**
@@ -46,7 +45,7 @@ export function DreamingSection(props) {
     const [busyPlan, setBusyPlan] = react.useState(false);
     const [busyRun, setBusyRun] = react.useState(false);
     const [runError, setRunError] = react.useState(null);
-    const [toast, setToast] = react.useState(null);
+    const toast = useToast();
     const [schedules, setSchedules] = react.useState(null);
     const [scheduleError, setScheduleError] = react.useState(null);
     react.useEffect(() => {
@@ -78,14 +77,6 @@ export function DreamingSection(props) {
         // One read per mount; every mutation calls reloadSchedules itself, so
         // the effect deliberately runs once.
     }, []);
-    // The accepted-run toast unmounts on the Toast's own finish or this timer.
-    react.useEffect(() => {
-        if (toast === null) {
-            return;
-        }
-        const timer = setTimeout(() => setToast(null), TOAST_HOLD_MS);
-        return () => clearTimeout(timer);
-    }, [toast]);
     const showPlan = () => {
         setBusyPlan(true);
         setPlanNote(null);
@@ -103,7 +94,7 @@ export function DreamingSection(props) {
         setRunError(null);
         runDream().then((accepted) => {
             setBusyRun(false);
-            setToast(`Dream run ${accepted.id} accepted; it continues in the background.`);
+            toast.show(`Dream run ${accepted.id} accepted; it continues in the background.`);
             props.refresh();
         }, (failure) => {
             setBusyRun(false);
@@ -119,7 +110,7 @@ export function DreamingSection(props) {
     const lastDreamAt = dream?.lastDreamAt ?? null;
     const failedRun = lastRunFailureText(dream?.lastRun ?? null);
     return (react.createElement(react.Fragment, null,
-        toast !== null && renderToast(toast, () => setToast(null)),
+        toast.node,
         react.createElement("div", { style: ROW_STYLE },
             react.createElement("span", { style: KEY_STYLE }, "Last dream"),
             react.createElement("span", null, formatAge(lastDreamAt, Date.now())),

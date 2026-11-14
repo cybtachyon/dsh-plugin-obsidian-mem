@@ -197,6 +197,18 @@ export type CardEditablePartial = {
         [Leaf in keyof CardEditableConfig[Key]]?: CardEditableConfig[Key][Leaf];
     } : CardEditableConfig[Key];
 };
+/** The default budgets table (core constants are the single source;
+ * thinkShotsPerTurn has no core constant: TASK-043 is its consumer).
+ * Exported so the Configuration pane's placeholder copy pins against it
+ * (client configuration.spec.ts) instead of drifting as a second literal. */
+export declare const DEFAULT_BUDGETS: {
+    readonly turnStartRecallTokens: 1200;
+    readonly globalMemoryTokens: 1500;
+    readonly readSections: 2;
+    readonly readSectionTokens: 350;
+    readonly searchTopK: 6;
+    readonly thinkShotsPerTurn: 3;
+};
 /** ObsidianMemConfigSchema validates a mounted row config and defaults it whole. */
 export declare const ObsidianMemConfigSchema: ConfigSchema;
 /**

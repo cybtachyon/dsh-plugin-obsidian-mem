@@ -58,6 +58,7 @@ export type {
 
 export {
   DEFAULT_READINESS_TIMEOUT_MS,
+  DEFAULT_BUDGETS,
   CARD_SETTINGS_KEYS,
   ObsidianMemConfigSchema,
   resolveServiceConfig,

@@ -71,7 +71,7 @@ README/AGENTS docs.
 
  - [x] [TASK-007-client-api-config](docs/PLAN-config-pane-TASK-007-client-api-config.md)
  - [x] [TASK-008-configuration-section](docs/PLAN-config-pane-TASK-008-configuration-section.md)
- - [ ] [TASK-009-refactor-phase-2-3](docs/PLAN-config-pane-TASK-009-refactor-phase-2-3.md)
+ - [x] [TASK-009-refactor-phase-2-3](docs/PLAN-config-pane-TASK-009-refactor-phase-2-3.md)
 
 ### Phase 4: docs and gates
 

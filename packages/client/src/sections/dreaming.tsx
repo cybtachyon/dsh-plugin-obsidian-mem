@@ -36,11 +36,11 @@ import { formatAge, formatLocalDate, slugId, truncate } from '../format.js'
 import {
   renderButton,
   renderInput,
-  renderToast,
   renderTag,
 } from '../primitives.js'
 import { react } from '../react.js'
 import { RowHint } from '../cardRoot.js'
+import { useToast } from '../toast.js'
 import {
   ERROR_BANNER_STYLE,
   HINT_STYLE,
@@ -50,9 +50,6 @@ import {
   ROW_STYLE,
   WARNING_BANNER_STYLE,
 } from '../styles.js'
-
-/** How long the accepted-run toast stays up. */
-export const TOAST_HOLD_MS = 4_000
 
 /** The plan text preview cap (the full plan lives on the host side). */
 const PLAN_PREVIEW_CHARS = 2_000
@@ -84,7 +81,7 @@ export function DreamingSection(props: DreamingSectionProps): ReactNode {
   const [busyPlan, setBusyPlan] = react.useState(false)
   const [busyRun, setBusyRun] = react.useState(false)
   const [runError, setRunError] = react.useState<string | null>(null)
-  const [toast, setToast] = react.useState<string | null>(null)
+  const toast = useToast()
   const [schedules, setSchedules] = react.useState<SchedulesPayload | null>(null)
   const [scheduleError, setScheduleError] = react.useState<string | null>(null)
 
@@ -125,15 +122,6 @@ export function DreamingSection(props: DreamingSectionProps): ReactNode {
     // the effect deliberately runs once.
   }, [])
 
-  // The accepted-run toast unmounts on the Toast's own finish or this timer.
-  react.useEffect(() => {
-    if (toast === null) {
-      return
-    }
-    const timer = setTimeout(() => setToast(null), TOAST_HOLD_MS)
-    return () => clearTimeout(timer)
-  }, [toast])
-
   const showPlan = (): void => {
     setBusyPlan(true)
     setPlanNote(null)
@@ -156,7 +144,7 @@ export function DreamingSection(props: DreamingSectionProps): ReactNode {
     runDream().then(
       (accepted) => {
         setBusyRun(false)
-        setToast(`Dream run ${accepted.id} accepted; it continues in the background.`)
+        toast.show(`Dream run ${accepted.id} accepted; it continues in the background.`)
         props.refresh()
       },
       (failure: unknown) => {
@@ -177,7 +165,7 @@ export function DreamingSection(props: DreamingSectionProps): ReactNode {
 
   return (
     <>
-      {toast !== null && renderToast(toast, () => setToast(null))}
+      {toast.node}
       <div style={ROW_STYLE}>
         <span style={KEY_STYLE}>Last dream</span>
         <span>{formatAge(lastDreamAt, Date.now())}</span>

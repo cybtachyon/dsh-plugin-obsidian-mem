@@ -82,6 +82,13 @@ export interface ObsidianMemConfig {
         /** Pairwise cosine at or above which notes join a merge cluster. */
         nearDuplicateThreshold?: number;
     };
+    git?: {
+        enabled?: boolean;
+        /** Whole percent; a path must churn in more than this share of the window to stress the dream. */
+        churnThresholdPercent?: number;
+        /** How many of the most recent commits the churn window inspects. */
+        churnWindowCommits?: number;
+    };
 }
 /** The fully defaulted config the service runs on (paths still raw). */
 export interface ObsidianMemResolvedConfig {
@@ -118,6 +125,12 @@ export interface ObsidianMemResolvedConfig {
         schedules: DreamingSchedule[];
         model: string;
         nearDuplicateThreshold: number;
+    };
+    /** Gate for git-versioning shared vaults plus the churn tunables; every consumer reads this resolved group. */
+    git: {
+        enabled: boolean;
+        churnThresholdPercent: number;
+        churnWindowCommits: number;
     };
 }
 /** The config after path resolution: vault paths and dbPath are absolute. */
@@ -183,6 +196,11 @@ export interface CardEditableConfig {
         baseUrl: string;
         model: string;
         apiKeyEnv: string;
+    };
+    git: {
+        enabled: boolean;
+        churnThresholdPercent: number;
+        churnWindowCommits: number;
     };
 }
 /**

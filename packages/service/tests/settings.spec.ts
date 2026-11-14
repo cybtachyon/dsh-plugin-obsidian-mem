@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 
-import { modelCacheDir, stateDir } from '../../core/lib/index.js'
+import { DEFAULT_CHURN_WINDOW_COMMITS, modelCacheDir, stateDir } from '../../core/lib/index.js'
 import {
   CARD_SETTINGS_KEYS,
   resolveServiceConfig,
@@ -155,6 +155,19 @@ describe('settings.json card overrides (TASK-002)', () => {
     })
   })
 
+  it('merges a git override leaf-wise over the row (enabled defaults to true)', () => {
+    const row: ObsidianMemConfig = { git: { churnThresholdPercent: 60 } }
+    const { service } = harness({
+      config: row,
+      settings: record({ git: { enabled: false } }),
+    })
+    expect(service.config.git).toEqual({
+      enabled: false,
+      churnThresholdPercent: 60,
+      churnWindowCommits: DEFAULT_CHURN_WINDOW_COMMITS,
+    })
+  })
+
   it('merges a partial budgets override over the row\'s surviving siblings', () => {
     const row: ObsidianMemConfig = { budgets: { globalMemoryTokens: 2222, searchTopK: 4 } }
     const { service } = harness({
@@ -269,6 +282,9 @@ describe('settings.json card overrides (TASK-002)', () => {
       'budgets.searchTopK',
       'budgets.thinkShotsPerTurn',
       'budgets.turnStartRecallTokens',
+      'git.churnThresholdPercent',
+      'git.churnWindowCommits',
+      'git.enabled',
       'llm.apiKeyEnv',
       'llm.baseUrl',
       'llm.enabled',

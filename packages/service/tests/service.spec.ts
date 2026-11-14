@@ -5,6 +5,8 @@ import type { Context } from '@deepseek-ai/cordis'
 
 import {
   DREAM_NEAR_DUPLICATE_THRESHOLD,
+  DEFAULT_CHURN_THRESHOLD_PERCENT,
+  DEFAULT_CHURN_WINDOW_COMMITS,
   GLOBAL_MEMORY_FILE_DEFAULT,
   GLOBAL_MEMORY_TOKENS,
   INTENTS_FILE,
@@ -385,6 +387,11 @@ describe('config schema', () => {
     },
     llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
     dreaming: { schedules: [], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD },
+    git: {
+      enabled: true,
+      churnThresholdPercent: DEFAULT_CHURN_THRESHOLD_PERCENT,
+      churnWindowCommits: DEFAULT_CHURN_WINDOW_COMMITS,
+    },
   }
 
   it('resolves {} (and undefined) to the complete default config', () => {

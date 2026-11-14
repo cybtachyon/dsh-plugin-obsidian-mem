@@ -1523,6 +1523,8 @@ export class ObsidianMemService extends Service {
   //   budgets.*: object swap; every consumer reads budgets at call time.
   //     budgets.thinkShotsPerTurn additionally reaches the boot-baked
   //     SessionRegistry cap through the view's optional setter.
+  //   git.*: object swap only; the git consumers (TASK-004+) read
+  //     config.git at call time, so no subsystem re-forms for the swap.
   //   llm.*: object swap plus restartIndexer (buildIndexer reads config.llm).
   //   vectorDim / model.id / model.cacheDir: config swap, drop the lazy
   //     embedder (the hooks.embedder seam stays authoritative), and when
@@ -1557,6 +1559,7 @@ export class ObsidianMemService extends Service {
 
     const budgetsChanged = changed.some((key) => key.startsWith('budgets.'))
     const llmChanged = changed.some((key) => key.startsWith('llm.'))
+    const gitChanged = changed.some((key) => key.startsWith('git.'))
     const embedderChanged = changed.some((key) => EMBEDDER_CARD_SETTINGS_KEYS.includes(key))
     const dimChanged = changed.includes('vectorDim')
     const thinkShotsChanged = changed.includes('budgets.thinkShotsPerTurn')
@@ -1565,6 +1568,7 @@ export class ObsidianMemService extends Service {
     const previous = {
       budgets: this.config.budgets,
       llm: this.config.llm,
+      git: this.config.git,
       model: this.config.model,
       vectorDim: this.config.vectorDim,
       embedder: this.embedderStore,
@@ -1572,6 +1576,7 @@ export class ObsidianMemService extends Service {
 
     if (budgetsChanged) this.config.budgets = { ...target.budgets }
     if (llmChanged) this.config.llm = { ...target.llm }
+    if (gitChanged) this.config.git = { ...target.git }
     if (changed.includes('model.id') || changed.includes('model.cacheDir')) {
       // The model group swap keeps the non-card dtype leaf untouched.
       this.config.model = {
@@ -1612,6 +1617,7 @@ export class ObsidianMemService extends Service {
     } catch (error: unknown) {
       this.config.budgets = previous.budgets
       this.config.llm = previous.llm
+      this.config.git = previous.git
       this.config.model = previous.model
       this.config.vectorDim = previous.vectorDim
       if (thinkShotsChanged) {

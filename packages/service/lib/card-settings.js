@@ -61,6 +61,7 @@ export function mergeCardSettingsOverrides(resolved, overrides) {
         milvus: { ...resolved.milvus },
         budgets: { ...resolved.budgets },
         llm: { ...resolved.llm },
+        git: { ...resolved.git },
         dreaming: {
             ...resolved.dreaming,
             schedules: resolved.dreaming.schedules.map((schedule) => ({ ...schedule })),
@@ -136,6 +137,7 @@ export function cardEditableSlice(config) {
         milvus: { dbPath: config.milvus.dbPath },
         budgets: { ...config.budgets },
         llm: { ...config.llm },
+        git: { ...config.git },
     };
 }
 /**

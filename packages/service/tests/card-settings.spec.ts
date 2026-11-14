@@ -163,6 +163,7 @@ describe('cardSettings view (TASK-003)', () => {
       milvus: { dbPath: row.milvus.dbPath },
       budgets: row.budgets,
       llm: row.llm,
+      git: row.git,
     })
     expect(view.overrides).toEqual({})
     expect(view.restartPending).toEqual([])
@@ -235,6 +236,30 @@ describe('updateCardSettings (TASK-003)', () => {
     expect(view.settings.llm.enabled).toBe(true)
   })
 
+  it('applies a git knob patch through the generic leaf machinery, no restart pending', async () => {
+    // git.* is live-apply (config swap only, no subsystem re-form): the
+    // row's churnWindowCommits 4 returns once the override is dropped.
+    const { fs, service } = harness({ config: { git: { churnWindowCommits: 4 } } })
+    const view = await service.updateCardSettings({
+      set: { git: { enabled: false, churnWindowCommits: 20 } },
+    })
+    expect(view.settings.git).toEqual({
+      enabled: false,
+      churnThresholdPercent: 50,
+      churnWindowCommits: 20,
+    })
+    expect(view.overrides).toEqual({ git: { enabled: false, churnWindowCommits: 20 } })
+    expect(storedOverrides(fs)).toEqual({ git: { enabled: false, churnWindowCommits: 20 } })
+    expect(view.restartPending).toEqual([])
+    // The escalation swapped the running group too (git consumers read it live).
+    expect(service.config.git).toEqual(view.settings.git)
+
+    const dropped = await service.updateCardSettings({ set: {}, unset: ['git.enabled'] })
+    expect(dropped.settings.git.enabled).toBe(true)
+    expect(dropped.settings.git.churnWindowCommits).toBe(20)
+    expect(dropped.restartPending).toEqual([])
+  })
+
   it('rejects an off-whitelist key and a non-object group without persisting', async () => {
     const { fs, service } = harness()
     await expect(service.updateCardSettings({ set: { bogus: 1 } as never }))
@@ -257,6 +282,11 @@ describe('updateCardSettings (TASK-003)', () => {
     // model.id keeps its non-empty rule.
     await expect(service.updateCardSettings({ set: { model: { id: '  ' } } }))
       .rejects.toThrow(/model\.id must be a non-empty string/)
+    // Out-of-range churn knobs carry their own path message.
+    await expect(service.updateCardSettings({ set: { git: { churnThresholdPercent: 101 } } }))
+      .rejects.toThrow(/git\.churnThresholdPercent must be an integer in \(0, 100\]/)
+    await expect(service.updateCardSettings({ set: { git: { churnWindowCommits: 0 } } }))
+      .rejects.toThrow(/git\.churnWindowCommits must be a positive number/)
     expect(fs.mutations).toEqual([])
   })
 
@@ -329,21 +359,23 @@ describe('resetCardSettings (TASK-003)', () => {
     const row: ObsidianMemConfig = { vectorDim: 256, budgets: { searchTopK: 4 } }
     const { fs, service } = harness({
       config: row,
-      settings: record({ vectorDim: 128, llm: { enabled: true } }),
+      settings: record({ vectorDim: 128, llm: { enabled: true }, git: { churnThresholdPercent: 75 } }),
     })
     expect(service.cardSettings().settings.vectorDim).toBe(128)
     const view = await service.resetCardSettings()
     expect(view.settings.vectorDim).toBe(256)
     expect(view.settings.budgets.searchTopK).toBe(4)
     expect(view.settings.llm.enabled).toBe(false)
+    expect(view.settings.git.churnThresholdPercent).toBe(50)
     expect(view.overrides).toEqual({})
     expect(storedOverrides(fs)).toEqual({})
     // TASK-004 escalation: the reset re-applies toward the row values
-    // in-process (the vectorDim swap and the llm swap), so nothing stays
-    // pending; only a milvus.dbPath move can.
+    // in-process (the vectorDim swap, the llm swap, and the git swap), so
+    // nothing stays pending; only a milvus.dbPath move can.
     expect(view.restartPending).toEqual([])
     expect(service.config.vectorDim).toBe(256)
     expect(service.config.llm.enabled).toBe(false)
+    expect(service.config.git.churnThresholdPercent).toBe(50)
   })
 
   it('writes the empty record even when no settings file existed', async () => {

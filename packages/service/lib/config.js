@@ -14,7 +14,7 @@
  * @module dsh-plugin-obsidian-mem/service/config
  */
 import { isAbsolute, join, resolve } from 'node:path';
-import { dbDir, DEFAULT_MODEL_ID, DREAM_NEAR_DUPLICATE_THRESHOLD, GLOBAL_MEMORY_TOKENS, isVaultMode, isVectorDim, MILVUS_SCALAR_MAX_LENGTHS, modelCacheDir, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, RECALL_TURN_START_TOKENS, resolveGlobalFile, SEARCH_DEFAULT_TOP_K, TRANSFORMERS_PIPELINE_OPTIONS, VAULT_MODE_SHARED, VAULT_MODES, VECTOR_DIM_DEFAULT, VECTOR_DIM_LOSSY, } from '../../core/lib/index.js';
+import { dbDir, DEFAULT_CHURN_THRESHOLD_PERCENT, DEFAULT_CHURN_WINDOW_COMMITS, DEFAULT_MODEL_ID, DREAM_NEAR_DUPLICATE_THRESHOLD, GLOBAL_MEMORY_TOKENS, isVaultMode, isVectorDim, MILVUS_SCALAR_MAX_LENGTHS, modelCacheDir, RECALL_READ_MAX_SECTIONS, RECALL_READ_SECTION_TOKENS, RECALL_TURN_START_TOKENS, resolveGlobalFile, SEARCH_DEFAULT_TOP_K, TRANSFORMERS_PIPELINE_OPTIONS, VAULT_MODE_SHARED, VAULT_MODES, VECTOR_DIM_DEFAULT, VECTOR_DIM_LOSSY, } from '../../core/lib/index.js';
 /** G13: cold uvx on an empty cache can exceed 400 s (1.3 GB wheels). */
 export const DEFAULT_READINESS_TIMEOUT_MS = 600_000;
 /**
@@ -23,7 +23,7 @@ export const DEFAULT_READINESS_TIMEOUT_MS = 600_000;
  * the resolved value). The service logs them once; nothing else reads them.
  */
 export const UNKNOWN_CONFIG_KEYS = Symbol('obsidian-mem.unknownConfigKeys');
-const TOP_KEYS = ['vaults', 'vectorDim', 'model', 'milvus', 'budgets', 'llm', 'dreaming'];
+const TOP_KEYS = ['vaults', 'vectorDim', 'model', 'milvus', 'budgets', 'llm', 'dreaming', 'git'];
 /**
  * CARD_SETTINGS_KEYS whitelists the config leaf dot-paths the settings card
  * may edit and persist to settings.json (the README Configuration table).
@@ -47,6 +47,9 @@ export const CARD_SETTINGS_KEYS = [
     'llm.baseUrl',
     'llm.model',
     'llm.apiKeyEnv',
+    'git.enabled',
+    'git.churnThresholdPercent',
+    'git.churnWindowCommits',
 ];
 // Known keys of a mounted `vaults` row; anything else lands in
 // UNKNOWN_CONFIG_KEYS.
@@ -85,6 +88,13 @@ function defaults() {
         budgets: { ...DEFAULT_BUDGETS },
         llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
         dreaming: { schedules: [], model: '', nearDuplicateThreshold: DREAM_NEAR_DUPLICATE_THRESHOLD },
+        // The core churn constants seed these config defaults only; consumers
+        // read the resolved group (TASK-004+).
+        git: {
+            enabled: true,
+            churnThresholdPercent: DEFAULT_CHURN_THRESHOLD_PERCENT,
+            churnWindowCommits: DEFAULT_CHURN_WINDOW_COMMITS,
+        },
     };
 }
 /** ObsidianMemConfigSchema validates a mounted row config and defaults it whole. */
@@ -234,6 +244,50 @@ function validateConfig(value) {
                 schedules: validateSchedules(value.dreaming.schedules, issues),
                 model: stringOr(value.dreaming.model, '', 'dreaming.model', ['dreaming', 'model'], issues),
                 nearDuplicateThreshold: typeof threshold === 'number' ? threshold : resolved.dreaming.nearDuplicateThreshold,
+            };
+        }
+    }
+    if (value.git !== undefined) {
+        if (!isRecord(value.git)) {
+            issues.push({ message: 'git must be an object', path: ['git'] });
+        }
+        else {
+            collectUnknown(value.git, ['git'], ['enabled', 'churnThresholdPercent', 'churnWindowCommits'], unknownKeys);
+            const enabled = value.git.enabled === undefined ? resolved.git.enabled : value.git.enabled;
+            if (typeof enabled !== 'boolean') {
+                issues.push({ message: 'git.enabled must be a boolean', path: ['git', 'enabled'] });
+            }
+            const churnThresholdPercent = value.git.churnThresholdPercent;
+            const percentOk = typeof churnThresholdPercent === 'number'
+                && Number.isInteger(churnThresholdPercent)
+                && churnThresholdPercent > 0
+                && churnThresholdPercent <= 100;
+            if (churnThresholdPercent !== undefined && !percentOk) {
+                issues.push({
+                    message: 'git.churnThresholdPercent must be an integer in (0, 100]',
+                    path: ['git', 'churnThresholdPercent'],
+                });
+            }
+            let churnWindowCommits = resolved.git.churnWindowCommits;
+            if (value.git.churnWindowCommits !== undefined) {
+                const parsed = positiveNumber(value.git.churnWindowCommits);
+                if (parsed === null) {
+                    issues.push({
+                        message: 'git.churnWindowCommits must be a positive number',
+                        path: ['git', 'churnWindowCommits'],
+                    });
+                }
+                else {
+                    // Same truncating rule as the budgets loop: 8.7 is 8 commits.
+                    churnWindowCommits = Math.trunc(parsed);
+                }
+            }
+            resolved.git = {
+                enabled: typeof enabled === 'boolean' ? enabled : resolved.git.enabled,
+                churnThresholdPercent: percentOk
+                    ? churnThresholdPercent
+                    : resolved.git.churnThresholdPercent,
+                churnWindowCommits,
             };
         }
     }

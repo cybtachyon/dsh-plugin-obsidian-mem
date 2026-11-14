@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DREAM_NEAR_DUPLICATE_THRESHOLD,
+  DEFAULT_CHURN_THRESHOLD_PERCENT,
+  DEFAULT_CHURN_WINDOW_COMMITS,
   DEFAULT_MODEL_ID,
   GLOBAL_MEMORY_FILE_DEFAULT,
   MILVUS_SCALAR_MAX_LENGTHS,
@@ -76,6 +78,12 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
       expect(config.llm).toEqual({ enabled: false, baseUrl: '', model: '', apiKeyEnv: '' })
       expect(config.dreaming.nearDuplicateThreshold).toBe(DREAM_NEAR_DUPLICATE_THRESHOLD)
       expect(config.dreaming.schedules).toEqual([])
+      // The core churn constants are these config defaults (TASK-003/Q4).
+      expect(config.git).toEqual({
+        enabled: true,
+        churnThresholdPercent: DEFAULT_CHURN_THRESHOLD_PERCENT,
+        churnWindowCommits: DEFAULT_CHURN_WINDOW_COMMITS,
+      })
     },
   )
 
@@ -84,6 +92,7 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
       typoTop: 1,
       milvus: { address: '127.0.0.1:19530', typoNested: true },
       budgets: { searchTopK: 5, typoBudget: -2 },
+      git: { enabled: false, typoGit: 'x' },
     })
 
     expect(issuesOf(result)).toEqual([])
@@ -91,12 +100,14 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
     expect(unknown).toContain('typoTop')
     expect(unknown).toContain('milvus.typoNested')
     expect(unknown).toContain('budgets.typoBudget')
+    expect(unknown).toContain('git.typoGit')
     // Unknown values never reach the resolved config the plugin runs on.
     const resolved = (result as { value: ResolvedObsidianMemConfig }).value
     expect(Object.keys(resolved).sort()).toEqual(
-      ['budgets', 'dreaming', 'llm', 'milvus', 'model', 'vaults', 'vectorDim'].sort(),
+      ['budgets', 'dreaming', 'git', 'llm', 'milvus', 'model', 'vaults', 'vectorDim'].sort(),
     )
     expect(resolved.budgets.searchTopK).toBe(5)
+    expect(resolved.git.enabled).toBe(false)
   })
 
   it('truncates fractional budget numbers to integers', () => {
@@ -105,6 +116,21 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
     const resolved = (result as { value: ResolvedObsidianMemConfig }).value
     expect(resolved.budgets.searchTopK).toBe(5)
     expect(resolved.budgets.readSections).toBe(2)
+  })
+
+  it('keeps mounted git values and truncates churnWindowCommits like the budgets', () => {
+    const result = validate({
+      git: { enabled: false, churnThresholdPercent: 75, churnWindowCommits: 20.9 },
+    })
+
+    expect(issuesOf(result)).toEqual([])
+    const resolved = (result as { value: ResolvedObsidianMemConfig }).value
+    expect(resolved.git).toEqual({ enabled: false, churnThresholdPercent: 75, churnWindowCommits: 20 })
+
+    // (0, 100] boundaries are in: 1 and 100 percent validate.
+    for (const percent of [1, 100]) {
+      expect(issuesOf(validate({ git: { churnThresholdPercent: percent } }))).toEqual([])
+    }
   })
 
   it('keeps a mounted model.cacheDir string, including the "" default sentinel', () => {
@@ -130,6 +156,13 @@ describe('validateObsidianMemConfig: whole-config defaults', () => {
     const again = validate((first as { value: ResolvedObsidianMemConfig }).value)
     expect(again.issues).toBeUndefined()
     expect((again as { value: ResolvedObsidianMemConfig }).value.model.cacheDir).toBe('')
+    // The git group re-validates against itself (the default resolved config
+    // must pass its own validation, the config idempotence contract).
+    expect((again as { value: ResolvedObsidianMemConfig }).value.git).toEqual({
+      enabled: true,
+      churnThresholdPercent: DEFAULT_CHURN_THRESHOLD_PERCENT,
+      churnWindowCommits: DEFAULT_CHURN_WINDOW_COMMITS,
+    })
   })
 })
 
@@ -161,6 +194,18 @@ describe('validateObsidianMemConfig: rejection table', () => {
     ['nearDuplicateThreshold out of range', { dreaming: { nearDuplicateThreshold: 1.5 } },
       ['dreaming.nearDuplicateThreshold']],
     ['dreaming.model not a string', { dreaming: { model: 1 } }, ['dreaming.model']],
+    ['git not an object', { git: 'on' }, ['git']],
+    ['git.enabled not a boolean', { git: { enabled: 'yes' } }, ['git.enabled']],
+    ['git.churnThresholdPercent not an integer', { git: { churnThresholdPercent: 12.5 } },
+      ['git.churnThresholdPercent']],
+    ['git.churnThresholdPercent zero', { git: { churnThresholdPercent: 0 } },
+      ['git.churnThresholdPercent']],
+    ['git.churnThresholdPercent above 100', { git: { churnThresholdPercent: 101 } },
+      ['git.churnThresholdPercent']],
+    ['git.churnWindowCommits not positive', { git: { churnWindowCommits: -1 } },
+      ['git.churnWindowCommits']],
+    ['git.churnWindowCommits not a number', { git: { churnWindowCommits: '8' } },
+      ['git.churnWindowCommits']],
   ]
 
   it.each(cases)('%s reports an issue at the config path', (_label, value, expectedPaths) => {

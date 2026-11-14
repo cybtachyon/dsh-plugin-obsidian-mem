@@ -61,6 +61,7 @@ README/AGENTS docs.
  - [ ] [TASK-003-card-settings-service-api](docs/PLAN-config-pane-TASK-003-card-settings-service-api.md)
  - [ ] [TASK-004-live-apply-escalation](docs/PLAN-config-pane-TASK-004-live-apply-escalation.md)
  - [ ] [TASK-005-refactor-phase-1](docs/PLAN-config-pane-TASK-005-refactor-phase-1.md)
+ - [ ] [TASK-012-fix-test-tier-type-errors](docs/PLAN-config-pane-TASK-012-fix-test-tier-type-errors.md)
 
 ### Phase 2: host routes
 
@@ -80,6 +81,8 @@ README/AGENTS docs.
 ## Dependencies
 
 - TASK-001 → TASK-002 → TASK-003 → TASK-004 → TASK-005.
+- TASK-012 (test-tier type debt, pre-existing) runs after TASK-005, before
+  TASK-006; it is cleanup, not feature scope.
 - TASK-006 needs TASK-003 (service surface).
 - TASK-007 needs TASK-006 (ROUTES contract); TASK-008 needs TASK-007.
 - TASK-009 follows TASK-006 through TASK-008.

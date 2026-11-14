@@ -251,8 +251,24 @@ pid 1091813 verified alive 2026-11-13).
 
 ### Phase C2: gated-parity floor re-sweep (Q5 answer)
 
- - [ ] [TASK-018-gated-floor-sweep](docs/PLAN-wake-gate-TASK-018-gated-floor-sweep.md)
+ - [x] [TASK-018-gated-floor-sweep](docs/PLAN-wake-gate-TASK-018-gated-floor-sweep.md)
  - [ ] [TASK-019-ship-retuned-floor](docs/PLAN-wake-gate-TASK-019-ship-retuned-floor.md)
+
+ TASK-018 result (2026-11-13, spec §"Gated floor re-sweep"):
+ **recovery: YES, knee at SPARSE_SEARCH_RADIUS 4.75.** Same-session
+ gated grid (invariants first AND after: 213/213 scan, 0 empty, 0
+ markers, 记忆 on 2 rows; baseline re-run byte-identical to the
+ committed control, s50 anchor byte-identical to the committed FAIL
+ point; all seven artifacts rowCount 213). 4.75 is the highest radius
+ passing all three recovery gates: relevant-of-labeled 15/22 =
+ baseline with the missed-label set IDENTICAL to baseline (the lost
+ typescript-simulation-style.md row returns, gated BM25 4.968 clears
+ 4.75); forbidden 7 ≤ 10 with rate 0.109 ≤ 0.114; P@k 0.375. The
+ forbidden count is constant 7 across the whole grid; 4.5–3.0 add only
+ noise. Fused-floor replay of the winner: 1/62 still the knee (1/63
+ buys one 1/63-shape label at forb-rate above baseline; 1/61 is the
+ TASK-007-waived corpus artifact). zh canary byte-identical to the
+ §Step 1.3 pin. Next: TASK-019 ships 4.75.
 
 ### Phase D: live confirmation (spec Step 4, sequencing per Q1 answer)
 

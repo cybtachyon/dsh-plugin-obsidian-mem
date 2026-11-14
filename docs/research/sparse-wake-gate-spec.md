@@ -646,6 +646,118 @@ two floors; a wake gate that passes the relevant row still loses it.
 Option 4's own sparse legs would carry no scalar filter, so they do
 not inherit this interaction.
 
+### Gated floor re-sweep (TASK-018, 2026-11-13): recovery YES at 4.75
+
+Phase C2 (Q5 answer): production now dispatches the sparse leg ALWAYS
+gated (`SPARSE_WAKE_GATE_ENABLED = true`), so the shipped
+`SPARSE_SEARCH_RADIUS` must be tuned for the GATED shape (the TASK-006
+re-sweep after the stop-word strip shifted BM25 mass is the precedent;
+the lite 3.2.2 per-filtered-subset BM25 rescore measured above is the
+mechanism being swept past).
+
+Same-session discipline: invariant-first probe (213 rows, scanComplete
+213/213, EMPTY wake 0, generic intent markers 0, 记忆 on 2 rows), then
+ONE no-`--wake-gate` baseline run followed back-to-back in the same
+session by the six gated points, all on the same corpus (all seven
+artifacts read `server.rowCount: 213`), then the invariants re-verified
+identically after the grid (repair via `scripts/live-reindex.mjs` never
+needed). Read-only collection access throughout.
+
+Drift controls: the baseline re-run is BYTE-IDENTICAL to the committed
+`eval-split-strip-on-d078-s50-k60-m016129-wakegate-baseline.json`
+(OVERWRITE-verify equal, no `-r2` needed) and the gated 5.0 anchor is
+BYTE-IDENTICAL to the committed `…-wakegate.json` above, reproducing
+the §Step 3 FAIL point exactly. No committed control was modified;
+below, "the baseline" is the same-session one (identical to the
+committed one by check).
+
+Reproduce the winning point:
+
+```
+node scripts/eval/recall-eval.mjs --mode split-rrf --wake-gate \
+  --dense-radius 0.78 --dense-range 1.0 --sparse-radius 4.75 \
+  --rrf-k 60 --top-k 6 --oversample 2 --min-score 0.016129 \
+  --out docs/research/eval-split-strip-on-d078-s475-k60-m016129-wakegate.json
+```
+
+Gated grid (17 queries, strip-ON, split-rrf, production parity knobs,
+`--wake-gate`, `--sparse-radius` varying; new committed artifacts
+`eval-split-strip-on-d078-s{475,45,40,35,30}-k60-m016129-wakegate.json`;
+the 5.0 point and the baseline reproduce their committed artifacts):
+
+| radius | returned | R | A | F | . | rel-of-labeled | P@k | forb-rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline (5.0, ungated) | 88 | 25 | 29 | 10 | 24 | 15/22 | 0.284 | 0.114 |
+| 5.0 gated (anchor) | 61 | 23 | 21 | 7 | 10 | 14/22 | 0.377 | 0.115 |
+| **4.75 (knee)** | **64** | **24** | **23** | **7** | **10** | **15/22** | **0.375** | **0.109** |
+| 4.5 | 65 | 24 | 23 | 7 | 11 | 15/22 | 0.369 | 0.108 |
+| 4.0 | 65 | 24 | 23 | 7 | 11 | 15/22 | 0.369 | 0.108 |
+| 3.5 | 65 | 24 | 23 | 7 | 11 | 15/22 | 0.369 | 0.108 |
+| 3.0 | 66 | 24 | 23 | 7 | 12 | 15/22 | 0.364 | 0.106 |
+
+Recovery gates per gated point (vs the SAME-SESSION baseline): (1)
+relevant-of-labeled ≥ 15/22; (2) forbidden rows ≤ 10 AND
+forbidden-rate ≤ 0.1136; (3) P@k ≥ 0.36 (tolerance under the gated
+5.0 point's 0.377). 5.0 fails (1) at 14/22 and (2) at rate 0.1148 >
+0.1136, exactly the §Step 3 FAIL; every point 4.75–3.0 passes all
+three. Highest radius passing all three: **4.75**.
+
+Recovery shape. The gated 5.0 → 4.75 page diff is exactly +3 rows and
+zero removals: `typescript-simulation-style.md`
+(machinae-combat-systems, R, both-route, the §Step 3 FAIL row: the
+gate rescales its BM25 to 4.97, which clears a 4.75 floor but not a
+5.0 one), plus `obsidian-mem-subagent-zero-recall-is-budget-not-gating.md`
+(budget-reminder-end-of-turn, A, both) and
+`dsh-session-cwd-header-gate.md` (session-transcript-probe, A, both).
+At 4.75 the missed relevant-label set is IDENTICAL to the baseline's
+seven (guestwise-ci 2, guestwise-ticket 2, layout-sidecar 1,
+lywa-synonym 1, machinae-save-restore 1) and stays identical down to
+3.0. The forbidden count is a constant 7 across the entire grid:
+loosening the floor below the gate re-admits no forbidden row; what
+4.5–3.0 buy is only neutral rows (and at 4.0 one same-class swap,
+dream-plan-text-budget-lines → dream-run-agentoptions-fix, on
+budget-reminder-end-of-turn). Below 4.75 is pure noise, so 4.75 is
+the least-noise admitting setting.
+
+Fused-floor replay (TASK-006 method; client-side from the winning 4.75
+artifact's `routeCandidates`, harness fusion `fused += 1/(60+rank)`,
+topK 6, every one of the 124 candidate chunk_ids classified from
+read-only `query` batches against the live collection, 0 unknown rows;
+floors none, 1/61, 1/62, 1/63; nothing changed in production):
+
+| floor | returned | R | A | F | . | rel-of-labeled | P@k | forb-rate |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| none | 102 | 28 | 33 | 17 | 24 | 17/22 | 0.275 | 0.167 |
+| 1/61 | 48 | 22 | 20 | 2 | 4 | 15/22 | 0.458 | 0.042 |
+| 1/62 | 64 | 24 | 23 | 7 | 10 | 15/22 | 0.375 | 0.109 |
+| 1/63 | 78 | 26 | 28 | 9 | 15 | 16/22 | 0.333 | 0.115 |
+
+The 1/62 row reproduces the run's own page aggregates
+(64/24/23/7/10, 15/22, 0.375, 0.109): replay fidelity confirmed.
+**Verdict: 1/62 is still the knee.** 1/61 loses no label offline and
+cuts 5 forbidden rows, the same "artifact of THIS corpus" shape
+TASK-006 waived: the TASK-007 live loop caught a relevant note whose
+only page shape WAS single-route rank 2 (fused 1/62), and 1/(k+1)
+re-floors that shape in a way no offline replay can see. 1/63 buys
+exactly one label here
+(`guestwise/ddev-playwright-pnpm.md` on guestwise-ci-playwright, whose
+best gated candidate is single-route sparse rank 3, fused exactly
+1/63; TASK-006 measured the same label at the unreachable 1/64 shape
+on the ungated corpus) at +2 forbidden rows, a forbidden-rate of
+0.115 that is ABOVE the same-session baseline's 0.114, and P@k
+−0.042. `FUSED_SCORE_FLOOR` stays 1/(k+2).
+
+zh canary: the probes are floorless, so the radius lever cannot move
+them; still re-run plainly once at session end. Output SUMMARY line is
+BYTE-IDENTICAL to the §Step 1.3 pin (`cmp` clean; BOOT and SUMMARY
+`rowCount: 213`).
+
+**Decision line: gate-parity knee at 4.75, relevant-of-labeled 15/22,
+recovery: YES.** Consequence per the Q5 answer: TASK-019 ships the
+retuned `SPARSE_SEARCH_RADIUS` 4.75 with the gate shipped, Phase D
+(TASK-013) un-supersedes iff that ships; Option 4 stays open and
+unspent.
+
 ## Step 4: live confirmation (light)
 
 Restart DSH (user action; host code is startup-loaded), verify the

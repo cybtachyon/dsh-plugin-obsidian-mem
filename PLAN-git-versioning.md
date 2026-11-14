@@ -86,7 +86,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 
 ### Phase F: whole-repo verification
 
- - [ ] [TASK-014-full-suite-verify](docs/PLAN-git-versioning-TASK-014-full-suite-verify.md)
+ - [x] [TASK-014-full-suite-verify](docs/PLAN-git-versioning-TASK-014-full-suite-verify.md)
 
 ## Task dependencies
 

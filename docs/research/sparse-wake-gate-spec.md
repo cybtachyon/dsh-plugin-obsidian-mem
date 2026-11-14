@@ -801,6 +801,24 @@ restart: think-injection headers now read `Memory related to: ...`
 note the host re-indexes post-restart use the post-fix extraction
 (generic markers gone, Han runs included).
 
+Step 4 observation (executed 2026-11-13 18:47-18:55, VERDICT: as
+expected): the host restarted (gui pid 1091083 -> 1285342); the iter-3
+BeaconPulse probe ran as the parent's first post-restart tool call;
+its transcript (parent slug bucket, `session.v4.jsonl.zstd`, 23
+`agent/inbox/spliced` records) is the evidence, not the agent's
+self-report. Turn-start packages carried GLOBAL.md plus
+TypeScript/sim-domain notes (`ts-installed-types`,
+`typescript-verify-before-done`, `vitest-lazy-cjs-require-carrier`);
+think-channel recalls included `typescript-simulation-style` and
+`typescript-declarative-best-practices` (the machinae/domain class,
+unaffected as specified). NO Drupal/npm/solr/bigpipe/playwright
+collision row appeared at any turn-start. One guestwise-family row
+(`kernel-test-full-site-recipe-setup`) fired mid-session from bitECS
+reasoning text on the think channel; that path rides the DENSE route,
+which the gate deliberately never filters, so it is the known dense-
+cousin band from the route-attribution analysis, not a wake-gate miss.
+Step 4 complete; the shipped shape (gate + 4.75) is live.
+
 ## Decision rules
 
 - PASS → done; mirror one paragraph into `stopword-strip-findings.md`'s

@@ -161,12 +161,41 @@ pid 1091813 verified alive 2026-11-13).
 
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 
- - [ ] [TASK-004-unit-tests-red](docs/PLAN-wake-gate-TASK-004-unit-tests-red.md)
- - [ ] [TASK-005-implement-search-ts](docs/PLAN-wake-gate-TASK-005-implement-search-ts.md)
- - [ ] [TASK-006-fakes-green](docs/PLAN-wake-gate-TASK-006-fakes-green.md)
- - [ ] [TASK-007-harness-flag](docs/PLAN-wake-gate-TASK-007-harness-flag.md)
- - [ ] [TASK-008-commit-green](docs/PLAN-wake-gate-TASK-008-commit-green.md)
+ - [x] [TASK-004-unit-tests-red](docs/PLAN-wake-gate-TASK-004-unit-tests-red.md)
+ - [x] [TASK-005-implement-search-ts](docs/PLAN-wake-gate-TASK-005-implement-search-ts.md)
+ - [x] [TASK-006-fakes-green](docs/PLAN-wake-gate-TASK-006-fakes-green.md)
+ - [x] [TASK-007-harness-flag](docs/PLAN-wake-gate-TASK-007-harness-flag.md)
+ - [x] [TASK-008-commit-green](docs/PLAN-wake-gate-TASK-008-commit-green.md)
  - [ ] [TASK-009-refactor-review](docs/PLAN-wake-gate-TASK-009-refactor-review.md)
+
+ TASK-004..008 result (2026-11-13, spec Step 2, commit 9c2ae27): the
+ wake gate shipped. `dispatchRoutes` merges
+ `ARRAY_CONTAINS_ANY(wake_keywords, [<stripped query tokens>])` into the
+ SPARSE route's expr (every caller: hybridSearch, exact-file, fallback);
+ the dense route never carries it. New exports: `sparseQueryTokens`
+ (sparseQueryText's list form, fail-open preserved), pure
+ `sparseWakeFilterTokens` (trim, lower-case, len 2..
+ `MILVUS_ARRAY_ELEMENT_MAX_LENGTHS.wakeKeywords` imported from core,
+ dedupe, cap), pure `sparseWakeGateExpr` (the `enabled` seam the spec
+ drives), `SPARSE_WAKE_GATE_ENABLED = true` (kill switch),
+ `SPARSE_WAKE_GATE_MAX_TOKENS = 64`. Empty usable tokens fail open to
+ exactly the base expr. 14 new unit tests (13 red first for the missing
+ exports; the fail-open pin is a no-clause invariant that also holds
+ pre-gate); 5 pre-existing search.spec.ts goldens re-pinned to the exact
+ gated exprs; service.spec.ts needed NO change (its search stub ignores
+ `expr`, so the gate cannot starve it). Full `pnpm test` 854 passed;
+ `pnpm build` (lib committed) and `pnpm lint` green; throwaway
+ test-tree typecheck recipe: 76 error groups, none in the touched spec
+ (pre-existing set, no regressions). Harness: recall-eval.mjs and
+ zh-analyzer-probe.mjs gained `--wake-gate` (all pieces imported from
+ the emitted lib; legacy-hybrid rejected; wakeGate echoed in artifact
+ config + aggregates line). Smokes (/tmp, uncommitted, production
+ knobs NOT applied so no metrics read from them): gated run config
+ wakeGate=true rowCount 213; baseline no-flag run works rowCount 213;
+ probe default-OFF SUMMARY byte-identical to the §Step 1.3 pin; probe
+ ON carries the production-merged expr on the 6 non-fail-open texts and
+ all three run-* probes keep BOTH pinned hits gated (TASK-017 preview
+ confirmed end-to-end against the live analyzer). TASK-009 is next.
 
 ### Phase C: same-session A/B (spec Step 3)
 

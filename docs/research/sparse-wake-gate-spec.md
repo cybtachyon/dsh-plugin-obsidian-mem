@@ -82,6 +82,68 @@ Against the live collection (`.memlite.json` port/pid; never a write):
    pin its current hits; zh answers ride maximal-Han-run BM25 and are
    the sparse leg's unique strength.
 
+## Pre-flight measurements (2026-11-13)
+
+### Step 1.1 empty-wake audit (TASK-001): decision STOP
+
+Probe `docs/research/probes/wake-audit-probe.mjs` (HARD READ-ONLY; the
+only RPCs issued are connectPromise, getVersion, count, query) against
+the live milvus-lite 3.2.2 (`/home/derek/.dsh/obsidian-mem-db/
+.memlite.json`, port 45429, pid 1091813), collection `obsidian_mem`:
+
+| measurement | value |
+| --- | --- |
+| collection rows (count guard) | 210 |
+| rows with EMPTY `wake_keywords` | 39 |
+| empty-wake rate | **18.571%** |
+| STOP threshold (Step 1.1) | >5% |
+| decision | **STOP** (18.571% > 5%) |
+
+39 of 210 rows (18.6%) carry empty wake arrays and could NEVER satisfy
+`ARRAY_CONTAINS_ANY(wake_keywords, …)`: the gate as specified silently
+kills 18.6% of the corpus on the sparse leg, nearly 4x the 5% ceiling.
+Per Step 1.1 and the Decision rules, wake EXTRACTION is fixed first and
+this measurement is re-run to a ≤5% rate before any gate is wired;
+Step 2 (Phase B) is blocked, and Steps 1.2/1.3 are deferred because
+their inputs (stored wake arrays) are exactly what the fix rewrites.
+
+Scan method note: the TASK-prescribed `chunk_id > <last seen>` cursor
+paging is unsound on this server. lite 3.2.2 answers `query` in segment
+order, not primary-key order, and ACCEPTS AND IGNORES the SDK
+`order_by` option (same-day probe: over 210 rows, the first
+`chunk_id > -1` limit-200 page returned 200 unordered rows and the
+next page `chunk_id > <page max>` matched 0, silently losing 10 rows).
+The probe therefore scans chunk_id RANGE WINDOWS (split any window that
+answers exactly the limit), and its FINAL line reports `scanComplete:
+true` with 210/210 ids collected and cross-checked against the count.
+
+Pollution evidence (TERMS line: 179 distinct wake terms across the
+171 non-empty rows; top frequencies):
+
+| term | rows | term | rows |
+| --- | --- | --- | --- |
+| when | 95 | debug | 9 |
+| how | 91 | drupalsettings in drupal 11 js: location, bindings, hydration | 7 |
+| why | 82 | not | 5 |
+| how to apply | 31 | who | 3 |
+| where | 23 | _pvt_, before, dir, every, lywa authorize.net checkout nightwatch test, moduleloader | 2 each |
+| what | 20 | 163 further terms | 1 each |
+
+The generic intent markers where/when/why/how/what/how to apply sit at
+the very top of the corpus wake vocabulary: these are section-header
+labels ("Why:", "How to apply:") harvested by the core trigger
+extractor, not content keywords. That is the wake-list pollution the
+PARTIAL rule names, confirmed at corpus scale BEFORE wiring the gate.
+The tail also carries extraction fragments (for example `+
+\`field.field`, `0 of 54`, `2/(k+1`, `attendee chart cropping —
+resolved by t9b (2026-11-10`), so the fix must bound wake-key shape,
+not just add a stop-list.
+
+Next task (surfaces the STOP): fix wake-keyword EXTRACTION in
+`packages/core/src/triggers.ts` so intent-marker headers and extraction
+fragments stop entering `wake_keywords`; re-run this probe for ≤5%
+empty rows, then resume this spec at Step 1.2.
+
 ## Step 2: implement (TDD, single commit with lib)
 
 1. `packages/service/src/search.ts`: pure helper

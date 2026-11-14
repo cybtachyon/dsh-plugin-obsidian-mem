@@ -2,9 +2,11 @@
  * Shared test kit for the ui route specs: a fake webServer that reproduces
  * the host's (kind, path) duplicate-throw table, a fake cordis context whose
  * scoped `inject` only fires when every named service is present, a fake
- * RouteService with per-run failure and result knobs, a fake schedule
- * gateway trio, node-http-shaped request/response doubles, and the request
- * driver every spec asserts through.
+ * RouteService with per-run failure and result knobs (its card-settings
+ * slice stores overrides, so a POST is visible to the next GET and a reset
+ * falls back to the row), a fake schedule gateway trio, node-http-shaped
+ * request/response doubles, and the request driver every spec asserts
+ * through.
  * @module dsh-plugin-obsidian-mem/ui/tests/testkit
  */
 
@@ -12,7 +14,7 @@ import { Buffer } from 'node:buffer'
 import type { IncomingLike, OutgoingLike, RouteService, ScheduleGateway, WebServerRoute } from '../src/index.ts'
 import { ROUTES } from '../src/index.ts'
 import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
-import type { ObsidianMemStatus, VaultEntry } from '../../service/lib/index.js'
+import type { CardEditablePartial, CardSettingsPatch, CardSettingsView, ObsidianMemStatus, VaultEntry } from '../../service/lib/index.js'
 import type { AuditReport, AuditRequest } from '../../service/lib/audit.js'
 import type { DreamEngineResult, DreamRequest, DreamRunSummary } from '../../service/lib/dream.js'
 import type { MemorySearchResult, SearchRequest } from '../../service/lib/search.js'
@@ -71,6 +73,12 @@ export interface RouteServiceOptions {
   vaults?: VaultEntry[]
   addVaultError?: Error
   removeVaultError?: Error
+  /** Overrides the fake already has stored, so a spec can start mid-edit. */
+  cardSettingsOverrides?: CardEditablePartial
+  /** The restartPending list the fake reports verbatim. */
+  cardSettingsRestartPending?: string[]
+  updateCardSettingsError?: Error
+  resetCardSettingsError?: Error
   auditError?: Error
   auditReport?: AuditReport
   dreamError?: Error
@@ -83,6 +91,8 @@ export interface RouteServiceOptions {
 export interface RouteServiceCalls {
   addVault: { path: string, mode?: string, globalFile?: string }[]
   removeVault: string[]
+  updateCardSettings: CardSettingsPatch[]
+  resetCardSettings: number
   audit: AuditRequest[]
   dream: DreamRequest[]
   search: SearchRequest[]
@@ -101,7 +111,28 @@ export function makeRouteService(options: RouteServiceOptions = {}): RouteServic
 
 /** MakeRouteServiceWithCalls also hands back the call recorder. */
 export function makeRouteServiceWithCalls(options: RouteServiceOptions = {}): FakeRouteService {
-  const calls: RouteServiceCalls = { addVault: [], removeVault: [], audit: [], dream: [], search: [] }
+  const calls: RouteServiceCalls = {
+    addVault: [],
+    removeVault: [],
+    updateCardSettings: [],
+    resetCardSettings: 0,
+    audit: [],
+    dream: [],
+    search: [],
+  }
+  // The settings fake mirrors the service's storage model: only the overrides
+  // persist, and the view is the row re-merged with them, so a POST is
+  // visible to the next GET and a reset really falls back to the row.
+  const row: SettingsRecord = { ...baseCardSettings().settings }
+  let overrides: SettingsRecord = { ...(options.cardSettingsOverrides ?? {}) }
+  const restartPending = options.cardSettingsRestartPending ?? []
+  // The trees are the JSON the fake assembled from the typed fixtures above;
+  // the structural cast is the fake seam.
+  const settingsView = (): CardSettingsView => ({
+    settings: mergeSettings(row, overrides),
+    overrides: cloneRecord(overrides),
+    restartPending: [...restartPending],
+  } as unknown as CardSettingsView)
   const service: RouteService = {
     status: options.status ?? (() => baseStatus()),
     listVaults: () => options.vaults ?? [],
@@ -119,6 +150,22 @@ export function makeRouteServiceWithCalls(options: RouteServiceOptions = {}): Fa
     removeVault: async (path) => {
       calls.removeVault.push(path)
       if (options.removeVaultError !== undefined) throw options.removeVaultError
+    },
+    cardSettings: () => settingsView(),
+    updateCardSettings: async (patch) => {
+      calls.updateCardSettings.push(patch)
+      if (options.updateCardSettingsError !== undefined) throw options.updateCardSettingsError
+      mergeInto(overrides, patch.set ?? {})
+      for (const path of patch.unset ?? []) {
+        removeSettingsPath(overrides, path)
+      }
+      return settingsView()
+    },
+    resetCardSettings: async () => {
+      calls.resetCardSettings += 1
+      if (options.resetCardSettingsError !== undefined) throw options.resetCardSettingsError
+      overrides = {}
+      return settingsView()
     },
     audit: async (request = {}) => {
       calls.audit.push(request)
@@ -182,6 +229,81 @@ export function baseStatus(overrides: Partial<ObsidianMemStatus> = {}): Obsidian
     dream: { state: 'idle', blocked: null, lastDreamAt: 1_700_000_000_000, lastRun: null },
     ...overrides,
   }
+}
+
+/** Complete CardSettingsView with the row values every settings spec starts from. */
+export function baseCardSettings(): CardSettingsView {
+  return {
+    settings: {
+      vectorDim: 384,
+      model: { id: 'Xenova/multilingual-e5-small', cacheDir: '/home/u/.cache/dsh/models' },
+      milvus: { dbPath: '/home/u/.dsh/obsidian-mem-db' },
+      budgets: {
+        turnStartRecallTokens: 600,
+        globalMemoryTokens: 20_000,
+        readSections: 4,
+        readSectionTokens: 250,
+        searchTopK: 6,
+        thinkShotsPerTurn: 1,
+      },
+      llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
+    },
+    overrides: {},
+    restartPending: [],
+  }
+}
+
+/** Any nested JSON object, the shape the settings fake merges and unsets. */
+type SettingsRecord = Record<string, unknown>
+
+/** CloneRecord deep-copies a settings tree so a caller never mutates the fake's state. */
+function cloneRecord(record: SettingsRecord): SettingsRecord {
+  return JSON.parse(JSON.stringify(record)) as SettingsRecord
+}
+
+/** IsRecord tests for a plain nested object (arrays and null are leaves). */
+function isRecord(value: unknown): value is SettingsRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** MergeSettings deep-merges an override tree onto a base tree, leaf by leaf. */
+function mergeSettings(base: SettingsRecord, patch: SettingsRecord): SettingsRecord {
+  const merged: SettingsRecord = { ...base }
+  for (const [key, value] of Object.entries(patch)) {
+    const held = merged[key]
+    merged[key] = isRecord(value) && isRecord(held) ? mergeSettings(held, value) : value
+  }
+  return merged
+}
+
+/** MergeInto deep-merges a patch onto a stored override tree in place. */
+function mergeInto(target: SettingsRecord, patch: SettingsRecord): void {
+  for (const [key, value] of Object.entries(patch)) {
+    const held = target[key]
+    if (isRecord(value) && isRecord(held)) {
+      mergeInto(held, value)
+    }
+    else {
+      target[key] = value
+    }
+  }
+}
+
+/**
+ * RemoveSettingsPath drops one dot-path leaf from a stored override tree and
+ * prunes the emptied group, mirroring the service's `removeCardSettingsPath`
+ * so the fake's `overrides` never report an empty group as an override.
+ */
+function removeSettingsPath(record: SettingsRecord, path: string): void {
+  const [head, ...rest] = path.split('.')
+  if (rest.length === 0) {
+    delete record[head!]
+    return
+  }
+  const nested = record[head!]
+  if (!isRecord(nested)) return
+  removeSettingsPath(nested, rest.join('.'))
+  if (Object.keys(nested).length === 0) delete record[head!]
 }
 
 /** Recorded schedule-gateway calls. */

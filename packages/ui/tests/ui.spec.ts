@@ -32,7 +32,7 @@ describe('obsidian-mem ui package', () => {
       expect(seen.has(key), `duplicate contract entry ${key}`).toBe(false)
       seen.add(key)
     }
-    expect(ROUTES.length).toBe(12)
+    expect(ROUTES.length).toBe(15)
   })
 
   it('stays inert on a profile without the webServer service', () => {

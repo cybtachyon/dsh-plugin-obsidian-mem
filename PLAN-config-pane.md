@@ -65,7 +65,7 @@ README/AGENTS docs.
 
 ### Phase 2: host routes
 
- - [ ] [TASK-006-config-routes](docs/PLAN-config-pane-TASK-006-config-routes.md)
+ - [x] [TASK-006-config-routes](docs/PLAN-config-pane-TASK-006-config-routes.md)
 
 ### Phase 3: client card
 

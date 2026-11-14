@@ -1,10 +1,11 @@
 /**
  * The host web routes for the Obsidian Mem settings card: the JSON API under
  * `/obsidian-mem/*` the browser card (TASK-051) calls to manage the vault
- * registry, read index/audit/dream state, edit dreaming triggers, and probe
- * search. Response discipline has one home: every handler first asks the
- * composition's `connection` service for a rejection when one is reachable,
- * then dispatches on the request method against the path's declared method
+ * registry, read index/audit/dream state, edit dreaming triggers, edit the
+ * Configuration pane's whitelisted settings, and probe search. Response
+ * discipline has one home: every handler first asks the composition's
+ * `connection` service for a rejection when one is reachable, then
+ * dispatches on the request method against the path's declared method
  * map (405 with the declared methods as `allow`), then reads a non-GET body
  * as application/json under a 64 KiB ceiling (415 / 413 / 400), then answers
  * JSON with `cache-control: no-store`. Handlers never throw and never leak a
@@ -41,7 +42,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { AUDIT_MAX_LIMIT, DREAM_PROMPT_FILE, isVaultMode, VAULT_MODES } from '../../core/lib/index.js'
 import { OBSIDIAN_MEM_SEAM } from '../../service/lib/index.js'
-import type { ObsidianMemStatus, VaultAddRequest, VaultEntry } from '../../service/lib/index.js'
+import type { CardEditablePartial, CardSettingsPatch, CardSettingsView, ObsidianMemStatus, VaultAddRequest, VaultEntry } from '../../service/lib/index.js'
 import { AUDIT_VIEWS } from '../../service/lib/audit.js'
 import type { AuditReport, AuditRequest, AuditView } from '../../service/lib/audit.js'
 import { DreamBlockedError, DreamBusyError } from '../../service/lib/dream.js'
@@ -87,6 +88,21 @@ export const ROUTES: readonly RouteContract[] = [
     method: 'DELETE',
     path: '/obsidian-mem/vaults',
     description: 'Removes the card-added vault named in the JSON body { path }; answers { removed: true, path }. Settings-row and auto-provisioned default vaults answer 409 vault_protected with the actionable place to remove them; unknown paths 404.',
+  },
+  {
+    method: 'GET',
+    path: '/obsidian-mem/settings',
+    description: 'Answers the Configuration pane view { settings: CardEditableConfig, overrides: CardEditablePartial, restartPending: string[] } from service.cardSettings(): the persisted effective values (profile row merged with the card overrides, paths home-expanded), exactly the whitelisted keys the card has set, and the whitelisted dot-paths whose persisted value the running process has not caught up with (a settled store reports "[]" or ["milvus.dbPath"] only). Never provisions.',
+  },
+  {
+    method: 'POST',
+    path: '/obsidian-mem/settings',
+    description: 'Applies the JSON body { set: object (the whitelisted config leaves in nested shape), unset?: string[] (whitelisted dot-paths to drop back to the profile row) } through service.updateCardSettings and answers the fresh { settings, overrides, restartPending } view. A body whose set is not an object or whose unset is not a string array answers 400 settings_invalid; every service rejection (not card-editable, schema-invalid, escalation failure) answers 400 settings_invalid with the service message verbatim; an apply still in flight answers 409 settings_busy.',
+  },
+  {
+    method: 'DELETE',
+    path: '/obsidian-mem/settings',
+    description: 'Clears every card override ("Reset all to profile settings") through service.resetCardSettings; the JSON body is ignored, so an empty object suffices. Answers the fresh { settings, overrides, restartPending } view; an apply still in flight answers 409 settings_busy.',
   },
   {
     method: 'GET',
@@ -139,6 +155,8 @@ export const ROUTE_ERROR_CODES = {
   vaultConflict: 'vault_conflict',
   vaultProtected: 'vault_protected',
   vaultNotFound: 'vault_not_found',
+  settingsInvalid: 'settings_invalid',
+  settingsBusy: 'settings_busy',
   auditInvalidView: 'audit_invalid_view',
   auditInvalidLimit: 'audit_invalid_limit',
   auditFailed: 'audit_failed',
@@ -247,6 +265,9 @@ export interface RouteService {
   listVaults(): VaultEntry[]
   addVault(request: VaultAddRequest): VaultEntry
   removeVault(path: string): Promise<void>
+  cardSettings(): CardSettingsView
+  updateCardSettings(patch: CardSettingsPatch): Promise<CardSettingsView>
+  resetCardSettings(): Promise<CardSettingsView>
   audit(request?: AuditRequest): Promise<AuditReport>
   dream(request?: DreamRequest): Promise<DreamEngineResult>
   search(request: SearchRequest): Promise<MemorySearchResult[]>
@@ -333,6 +354,45 @@ function vaultAnswer(error: unknown): never {
 function errorText(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+/**
+ * SettingsAnswer maps an updateCardSettings / resetCardSettings rejection
+ * onto the code the card branches on. Every service failure is a rejection
+ * (the whitelist, the config schema, the escalation, and the guard that runs
+ * one apply at a time); the guard's stable wording is the only substring
+ * coupling, and the message passes through verbatim because it names the
+ * rejected paths or the failed apply.
+ */
+function settingsAnswer(error: unknown): never {
+  const message = errorText(error)
+  if (message.includes('another apply is still in flight')) {
+    throw new RouteError(409, ROUTE_ERROR_CODES.settingsBusy, message)
+  }
+  throw new RouteError(400, ROUTE_ERROR_CODES.settingsInvalid, message)
+}
+
+/**
+ * CardSettingsPatchOf checks the POST body's wire shape only: `set` is a
+ * JSON object and `unset`, when present, is a string array. The whitelist
+ * and every value rule are the service's (its CARD_SETTINGS_KEYS refusal
+ * and schema issues answer 400 through {@link settingsAnswer}).
+ */
+function cardSettingsPatch(body: Record<string, unknown>): CardSettingsPatch {
+  const set = body['set']
+  if (typeof set !== 'object' || set === null || Array.isArray(set)) {
+    throw new RouteError(400, ROUTE_ERROR_CODES.settingsInvalid,
+      'set must be a JSON object of card-editable config leaves')
+  }
+  const unset = body['unset']
+  if (unset === undefined) {
+    return { set: set as CardEditablePartial }
+  }
+  if (!Array.isArray(unset) || unset.some((path) => typeof path !== 'string')) {
+    throw new RouteError(400, ROUTE_ERROR_CODES.settingsInvalid,
+      'unset must be an array of card-editable config dot-paths')
+  }
+  return { set: set as CardEditablePartial, unset: unset as string[] }
 }
 
 /** BoundedInt reads a query int within [1, ceiling]; default when absent; throws the named 400 code when unusable. */
@@ -799,6 +859,22 @@ function routeHandlers(deps: RouteDeps): Map<string, RouteRun> {
       return ok({ removed: true, path })
     } catch (error) {
       return vaultAnswer(error)
+    }
+  })
+  add('GET', '/obsidian-mem/settings', async () => ok(deps.service.cardSettings()))
+  add('POST', '/obsidian-mem/settings', async ({ body }) => {
+    const patch = cardSettingsPatch(body)
+    try {
+      return ok(await deps.service.updateCardSettings(patch))
+    } catch (error) {
+      return settingsAnswer(error)
+    }
+  })
+  add('DELETE', '/obsidian-mem/settings', async () => {
+    try {
+      return ok(await deps.service.resetCardSettings())
+    } catch (error) {
+      return settingsAnswer(error)
     }
   })
   add('GET', '/obsidian-mem/audit', async ({ params }) => {

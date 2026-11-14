@@ -1,9 +1,10 @@
 /**
  * Route contract tests: every route the client card fetches must exist in
- * the ui package's ROUTES table with the same method, and the only route
- * the host registers that the card does not fetch is GET /vaults (the row
- * list already rides the status poll). The error codes the card branches on
- * must exist in the host's ROUTE_ERROR_CODES vocabulary.
+ * the ui package's ROUTES table with the same method, and the routes the
+ * host registers that the card does not fetch are the listed exceptions (the
+ * /vaults row list plus the settings trio awaiting TASK-007). The error
+ * codes the card branches on must exist in the host's ROUTE_ERROR_CODES
+ * vocabulary.
  * @module dsh-plugin-obsidian-mem/client/tests/routes
  */
 
@@ -31,9 +32,17 @@ describe('card routes vs the ui ROUTES contract', () => {
     const unread = ROUTES
       .filter((declared) => !fetched.has(`${declared.method} ${declared.path}`))
       .map((declared) => `${declared.method} ${declared.path}`)
-    // One deliberate exception: GET /vaults answers other consumers, but the
-    // card's vault rows come from the /status poll it already runs.
-    expect(unread).toEqual(['GET /obsidian-mem/vaults'])
+    // Deliberate exceptions. GET /vaults answers other consumers, but the
+    // card's vault rows come from the /status poll it already runs. The
+    // settings trio is live on the host (TASK-006); the card's own fetches
+    // land with the Configuration section in TASK-007, which drops these
+    // three rows again.
+    expect(unread).toEqual([
+      'GET /obsidian-mem/vaults',
+      'GET /obsidian-mem/settings',
+      'POST /obsidian-mem/settings',
+      'DELETE /obsidian-mem/settings',
+    ])
   })
 })
 

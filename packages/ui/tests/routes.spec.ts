@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import plugin, { buildRoutes, ROUTES } from '../src/index.ts'
 import { GLOBAL_MEMORY_FILE_DEFAULT } from '../../core/lib/index.js'
+import type { CardSettingsView } from '../../service/lib/index.js'
 import { DreamBlockedError, DreamBusyError } from '../../service/lib/dream.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import {
@@ -64,6 +65,7 @@ describe('route mount', () => {
     expect(new Set(paths)).toEqual(new Set([
       '/obsidian-mem/status',
       '/obsidian-mem/vaults',
+      '/obsidian-mem/settings',
       '/obsidian-mem/audit',
       '/obsidian-mem/dream/plan',
       '/obsidian-mem/dream/run',
@@ -383,6 +385,160 @@ describe('/obsidian-mem/vaults', () => {
     const response = await send(context, 'DELETE', '/obsidian-mem/vaults', { path: '/nope' })
     expect(response.status).toBe(404)
     expect(envelopeOf(response.json).error.code).toBe('vault_not_found')
+  })
+})
+
+describe('/obsidian-mem/settings', () => {
+  /** Narrow cast for the settings view answers. */
+  type SettingsAnswer = Pick<CardSettingsView, 'settings' | 'overrides' | 'restartPending'>
+
+  it('GET answers the merged settings, the overrides, and restartPending', async () => {
+    const context = harness({
+      cardSettingsOverrides: { budgets: { searchTopK: 9 } },
+      cardSettingsRestartPending: ['milvus.dbPath'],
+    })
+    const response = await send(context, 'GET', '/obsidian-mem/settings')
+    expect(response.status).toBe(200)
+    const body = response.json as SettingsAnswer
+    expect(body.settings.budgets.searchTopK).toBe(9)
+    expect(body.settings.budgets.readSections).toBe(4)
+    expect(body.overrides).toEqual({ budgets: { searchTopK: 9 } })
+    expect(body.restartPending).toEqual(['milvus.dbPath'])
+  })
+
+  it('POST applies a patch, answers the fresh view, and is seen by the next GET', async () => {
+    const { context, calls } = harnessWithCalls()
+    const response = await send(context, 'POST', '/obsidian-mem/settings', {
+      set: { budgets: { searchTopK: 9 } },
+    })
+    expect(response.status).toBe(200)
+    expect((response.json as SettingsAnswer).settings.budgets.searchTopK).toBe(9)
+    expect(calls.updateCardSettings).toEqual([{ set: { budgets: { searchTopK: 9 } } }])
+    const after = await send(context, 'GET', '/obsidian-mem/settings')
+    expect((after.json as SettingsAnswer).overrides).toEqual({ budgets: { searchTopK: 9 } })
+  })
+
+  it('POST carries unset alongside set and only the named leaf falls back', async () => {
+    const { context, calls } = harnessWithCalls({
+      cardSettingsOverrides: { budgets: { searchTopK: 9 }, vectorDim: 256 },
+    })
+    const response = await send(context, 'POST', '/obsidian-mem/settings', {
+      set: { llm: { enabled: true } },
+      unset: ['budgets.searchTopK'],
+    })
+    expect(response.status).toBe(200)
+    const body = response.json as SettingsAnswer
+    expect(body.settings.budgets.searchTopK).toBe(6)
+    expect(body.settings.vectorDim).toBe(256)
+    expect(body.settings.llm.enabled).toBe(true)
+    expect(body.overrides).toEqual({ vectorDim: 256, llm: { enabled: true } })
+    expect(calls.updateCardSettings).toEqual([{
+      set: { llm: { enabled: true } },
+      unset: ['budgets.searchTopK'],
+    }])
+  })
+
+  it('POST checks the wire shape before the service', async () => {
+    const { context, calls } = harnessWithCalls()
+    const cases: Record<string, unknown>[] = [
+      {}, // no set
+      { set: 'vectorDim' }, // not an object
+      { set: null }, // not an object
+      { set: ['vectorDim'] }, // not an object
+      { set: {}, unset: 'vectorDim' }, // not an array
+      { set: {}, unset: [7] }, // not a string array
+    ]
+    for (const body of cases) {
+      const response = await send(context, 'POST', '/obsidian-mem/settings', body)
+      expect(response.status, JSON.stringify(body)).toBe(400)
+      expect(envelopeOf(response.json).error.code).toBe('settings_invalid')
+    }
+    expect(calls.updateCardSettings).toEqual([])
+  })
+
+  it('POST maps a service whitelist refusal to 400 settings_invalid verbatim', async () => {
+    const context = harness({
+      updateCardSettingsError: new Error(
+        'obsidian-mem card settings rejected: not card-editable: milvus.mode, budgets',
+      ),
+    })
+    const response = await send(context, 'POST', '/obsidian-mem/settings', {
+      set: { milvus: { mode: 'address' } },
+    })
+    expect(response.status).toBe(400)
+    const body = envelopeOf(response.json)
+    expect(body.error.code).toBe('settings_invalid')
+    expect(body.error.message).toContain('not card-editable: milvus.mode, budgets')
+  })
+
+  it('POST maps a schema refusal the same way (the service names the leaf)', async () => {
+    const context = harness({
+      updateCardSettingsError: new Error(
+        'obsidian-mem card settings rejected: vectorDim must be an integer >= 8, got 999',
+      ),
+    })
+    const response = await send(context, 'POST', '/obsidian-mem/settings', { set: { vectorDim: 999 } })
+    expect(response.status).toBe(400)
+    const body = envelopeOf(response.json)
+    expect(body.error.code).toBe('settings_invalid')
+    expect(body.error.message).toContain('vectorDim')
+  })
+
+  it('POST maps an apply still in flight to 409 settings_busy', async () => {
+    const context = harness({
+      updateCardSettingsError: new Error(
+        'obsidian-mem card settings rejected: another apply is still in flight; retry once it answers',
+      ),
+    })
+    const response = await send(context, 'POST', '/obsidian-mem/settings', { set: { vectorDim: 256 } })
+    expect(response.status).toBe(409)
+    expect(envelopeOf(response.json).error.code).toBe('settings_busy')
+  })
+
+  it('DELETE clears every override and answers the row-valued view', async () => {
+    const { context, calls } = harnessWithCalls({
+      cardSettingsOverrides: { budgets: { searchTopK: 9 }, vectorDim: 256 },
+    })
+    const response = await send(context, 'DELETE', '/obsidian-mem/settings', {})
+    expect(response.status).toBe(200)
+    const body = response.json as SettingsAnswer
+    expect(body.settings.budgets.searchTopK).toBe(6)
+    expect(body.settings.vectorDim).toBe(384)
+    expect(body.overrides).toEqual({})
+    expect(calls.resetCardSettings).toBe(1)
+  })
+
+  it('DELETE maps an apply still in flight to 409 settings_busy', async () => {
+    const context = harness({
+      resetCardSettingsError: new Error(
+        'obsidian-mem card settings rejected: another apply is still in flight; retry once it answers',
+      ),
+    })
+    const response = await send(context, 'DELETE', '/obsidian-mem/settings', {})
+    expect(response.status).toBe(409)
+    expect(envelopeOf(response.json).error.code).toBe('settings_busy')
+  })
+
+  it('POST shares the body discipline (415 on the media type, 400 on malformed JSON)', async () => {
+    const context = harness()
+    const wrongType = await sendRaw(context, 'POST', '/obsidian-mem/settings', {
+      chunks: [Buffer.from('set=1')],
+      contentType: 'text/plain',
+    })
+    expect(wrongType.status).toBe(415)
+    expect(envelopeOf(wrongType.json).error.code).toBe('unsupported_media_type')
+    const malformed = await sendRaw(context, 'POST', '/obsidian-mem/settings', {
+      chunks: [Buffer.from('{"set":')],
+    })
+    expect(malformed.status).toBe(400)
+    expect(envelopeOf(malformed.json).error.code).toBe('invalid_json_body')
+  })
+
+  it('answers 405 with the declared methods as allow', async () => {
+    const context = harness()
+    const response = await send(context, 'PUT', '/obsidian-mem/settings')
+    expect(response.status).toBe(405)
+    expect(response.headers['allow']).toBe('GET, POST, DELETE')
   })
 })
 

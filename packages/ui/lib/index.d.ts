@@ -1,10 +1,11 @@
 /**
  * The host web routes for the Obsidian Mem settings card: the JSON API under
  * `/obsidian-mem/*` the browser card (TASK-051) calls to manage the vault
- * registry, read index/audit/dream state, edit dreaming triggers, and probe
- * search. Response discipline has one home: every handler first asks the
- * composition's `connection` service for a rejection when one is reachable,
- * then dispatches on the request method against the path's declared method
+ * registry, read index/audit/dream state, edit dreaming triggers, edit the
+ * Configuration pane's whitelisted settings, and probe search. Response
+ * discipline has one home: every handler first asks the composition's
+ * `connection` service for a rejection when one is reachable, then
+ * dispatches on the request method against the path's declared method
  * map (405 with the declared methods as `allow`), then reads a non-GET body
  * as application/json under a 64 KiB ceiling (415 / 413 / 400), then answers
  * JSON with `cache-control: no-store`. Handlers never throw and never leak a
@@ -37,7 +38,7 @@
  * @module dsh-plugin-obsidian-mem/ui
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { ObsidianMemStatus, VaultAddRequest, VaultEntry } from '../../service/lib/index.js';
+import type { CardSettingsPatch, CardSettingsView, ObsidianMemStatus, VaultAddRequest, VaultEntry } from '../../service/lib/index.js';
 import type { AuditReport, AuditRequest } from '../../service/lib/audit.js';
 import type { DreamEngineResult, DreamRequest } from '../../service/lib/dream.js';
 import type { MemorySearchResult, SearchRequest } from '../../service/lib/search.js';
@@ -67,6 +68,8 @@ export declare const ROUTE_ERROR_CODES: {
     readonly vaultConflict: "vault_conflict";
     readonly vaultProtected: "vault_protected";
     readonly vaultNotFound: "vault_not_found";
+    readonly settingsInvalid: "settings_invalid";
+    readonly settingsBusy: "settings_busy";
     readonly auditInvalidView: "audit_invalid_view";
     readonly auditInvalidLimit: "audit_invalid_limit";
     readonly auditFailed: "audit_failed";
@@ -140,6 +143,9 @@ export interface RouteService {
     listVaults(): VaultEntry[];
     addVault(request: VaultAddRequest): VaultEntry;
     removeVault(path: string): Promise<void>;
+    cardSettings(): CardSettingsView;
+    updateCardSettings(patch: CardSettingsPatch): Promise<CardSettingsView>;
+    resetCardSettings(): Promise<CardSettingsView>;
     audit(request?: AuditRequest): Promise<AuditReport>;
     dream(request?: DreamRequest): Promise<DreamEngineResult>;
     search(request: SearchRequest): Promise<MemorySearchResult[]>;

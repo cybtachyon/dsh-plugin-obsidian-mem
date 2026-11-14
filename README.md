@@ -1,5 +1,7 @@
 # Obsidian Mem
 
+[中文 (Chinese)](https://github.com/cybtachyon/dsh-plugin-obsidian-md/docs/translations/README.zh.md)
+
 Shared agent memory for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness),
 built on plain Markdown vaults.
 

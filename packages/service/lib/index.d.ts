@@ -30,5 +30,7 @@ export { nodeServiceFs, OBSIDIAN_MEM_SEAM, ObsidianMemService, VAULTS_FILE_NAME,
 export type { CardSettingsPatch, CardSettingsView, GlobalMemoryIndex, GlobalMemorySource, IndexerLike, MilvusLauncherLike, ObsidianMemHooks, ObsidianMemReadResult, ObsidianMemStatus, ObsidianMemWriteRequest, ObsidianMemWriteResult, ReadRegistryEntry, ServiceFs, SessionRegistryView, VaultAddRequest, VaultEntry, VaultSource, } from './service.js';
 export { DEFAULT_READINESS_TIMEOUT_MS, DEFAULT_BUDGETS, CARD_SETTINGS_KEYS, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
 export type { CardEditableConfig, CardEditablePartial, DreamingSchedule, ObsidianMemConfig, ObsidianMemResolvedConfig, ResolvedObsidianMemConfig, } from './config.js';
+export { VaultGitManager } from './vault-git.js';
+export type { VaultGitCommitOutcome, VaultGitLog, VaultGitManagerOptions, } from './vault-git.js';
 export default ObsidianMemService;
 //# sourceMappingURL=index.d.ts.map

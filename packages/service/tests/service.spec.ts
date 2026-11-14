@@ -1,5 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 
@@ -18,7 +20,7 @@ import {
   parseNote,
   stateDir,
 } from '../../core/lib/index.js'
-import type { NoteMeta } from '../../core/lib/index.js'
+import type { GitRunner, NoteMeta } from '../../core/lib/index.js'
 import { fakeEmbedder } from '../src/embedder.ts'
 import type { Embedder } from '../src/embedder.ts'
 import {
@@ -304,6 +306,21 @@ interface HarnessOptions {
   services?: Record<string, unknown>
   /** Omit the embedder seam so getEmbedder builds real (lazy) embedders. */
   noEmbedderSeam?: boolean
+  /** Turn the git group on for the vault-git wiring describe (TASK-004). */
+  gitEnabled?: boolean
+  /** git process boundary for the vault-git wiring describe. */
+  gitRunner?: (root: string) => GitRunner
+}
+
+// The big harness runs with git OFF: provisioning-time adoption would
+// otherwise git-init the MemFs-only vault roots against the real disk
+// (MemoryGit writes its .gitignore through node:fs). Git wiring gets its
+// own describe with gitEnabled plus real temp-dir roots. An injected inert
+// all-clean runner is the hermeticity belt: no case in this file can ever
+// fork the git binary.
+const INERT_GIT_RUNNER = (root: string): GitRunner => {
+  void root
+  return async () => ({ code: 0, stdout: '', stderr: '' })
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -324,6 +341,12 @@ function harness(options: HarnessOptions = {}) {
   }
   for (const [path, content] of Object.entries(options.seedFiles ?? {})) {
     fs.seedFile(path, content)
+  }
+  const config: ObsidianMemConfig = {
+    ...options.config,
+    git: options.gitEnabled === true
+      ? { enabled: true }
+      : options.config?.git ?? { enabled: false },
   }
   const ctx = fakeCtx(options.services ?? {})
   const launcher = stubLauncher(options.milvusFail)
@@ -351,8 +374,9 @@ function harness(options: HarnessOptions = {}) {
       return indexer
     },
     prewarm,
+    gitRunner: options.gitRunner ?? INERT_GIT_RUNNER,
   }
-  const service = new ObsidianMemService(ctx.ctx, options.config ?? {}, hooks)
+  const service = new ObsidianMemService(ctx.ctx, config, hooks)
   return { fs, ctx, launcher, client, indexer, prewarm, order, service }
 }
 
@@ -1452,5 +1476,161 @@ describe('teardown', () => {
     await h.service.stop()
     expect(h.indexer.stop).not.toHaveBeenCalled()
     expect(h.launcher.dispose).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Vault git wiring (TASK-004). Real temp-dir vault roots (MemoryGit writes
+// its .gitignore through node:fs) behind a recording fake GitRunner; the
+// manager-level policy pins live in tests/vault-git.spec.ts.
+
+describe('vault git wiring', () => {
+  const gitDirs: string[] = []
+
+  /** GitTempDir: a real dir so the ignore-file write lands, cleaned after the test. */
+  function gitTempDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'obsidian-mem-svc-git-'))
+    gitDirs.push(dir)
+    return dir
+  }
+
+  afterEach(() => {
+    for (const dir of gitDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  /** RecordingGit answers like a healthy adopted repo and logs every call's root. */
+  function recordingGit(options: { adoptionFails?: boolean } = {}) {
+    const calls: Array<{ root: string; argv: string[] }> = []
+    const gitRunner = (root: string): GitRunner => async (argv) => {
+      calls.push({ root, argv })
+      if (options.adoptionFails === true) {
+        return { code: 128, stdout: '', stderr: 'fatal: fake adoption failure' }
+      }
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { calls, gitRunner }
+  }
+
+  /** Flush drains the floating addVault adoption promise (microtask-only chain). */
+  async function flush(): Promise<void> {
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+  }
+
+  it('construction and activation never touch git, even with git enabled', () => {
+    const vault = gitTempDir()
+    const git = recordingGit()
+    harness({
+      gitEnabled: true,
+      seedDirs: [vault],
+      config: { vaults: [{ path: vault }] },
+      gitRunner: git.gitRunner,
+    })
+    expect(git.calls).toEqual([])
+  })
+
+  it('provisioning adopts every shared vault and never the read-only one', async () => {
+    const sharedA = gitTempDir()
+    const sharedB = gitTempDir()
+    const readOnly = gitTempDir()
+    const git = recordingGit()
+    const h = harness({
+      gitEnabled: true,
+      seedDirs: [sharedA, sharedB, readOnly],
+      config: {
+        vaults: [
+          { path: sharedA },
+          { path: sharedB },
+          { path: readOnly, mode: 'read-only' },
+        ],
+      },
+      gitRunner: git.gitRunner,
+    })
+
+    await h.service.ensureMemoryAccess()
+
+    const roots = [...new Set(git.calls.map((call) => call.root))].sort()
+    expect(roots).toEqual([sharedA, sharedB].sort())
+    expect(git.calls.some((call) => call.root === sharedA && call.argv.join(' ').includes('--git-dir')))
+      .toBe(true)
+    expect(h.ctx.errors).toEqual([])
+  })
+
+  it('addVault adopts the new shared vault after the registry commit; a read-only add never lands in git', async () => {
+    const existing = gitTempDir()
+    const fresh = gitTempDir()
+    const readOnly = gitTempDir()
+    const git = recordingGit()
+    const h = harness({
+      gitEnabled: true,
+      seedDirs: [existing, readOnly],
+      config: { vaults: [{ path: existing }] },
+      gitRunner: git.gitRunner,
+    })
+
+    h.service.addVault({ path: fresh })
+    await flush()
+    expect(git.calls.some((call) => call.root === fresh && call.argv.join(' ').includes('--git-dir')))
+      .toBe(true)
+
+    git.calls.length = 0
+    h.service.addVault({ path: readOnly, mode: 'read-only' })
+    await flush()
+    expect(git.calls.filter((call) => call.root === readOnly)).toEqual([])
+  })
+
+  it('a failed adoption is logged and the service keeps serving', async () => {
+    const shared = gitTempDir()
+    const git = recordingGit({ adoptionFails: true })
+    const h = harness({
+      gitEnabled: true,
+      seedDirs: [shared],
+      config: { vaults: [{ path: shared }] },
+      gitRunner: git.gitRunner,
+    })
+
+    await h.service.ensureMemoryAccess()
+
+    expect(h.ctx.errors.join('\n')).toContain(`git adoption failed for vault ${shared}`)
+    expect(h.service.status().state).toBe('ready')
+    expect(h.service.listVaults().map((entry) => entry.path)).toContain(shared)
+    expect(h.service.vaultGit.adoptedRoots()).toEqual([])
+  })
+
+  it('a disabled boot config touches no git; the live flip adopts on the next call', async () => {
+    const existing = gitTempDir()
+    const fresh = gitTempDir()
+    const git = recordingGit()
+    const h = harness({
+      seedDirs: [existing],
+      config: { vaults: [{ path: existing }] },
+      gitRunner: git.gitRunner,
+    })
+
+    await h.service.ensureMemoryAccess()
+    expect(git.calls).toEqual([])
+
+    // The live group swap escalateCardSettings performs for a git.* patch.
+    h.service.config.git = { ...h.service.config.git, enabled: true }
+    h.service.addVault({ path: fresh })
+    await flush()
+
+    expect(git.calls.some((call) => call.root === fresh && call.argv.join(' ').includes('--git-dir')))
+      .toBe(true)
+    expect(git.calls.filter((call) => call.root === existing)).toEqual([])
+  })
+
+  it('removeVault forgets the vault git handle', async () => {
+    const vault = gitTempDir()
+    const git = recordingGit()
+    const h = harness({ gitEnabled: true, gitRunner: git.gitRunner })
+
+    h.service.addVault({ path: vault })
+    await flush()
+    expect(h.service.vaultGit.adoptedRoots()).toEqual([vault])
+    await expect(h.service.vaultGit.statusShared(vault)).resolves.not.toBeNull()
+
+    await h.service.removeVault(vault)
+    expect(h.service.vaultGit.adoptedRoots()).toEqual([])
+    await expect(h.service.vaultGit.statusShared(vault)).resolves.toBeNull()
   })
 })

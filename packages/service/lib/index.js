@@ -22,5 +22,6 @@
 import { ObsidianMemService } from './service.js';
 export { nodeServiceFs, OBSIDIAN_MEM_SEAM, ObsidianMemService, VAULTS_FILE_NAME, withObsidianMemHooks, } from './service.js';
 export { DEFAULT_READINESS_TIMEOUT_MS, DEFAULT_BUDGETS, CARD_SETTINGS_KEYS, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
+export { VaultGitManager } from './vault-git.js';
 export default ObsidianMemService;
 //# sourceMappingURL=index.js.map

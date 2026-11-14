@@ -25,7 +25,7 @@
 import { Service } from '@deepseek-ai/cordis';
 import type { Context, Plugin } from '@deepseek-ai/cordis';
 import type { MilvusClient } from '@zilliz/milvus2-sdk-node';
-import type { NoteMeta, VaultConfig, VaultMode } from '../../core/lib/index.js';
+import type { GitRunner, NoteMeta, VaultConfig, VaultMode } from '../../core/lib/index.js';
 import type { CardEditableConfig, CardEditablePartial, ObsidianMemConfig, ResolvedObsidianMemConfig } from './config.js';
 import type { AuditFs, AuditReport, AuditRequest } from './audit.js';
 import type { DreamEngineResult, DreamRequest, DreamRunSummary } from './dream.js';
@@ -34,6 +34,7 @@ import { IndexerManager } from './indexer.js';
 import type { IndexProgress } from './indexer.js';
 import type { MilvusLauncherOptions, MilvusStartResult } from './milvus/launcher.js';
 import type { ExactSectionRequest, MemorySearchResult, SearchRequest } from './search.js';
+import { VaultGitManager } from './vault-git.js';
 /** Seam name this service publishes; the patch rows inject this name. */
 export declare const OBSIDIAN_MEM_SEAM = "obsidianMem";
 /** File holding the card-managed vault additions under the state dir. */
@@ -240,6 +241,11 @@ export interface ObsidianMemHooks {
     prewarm?: (command: string, args: readonly string[]) => void;
     /** Read-only fs the audit engine walks; default nodeAuditFs. */
     auditFs?: AuditFs;
+    /**
+     * git process boundary factory, one runner per vault root (the
+     * VaultGitManager seam); default forks the real `git` binary at the root.
+     */
+    gitRunner?: (root: string) => GitRunner;
 }
 /**
  * ObsidianMemService is `ctx.obsidianMem`. Construction resolves config
@@ -254,6 +260,14 @@ export declare class ObsidianMemService extends Service {
     static Config: NonNullable<Plugin.Base<ResolvedObsidianMemConfig>['Config']>;
     /** The resolved config: schema defaults plus home-expanded paths. */
     readonly config: ResolvedObsidianMemConfig;
+    /**
+     * The git seam over the SHARED vaults: adoption at provisioning and
+     * addVault, per-vault serialized commits, and the read accessors the
+     * audit reads. Constructing it starts nothing; every git move gates on
+     * the LIVE config.git.enabled at call time, so a card flip applies to
+     * the next call without any re-form step.
+     */
+    readonly vaultGit: VaultGitManager;
     private readonly rowConfig;
     private readonly fs;
     private readonly homedir;

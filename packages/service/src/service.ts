@@ -67,6 +67,7 @@ import {
 } from '../../core/lib/index.js'
 import type {
   FsProbe,
+  GitRunner,
   NoteMeta,
   VaultConfig,
   VaultFs,
@@ -118,6 +119,7 @@ import type {
   SearchDependencies,
   SearchRequest,
 } from './search.js'
+import { VaultGitManager } from './vault-git.js'
 
 /** Seam name this service publishes; the patch rows inject this name. */
 export const OBSIDIAN_MEM_SEAM = 'obsidianMem'
@@ -374,6 +376,11 @@ export interface ObsidianMemHooks {
   prewarm?: (command: string, args: readonly string[]) => void
   /** Read-only fs the audit engine walks; default nodeAuditFs. */
   auditFs?: AuditFs
+  /**
+   * git process boundary factory, one runner per vault root (the
+   * VaultGitManager seam); default forks the real `git` binary at the root.
+   */
+  gitRunner?: (root: string) => GitRunner
 }
 
 /** The persisted card-vaults file shape. */
@@ -423,6 +430,15 @@ export class ObsidianMemService extends Service {
 
   /** The resolved config: schema defaults plus home-expanded paths. */
   readonly config: ResolvedObsidianMemConfig
+
+  /**
+   * The git seam over the SHARED vaults: adoption at provisioning and
+   * addVault, per-vault serialized commits, and the read accessors the
+   * audit reads. Constructing it starts nothing; every git move gates on
+   * the LIVE config.git.enabled at call time, so a card flip applies to
+   * the next call without any re-form step.
+   */
+  readonly vaultGit: VaultGitManager
 
   // The profile-row config resolved WITHOUT card overrides. The persisted
   // card view is row + settings.json computed from this base (an `unset`
@@ -506,6 +522,19 @@ export class ObsidianMemService extends Service {
     this.indexerFactory = hooks.indexerFactory ?? null
     this.prewarm = hooks.prewarm ?? defaultUvxPrewarm
     this.auditFs = hooks.auditFs ?? nodeAuditFs
+    this.vaultGit = new VaultGitManager({
+      // Live gate: escalateCardSettings swaps this.config.git in place, so
+      // the manager re-reads the group on every call.
+      gitEnabled: () => this.config.git.enabled,
+      // The manager's single SHARED-only guard: it is handed the shared
+      // registry enumeration, so a read-only vault can never pass its gate.
+      sharedVaults: () => this.listVaults()
+        .filter((entry) => entry.mode === VAULT_MODE_SHARED)
+        .map((entry) => entry.path),
+      exists: (path) => this.fs.exists(path),
+      log: this.log,
+      ...(hooks.gitRunner === undefined ? {} : { gitRunner: hooks.gitRunner }),
+    })
     this.embedderStore = hooks.embedder ?? null
     this.embedderSeamProvided = hooks.embedder !== undefined
   }
@@ -630,6 +659,11 @@ export class ObsidianMemService extends Service {
     this.commitRegistryMutation((vaults) => {
       vaults.push(entry)
     })
+    // Adoption rides the same registry the mutation just committed. The
+    // manager's own gate makes a read-only add or a disabled git config a
+    // no-op, and it owns every failure; addVault stays sync and the
+    // adoption promise never rejects, so nothing here awaits or throws.
+    void this.vaultGit.ensureVault(canonical)
     return { ...entry }
   }
 
@@ -677,6 +711,9 @@ export class ObsidianMemService extends Service {
     this.commitRegistryMutation((vaults) => {
       vaults.splice(index, 1)
     })
+    // Drop the git handle and lane too: the registry no longer owns this
+    // path, so the manager must not adopt or commit it any more.
+    this.vaultGit.forget(target)
     for (const readPath of [...this.readRegistry.keys()]) {
       if (readPath.startsWith(`${target}/`) || readPath.startsWith(`${target}\\`)) {
         this.readRegistry.delete(readPath)
@@ -1222,6 +1259,15 @@ export class ObsidianMemService extends Service {
     // 2. dbDir + state dir for vaults.json and the lite data dir.
     this.fs.mkdirp(this.config.milvus.dbPath)
     this.fs.mkdirp(this.stateDirPath())
+
+    // 2b. Git adoption for the shared vaults, before any Milvus work: the
+    // registry is final, so the pass covers the provisioned default vault
+    // too, and a degraded Milvus start still leaves the vaults versioned.
+    // Warn-don't-die: the manager owns every adoption failure; this belt
+    // only documents the contract that a git problem never fails the pass.
+    await this.vaultGit.ensureSharedVaults().catch((error: unknown) => {
+      this.log.error(`vault git adoption pass failed: ${describeError(error)}`)
+    })
 
     // 3. Best-effort background uvx warm (G13 cold starts run into minutes).
     if (this.config.milvus.mode === 'spawn') {

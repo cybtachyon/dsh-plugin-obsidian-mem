@@ -75,4 +75,11 @@ export type {
   ResolvedObsidianMemConfig,
 } from './config.js'
 
+export { VaultGitManager } from './vault-git.js'
+export type {
+  VaultGitCommitOutcome,
+  VaultGitLog,
+  VaultGitManagerOptions,
+} from './vault-git.js'
+
 export default ObsidianMemService

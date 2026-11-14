@@ -6,72 +6,91 @@ built on plain Markdown vaults.
 Obsidian Mem turns your Obsidian-style vaults into a frictionless,
 human-editable working wiki that every agent session can read from and write to.
 
-Recall is vector search over Milvus-Lite;
-Open, edit, and sync your notes with a Markdown editor like Obsidian + git,
+OM adds Retrieval-Augmented Generation (RAG) Recall with vector search powered
+by a Milvus-Lite DB.
+
+Open, edit, and sync your notes with a Markdown setup like Obsidian + Git,
 then watch your agents learn from shared experiences.
 
-## What you get
+## Install
 
-- **Automatic recall.** Lifecycle hooks inject relevant notes at turn start,
-  when the agent reads a file, and when the Think stream hits a vault keyword.
-  A turn-end reminder tells the agent what is worth saving.
-- **Five agent tools**
-  - `memory_read`: open a memory note from a vault by path.
-  - `memory_search`: hybrid vector + keyword recall across your vaults.
-  - `memory_write`: save a durable memory note (shared vaults only). A new
-    note's path is `<vault>/<slug>.md` (the slug comes from the title); pass
-    a subdirectory path to file it deeper. The bare vault root as a directory
-    target is refused.
-  - `memory_audit`: report vault size, index state, and over-budget warnings.
-  - `memory_dream`: run the split-compaction pass that merges and prunes notes.
-- **Works out of the box.** With no vault configured, the first memory access
-  (first tool call or lifecycle hook that touches memory) creates a default
-  shared vault at `$HOME/.dsh/obsidian-mem/`, and the agent is told it is
-  working in the default vault and given the full path. Installing the plugin
-  never touches your disk: activation is side-effect free until a run actually
-  uses memory, so you can set up your own vaults before the first agent run.
-- **Vault sharing modes.** Adopt a vault as **Adopt and Share** (agents read
-  and write) or **Read-only** (agents query but never write).
-- **Settings card.** The "Obsidian Mem" card in the Web GUI manages the vault
-  registry (paths, modes, the per-vault "Global memory relative file path",
-  re-index), the vector/index knobs, and the Dreaming section, where you add
-  DSH schedule/timer triggers that wake agents to run `memory_dream`.
-- **Global memory file.** Each vault names one global memory file (the
-  add-vault form's "Global memory relative file path" field, relative to the
-  vault root; blank defaults to `GLOBAL.md`). Each shared vault's file is
-  injected, pinned, at session start within the global memory budget, and the
-  dreaming pass never proposes it for compaction or merging. Otherwise it is
-  an ordinary editable, indexable note: keep your always-relevant facts there
-  and edit it like any other note.
+Command line:
+```bash
+# Latest NPM package.
+dsh plugin --profile web add dsh-plugin-obsidian-mem
+```
+```bash
+# From source.
+dsh plugin --profile web add https://github.com/cybtachyon/dsh-plugin-obsidian-mem
+```
+
+When installing from a local checkout, run pnpm build first: it type-checks the workspace (tsc -b) and then produces the dsh/client.js browser card artifact with esbuild (node scripts/build-client.mjs).
+
+Web UI: click Plugins → Add Plugin → paste dsh-plugin-obsidian-mem.
+
+Or add from the DSH Plugin Marketplace.
+
+## Features
+
+ - **Automatic RAG recall.** Lifecycle hooks inject relevant notes at turn start.
+   When the agent encounters highly-relevant files or thinking keywords, that
+   context (capped to a reasonable amount) is also injected.
+   At turn-end, a reminder tells the agent what is worth saving.
+ - **Five agent tools.**
+   - `memory_read`: open a memory note from a vault by path.
+   - `memory_search`: hybrid vector + keyword recall across your vaults.
+   - `memory_write`: save a memory note (shared vaults only).
+   - `memory_audit`: report vault size, index state, and over-budget warnings.
+   - `memory_dream`: run the split-compaction pass that merges and prunes notes.
+ - **Works out of the box.** Whether you have dozens of vaults, or just one or
+   two AGENTS.md bullets that should be shared, you can configure your own shared
+   vaults. Or just use a default shared vault at `$HOME/.dsh/obsidian-mem/`!
+ - **Vault permissions.** Safeguard your Markdown as a vault as **Read-only**
+   (agents query but never write) or work together with **Adopt and Share**
+   (agents read and write). 
+ - **Configurable settings.** The "Obsidian Mem" card in the Web GUI manages
+   your list of vaults and file preferences. Adjust search and set up automatic
+   Dreaming on a schedule. Of course, you can also ask your agent to set all of
+   these up for you in DSH Creator mode too!
+ - **Global memory file.** Vaults support a configurable, editable global memory
+   file. They're added at session start within the global memory budget.
+
+## Why another agentic memory project?
+
+Out of the many, many out there (and I looked at as many as I could),
+none of them:
+ - let my add as many Markdown / Obsidian Vaults as I wanted
+ - whenever I wanted
+ - plus greatly customize the organization
+ - AND have vector search + maintenance.
+
+I wanted to share project notes with my agents and have maintained results
+be the cumulative effort of human and automated knowledge organization.
 
 ## Storage layout
 
-The registered vault root IS the indexed note root: every `*.md` file under
-the root, at any depth, is a memory note. Dot directories and dot files are
+All `*.md` files are indexed, except: dot directories and dot files are
 never indexed, and these vault-root paths are reserved for the plugin:
 
-| Path (inside a vault)                | What lives there                                            |
+| Vault Path                | Description                                            |
 | ------------------------------------ | ----------------------------------------------------------- |
-| `<vault>/<slug>_history.md`          | Note history retired by dreaming; reserved suffix, never indexed |
-| `<vault>/.INTENTS.md`                | The intents file; never indexed                             |
-| `<vault>/.obsidian-mem/metadata/`    | The vault's sidecars: the indexer state file and the `DREAMS.md` dream diary; never indexed (dot dir) |
+| `<vault>/.<slug>_history.md`      | Note history retired by dreaming; reserved suffix. |
+| `<vault>/.INTENTS.md`                | Agent intents file describing phrases that lead to memories.                             |
+| `<vault>/.obsidian-mem/metadata/`    | Indexer state file and the `DREAMS.md` dream diary. |
 
-| Path (plugin state)                  | What lives there                                            |
+| Plugin Path                  | Description                                            |
 | ------------------------------------ | ----------------------------------------------------------- |
-| `$HOME/.dsh/obsidian-mem/`           | The default shared vault (created on first memory access)   |
-| `$HOME/.dsh/obsidian-mem-db/`        | The Milvus-Lite database (rebuildable; safe to delete)      |
-| `$HOME/.dsh/obsidian-mem-db/models/` | The transformers.js ONNX model cache                        |
+| `$HOME/.dsh/obsidian-mem/`           | The default shared vault (created if none are already added).   |
+| `$HOME/.dsh/obsidian-mem-db/`        | The memory search Milvus-Lite database (rebuildable on-demand; safe to delete).      |
+| `$HOME/.dsh/obsidian-mem-db/models/` | The memory search ONNX model cache.                        |
 
-Deleting `obsidian-mem-db` is always safe: the index is derived state and is
-rebuilt from your Markdown notes on demand.
+## Configuration
 
-## Configuration knobs
-
-The settings card (or the plugin's profile config) exposes:
+The settings card is available in the DSH plugin configuration:
 
 | Knob                    | Default                              | Notes                                                            |
 | ----------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `vaults[]`              | (none; default vault is lazy-created) | Each vault: `path`, `mode` (`shared` \| `readonly`), `globalFile` (vault-root relative; blank = `GLOBAL.md`) |
+| `vaults[]`              | `$HOME/.dsh/obsidian-mem/` | Each vault: `path`, `mode` (`shared` \| `readonly`), `globalFile` (vault-root relative; blank = `GLOBAL.md`) |
 | `vectorDim`             | `384`                                | Full e5-small width; `128`..`320` are lossy; change = re-index   |
 | `embeddingModel`        | `Xenova/multilingual-e5-small`       | ONNX q8, `passage:` / `query:` prefixes                        |
 | `modelCacheDir`         | `$HOME/.dsh/obsidian-mem-db/models`  | transformers.js `env.cacheDir`                                   |
@@ -79,28 +98,24 @@ The settings card (or the plugin's profile config) exposes:
 | `keywordLlm`            | off                                  | Optional OpenAI-compatible endpoint that augments heuristic wake-keyword extraction |
 | `recallBudget`          | per plan                             | Caps injected recall context per turn                            |
 
-## Milvus-Lite bootstrap
+## Technical Background
 
-The plugin manages its own vector database: on first memory use it ensures a
-`uv`/`uvx` toolchain (auto-installing `uv` when absent), spawns a local
-`milvus-lite` server bound to a localhost port with data under
-`$HOME/.dsh/obsidian-mem-db/`, and connects through
-`@zilliz/milvus2-sdk-node`. There is no user-facing Python or Milvus install
-step, and no external Milvus to operate.
+The plugin manages its own vector database on-demand:
+1. Ensures a `uv`/`uvx` toolchain (auto-installing `uv` when absent)
+2. Spawns a local `milvus-lite` server bound to a localhost port with data under
+   `$HOME/.dsh/obsidian-mem-db/`
 
-The `obsidian_mem` collection uses the BM25 Function path: `chunk_text` is
-stored clean (no embed-time prefixes) with `enable_analyzer` on, a BM25
-Function generates a `SparseFloatVector`, and dense (HNSW/COSINE) and sparse
-(SPARSE_INVERTED_INDEX/BM25) indexes serve hybrid search. The client-side
-keyword-scoring fallback is not needed because milvus-lite 3.2.2 supports the
-analyzer and BM25 Function (verified, `docs/research/milvus-transformers-findings.md`
-§3).
+There is no user-facing Python, Milvus install step, or external Milvus.
+
+RAG is a Hybrid search with both dense (HNSW/COSINE) search and sparse BM25
+search powered by a local ONNX model. `chunk_text` is stored without embed-time
+prefixes and uses `enable_analyzer`.
 
 ## Model download and offline use
 
-On first embedding the plugin downloads `Xenova/multilingual-e5-small` (ONNX
-q8, roughly 135 MB) into `$HOME/.dsh/obsidian-mem-db/models`. For an offline
-host, pre-seed the cache on a connected machine:
+The plugin downloads `Xenova/multilingual-e5-small` (ONNX q8, roughly 135 MB)
+into `$HOME/.dsh/obsidian-mem-db/models`.
+For an offline host, pre-seed the cache on a connected machine:
 
 ```
 node scripts/prefetch-model.mjs
@@ -111,20 +126,33 @@ node scripts/prefetch-model.mjs
 Build, test, and lint with pnpm; see [AGENTS.md](AGENTS.md) for the
 architecture and the verification commands.
 
-`pnpm test` is fully offline: a second integration tier
+ - `pnpm test` is fully offline: a second integration tier
 (`packages/service/tests/integration/*.live.test.ts`) is collected only with
-`RUN_LIVE=1 pnpm test`. The live tier spawns a real uvx-managed milvus-lite
-(first run downloads the pinned wheel set and can take several minutes;
-afterwards the cache is warm), loads the real `Xenova/multilingual-e5-small`
-model from the local cache, and drives the full provisioning → indexing →
-hybrid search → write-through → purge pipeline. Per-test timeouts are a
-generous 180 s to absorb cold caches. Everything it writes lands in
-temporary directories; only the model cache is reused. Run it with:
+`RUN_LIVE=1 pnpm test`.
+ - The live tier spawns a real uvx-managed milvus-lite (first run downloads it
+   and can take several minutes).
+ - Live loads the real `Xenova/multilingual-e5-small` model from the local
+   cache and drives the full provisioning → indexing → hybrid search →
+   write-through → purge pipeline.
+ - Per-test timeouts are a generous 180 s to absorb cold caches.
+ - Everything it writes lands in temporary directories; only the model cache is
+   reused.
+ 
+Run it with:
 
 ```
 RUN_LIVE=1 pnpm test
 ```
 
-## License
+## Reference and Prior-Art
 
-MIT. See [LICENSE](LICENSE).
+ - The excellent [Tinqiao Engramory](https://github.com/tinqiao-oss/engramory/)
+   Inspired a majority of the Markdown system design and memory management.
+ - [Zilliz Memsearch](https://github.com/zilliztech/memsearch)
+   Milvus search, reranking.
+ - [bufan528 Memory Vault](https://github.com/bufan528/dsh-longterm-memory)
+   Recall budgeting, metadata, extraction design.
+ - The massive amount of DSH Markdown, RAG, and memory plugins, most of which
+   were very interesting but did not provide useful work materia. Still, cool
+   to see the community innovating and trying different things, and I learned
+   a lot about what I did not like or want to use.

@@ -22,6 +22,10 @@ contract tests green.
 - Tests:
   - `packages/client/tests/routes.spec.ts` keeps passing (it diffs
     ALL_CARD_ROUTES against ui `ROUTES`: three new paths must match).
+    TASK-006 mounted the routes first and listed the three settings entries
+    as deliberate "unread" exceptions in that spec's second test; adding the
+    three `ALL_CARD_ROUTES` entries above retires them, so that expectation
+    goes back to `['GET /obsidian-mem/vaults']` alone.
   - `packages/client/tests/api.spec.ts`: fetch/update/reset hit the right
     method+path+body through a stubbed fetch; error envelope → ApiError with
     the code.

@@ -39,6 +39,13 @@ prepared prompt, and the launch-text git roots (the prepared
    the new reality (shared vaults are git repos when enabled; churn
    stressors come from git history at the tunables' window).
 
+Known-red assignment (from TASK-001 handoff): `packages/service/tests/
+dream.spec.ts` "seeds the default prompt file once and renders tunables
+from config" is RED since the prepared-prompt baseline commit because
+`{{CHURN_*}}` had no renderer; this task's change turns it GREEN in the
+same commit (update only the spec's expectations if they still under-pin,
+never the prompt constant).
+
 Tests (`dream.spec.ts` family with the existing dream-testkit): rendered
 prompt carries `50%` and `8` in the Step 4 sentence and no `{{` left;
 ok-path calls `commitMemory` exactly once after the stamp; failing

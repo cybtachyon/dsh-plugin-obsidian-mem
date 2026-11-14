@@ -41,6 +41,13 @@ Changes:
 6. `AUDIT_CHECKPOINT_PROMPT_SECTION_TEXT` itself stays byte-identical
    (it is the user's prepared prompt; a spec pins it verbatim).
 
+Known-red assignment (from TASK-001 handoff): `packages/tools/tests/
+prompt.spec.ts` "answers the section text verbatim" is RED since the
+prepared-prompt baseline commit; refresh that spec's snapshot to the
+prepared `MEMORY_PROMPT_SECTION_TEXT` (and the section-shape pins it
+drives) in this task's commit. The prompt constant itself stays byte-
+identical.
+
 Tests (`packages/tools/tests/audit.spec.ts`): checkpoint render carries
 the vault-interpolated text and the note rows identical to a full-view
 render; no `{{FIRST_SHARED_VAULT}}` survives; churn render on/off; git

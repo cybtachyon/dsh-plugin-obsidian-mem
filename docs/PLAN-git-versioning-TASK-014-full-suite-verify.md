@@ -15,7 +15,12 @@ Run, in order, fixing anything red (each fix its own commit with src+lib):
    budget-only variant was chosen); no surviving `{{` inside rendered
    prompt fixtures; `obsidian-mem: memory_write` and
    `obsidian-mem: dream` are the only new commit-message formats.
-7. Record the measured coverage totals in the final report.
+7. TASK-010 carry-in: confirm no stale lib artifacts of deleted sources
+   (events/lib/budget.* were git rm'd in 98e8e9b); if `scripts/
+   verify-emit.mjs` lacks a stale-artifact guard, add one (fail when a
+   `packages/*/lib` file has no corresponding `src` sibling) with its own
+   commit, or record the decision not to.
+8. Record the measured coverage totals in the final report.
 
 Definition of Done: every command above green on the final HEAD; report
 written for the parent agent.

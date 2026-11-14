@@ -1,17 +1,22 @@
+import { homedir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 
-import { TOOL_MEMORY_AUDIT } from '../../core/lib/index.js'
+import { defaultVaultPath, TOOL_MEMORY_AUDIT } from '../../core/lib/index.js'
 import type { AuditReport } from '../../service/lib/audit.js'
-import { AUDIT_TIMEOUT_MS, createAuditTool, executeAudit, renderAudit } from '../src/audit.ts'
-import { createFakeService, matchesOutput } from './testkit.ts'
+import { AUDIT_VIEWS } from '../../service/lib/audit.js'
+import type { VaultEntry } from '../../service/lib/index.js'
+import { AUDIT_PARAMETERS, AUDIT_TIMEOUT_MS, createAuditTool, executeAudit, firstSharedVaultPath, renderAudit } from '../src/audit.ts'
+import { createFakeService, matchesOutput, renderTool, vaultEntries } from './testkit.ts'
 
 /**
  * memory_audit tool tests (TASK-034): the {view, limit} request forwards,
  * arguments are parsed and range-checked by the tool (raw definitions get
  * no host-side validation), the mapped value validates against the
  * registered output schema the way the host enforces it, service faults
- * come back as the `failed` kind instead of throws, and render keeps
- * ISSUE before INFO with the over-budget compaction list.
+ * come back as the `failed` kind instead of throws, render keeps ISSUE
+ * before INFO with the over-budget compaction list, and (TASK-009) the
+ * churn and git rollups map and render, with the checkpoint view appending
+ * the interpolated completion-checkpoint instructions.
  */
 
 function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
@@ -60,11 +65,16 @@ function reportFixture(over: Partial<AuditReport> = {}): AuditReport {
   }
 }
 
-function fixture(report: AuditReport | null = reportFixture()) {
-  const service = createFakeService({ vaults: [], ...(report === null ? {} : { auditReport: report }) })
+function fixture(report: AuditReport | null = reportFixture(), vaults: VaultEntry[] = []) {
+  const service = createFakeService({ vaults, ...(report === null ? {} : { auditReport: report }) })
   const definition = createAuditTool(service)
   return { service, definition }
 }
+
+// One dirty-adopted vault and one failed read: the two shapes the git
+// rollup renders (the fixture default keeps git empty).
+const gitAdopted = { vault: '/v', initialized: true, clean: false, headHash: '0123456789abcdef0123456789abcdef01234567', error: null }
+const gitFailed = { vault: '/w', initialized: false, clean: null, headHash: null, error: 'fatal: not a git repository' }
 
 describe('memory_audit execute', () => {
   it('forwards the optional view and limit to the service audit', async () => {
@@ -73,6 +83,8 @@ describe('memory_audit execute', () => {
     expect(service.auditRequests).toEqual([{}])
     await executeAudit(service, { view: 'topStale', limit: 5 })
     expect(service.auditRequests[1]).toEqual({ view: 'topStale', limit: 5 })
+    await executeAudit(service, { view: 'checkpoint' })
+    expect(service.auditRequests[2]).toEqual({ view: 'checkpoint' })
     expect(service.ensureCalls).toBe(0)
   })
 
@@ -97,6 +109,25 @@ describe('memory_audit execute', () => {
     expect(value.rows[1]).toMatchObject({ read_count: 0, last_read_at: '', indexed: false })
     expect(value.budget.used_tokens).toBe(2000)
     expect(value.rows_total).toBe(2)
+  })
+
+  it('maps churn and the git rollup onto a value that validates against output.schema', async () => {
+    const base = reportFixture()
+    const { service, definition } = fixture({
+      ...base,
+      stats: { ...base.stats, git: [gitAdopted, gitFailed] },
+      rows: base.rows.map((row, index) => ({ ...row, churn: index === 0 ? 0.5 : 0 })),
+    })
+    const value = await executeAudit(service, {})
+    expect(matchesOutput(definition, value)).toEqual([])
+    if (value.kind !== 'audit') {
+      throw new Error('expected the audit kind')
+    }
+    expect(value.rows[0]?.churn).toBe(0.5)
+    expect(value.stats.git).toEqual([
+      { vault: '/v', initialized: true, clean: false, head_hash: '0123456789abcdef0123456789abcdef01234567', error: null },
+      { vault: '/w', initialized: false, clean: null, head_hash: null, error: 'fatal: not a git repository' },
+    ])
   })
 
   it('keeps a cold index honest as nulls, not zeros', async () => {
@@ -146,6 +177,44 @@ describe('memory_audit render', () => {
     expect(text.indexOf('/v/unread.md')).toBeLessThan(text.indexOf('/v/a.md'))
     expect(text).toContain('never read')
     expect(text).toContain('not indexed')
+    // Token discipline: the untouched-note, gitless store renders neither.
+    expect(text).not.toContain('churn')
+    expect(text).not.toContain('Git (')
+  })
+
+  it('renders churn on churned rows and one git line per rollup entry', async () => {
+    const base = reportFixture()
+    const { service } = fixture({
+      ...base,
+      stats: { ...base.stats, git: [gitAdopted, gitFailed] },
+      rows: base.rows.map((row, index) => ({ ...row, churn: index === 0 ? 0.25 : 1 })),
+    })
+    const text = renderAudit(await executeAudit(service, {}))
+    expect(text).toContain('- /v/a.md (2.0 KiB, read 2026-11-01 (3x), churn 25%)')
+    expect(text).toContain('- /v/unread.md (512 B, never read, not indexed, churn 100%)')
+    expect(text).toContain('Git (/v): dirty [head 0123456]')
+    expect(text).toContain('Git (/w): unavailable')
+  })
+
+  it('appends the vault-interpolated completion checkpoint for the checkpoint view', async () => {
+    const vaults = vaultEntries({ path: '/shared-v', mode: 'shared' })
+    const { service, definition } = fixture(reportFixture({ view: 'checkpoint' }), vaults)
+    const text = renderTool(definition, await executeAudit(service, { view: 'checkpoint' }))
+    expect(text).toContain('# Completion Checkpoint')
+    expect(text).toContain('/shared-v/.INTENTS.md with those intent(s)')
+    expect(text).not.toContain('{{FIRST_SHARED_VAULT}}')
+    // The note rows and every section above them match a full-view render.
+    const { service: fullService } = fixture(reportFixture())
+    const fullText = renderAudit(await executeAudit(fullService, {}), vaults)
+      .replace('Notes (full,', 'Notes (checkpoint,')
+    expect(text.startsWith(fullText)).toBe(true)
+  })
+
+  it('falls back to the default vault path in the checkpoint view with no shared vault', async () => {
+    const { service, definition } = fixture(reportFixture({ view: 'checkpoint' }))
+    const text = renderTool(definition, await executeAudit(service, { view: 'checkpoint' }))
+    expect(text).toContain(`${defaultVaultPath(homedir())}/.INTENTS.md`)
+    expect(text).not.toContain('{{FIRST_SHARED_VAULT}}')
   })
 
   it('renders the unmeasured budget as the tracker being inactive', async () => {
@@ -200,5 +269,21 @@ describe('memory_audit definition', () => {
     expect(definition.timeoutMs).toBe(30_000)
     const card = definition.presentCall?.({ view: 'oldestUnread' })
     expect(card).toMatchObject({ card: 'generic', kind: 'read', title: `${TOOL_MEMORY_AUDIT} oldestUnread` })
+  })
+
+  it('flows the view enum from AUDIT_VIEWS, checkpoint included', () => {
+    expect(AUDIT_VIEWS).toContain('checkpoint')
+    expect(AUDIT_PARAMETERS.properties?.view?.enum).toEqual([...AUDIT_VIEWS])
+  })
+})
+
+describe('firstSharedVaultPath', () => {
+  it('picks the first shared vault and falls back to the default vault path', () => {
+    expect(firstSharedVaultPath([
+      { path: '/ro', mode: 'read-only' },
+      { path: '/s1', mode: 'shared' },
+      { path: '/s2', mode: 'shared' },
+    ])).toBe('/s1')
+    expect(firstSharedVaultPath([], '/home/u')).toBe(defaultVaultPath('/home/u'))
   })
 })

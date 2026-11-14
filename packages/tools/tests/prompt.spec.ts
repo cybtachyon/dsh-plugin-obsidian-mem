@@ -41,13 +41,18 @@ describe('registerMemoryPromptSection', () => {
       throw new Error('expected one registered function-text section')
     }
     const text = registered.text(undefined as never)
+    // Snapshot of the prepared MEMORY_PROMPT_SECTION_TEXT bytes (the
+    // user's prompt is the source of truth): refresh the snapshot with
+    // `-u` when the section changes; never edit the constant.
     expect(text).toMatchSnapshot()
     expect(text).toContain('memory_search')
-    expect(text).toContain('completion checkpoint')
-    expect(text).toContain('Never store secret values')
-    // Say-once: facts that live in tool descriptions stay out here.
+    expect(text).toContain('"checkpoint" as the view')
+    expect(text).toContain('Vaults are shared across agents')
+    // Say-once: facts that live in tool descriptions or the audit
+    // checkpoint view's instructions stay out here.
     expect(text).not.toContain('memory_dream run')
     expect(text).not.toContain('Automated dreaming can be scheduled')
+    expect(text).not.toContain('Never store secret values')
     expect(text).not.toContain('{{')
     expect(text.split('\n').length).toBeLessThan(180)
   })

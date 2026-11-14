@@ -2,20 +2,23 @@
  * `memory_audit`: the model-facing face of the service-side read-only
  * doctor pass (TASK-034). It forwards the bounded {view, limit} request,
  * maps the structured {@link AuditReport} into the closed oneOf value, and
- * renders issues (ISSUE before INFO), rollups, note rows, and the global
- * memory budget section. Audit never provisions and never writes; the
- * service engine already quotes and truncates every echoed store path, so
- * the tool adds no further fencing.
+ * renders issues (ISSUE before INFO), rollups, note rows with churn, the
+ * per-vault git rollups, and the global memory budget section; the
+ * `checkpoint` view appends the completion-checkpoint instructions with
+ * the first shared vault filled in. Audit never provisions and never
+ * writes: the service engine already quotes and truncates every echoed
+ * store path, so the tool adds no further fencing.
  * @module dsh-plugin-obsidian-mem/tools/audit
  */
-import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, MANUAL_COMPACTION_APPROVAL, MANUAL_COMPACTION_RECIPE, TOOL_MEMORY_AUDIT, } from '../../core/lib/index.js';
+import { homedir } from 'node:os';
+import { AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT, defaultVaultPath, MANUAL_COMPACTION_APPROVAL, MANUAL_COMPACTION_RECIPE, TOOL_MEMORY_AUDIT, VAULT_MODE_SHARED, } from '../../core/lib/index.js';
 import { AUDIT_VIEWS } from '../../service/lib/audit.js';
 import { asRecord, optionalEnum, optionalInt } from './host.js';
 import { BudgetSectionSchema, defineMemoryTool, failedValue, makePresentCall, mapBudgetSection, NullableIntegerSchema, NullableStringSchema, } from './toolkit.js';
 /** Whole-store stat walk plus two live-index reads, capped below the dream. */
 export const AUDIT_TIMEOUT_MS = 30_000;
 /** The description the model sees for `memory_audit`. */
-export const AUDIT_DESCRIPTION = 'Run a read-only doctor pass over the memory vaults, the indexer state, the vector index, and the global memory budget. Returns every finding as an ISSUE (needs fixing) or INFO line with its remediation, whole-store rollups, a bounded list of note rows (size, read stats, indexed and archive flags), and the global memory budget section. Audit never writes, bumps read stats, or provisions the default vault: a missing store is reported, never created. Run it any time; an over-budget line names the manual compaction order and the heavier memory_dream alternative.';
+export const AUDIT_DESCRIPTION = 'Run a read-only doctor pass over the memory vaults, the indexer state, the vector index, and the global memory budget. Returns every finding as an ISSUE (needs fixing) or INFO line with its remediation, whole-store rollups, a bounded list of note rows (size, read stats, indexed and archive flags), and the global memory budget section. The report carries per-note git churn and per-shared-vault git rollups; the \'checkpoint\' view adds the completion-checkpoint instructions below the note rows. Audit never writes, bumps read stats, or provisions the default vault: a missing store is reported, never created. Run it any time; an over-budget line names the manual compaction order and the heavier memory_dream alternative.';
 export const AUDIT_CHECKPOINT_PROMPT_SECTION_TEXT = `# Completion Checkpoint
 
 Promote what this session settled, retire what was transient, and write nothing
@@ -61,7 +64,7 @@ export const AUDIT_PARAMETERS = {
         view: {
             type: 'string',
             enum: AUDIT_VIEWS,
-            description: 'Note-row list to show: \'full\' every live and archived note by path; \'topStale\' never-read and least-recently-read notes first; \'oldestUnread\' only never-read notes, oldest on disk first. Defaults to \'full\'. Issue and stat rollups always cover the whole store, whatever the view.',
+            description: 'Note-row list to show: \'full\' every live and archived note by path; \'topStale\' never-read and least-recently-read notes first; \'oldestUnread\' only never-read notes, oldest on disk first; \'checkpoint\' same note rows as \'full\', followed by the completion-checkpoint instructions for the agent. Defaults to \'full\'. Issue and stat rollups always cover the whole store, whatever the view.',
         },
         limit: {
             type: 'integer',
@@ -83,7 +86,7 @@ const ISSUE_SCHEMA = {
 const ROW_SCHEMA = {
     type: 'object',
     additionalProperties: false,
-    required: ['path', 'size_bytes', 'modified', 'read_count', 'last_read_at', 'archived', 'indexed', 'flagged_not_read', 'oversized'],
+    required: ['path', 'size_bytes', 'modified', 'read_count', 'last_read_at', 'archived', 'indexed', 'flagged_not_read', 'oversized', 'churn'],
     properties: {
         path: { type: 'string' },
         size_bytes: { type: 'integer' },
@@ -94,6 +97,21 @@ const ROW_SCHEMA = {
         indexed: { type: 'boolean' },
         flagged_not_read: { type: 'boolean' },
         oversized: { type: 'boolean' },
+        churn: { type: 'number' },
+    },
+};
+// One shared vault's git rollup (TASK-008): honest nulls wherever the
+// git layer could not answer clean, the head hash, or the error.
+const GIT_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['vault', 'initialized', 'clean', 'head_hash', 'error'],
+    properties: {
+        vault: { type: 'string' },
+        initialized: { type: 'boolean' },
+        clean: { oneOf: [{ type: 'boolean' }, { type: 'null' }] },
+        head_hash: NullableStringSchema,
+        error: NullableStringSchema,
     },
 };
 // Nullable report scalars (index offline) stay honest nulls, a closed
@@ -131,7 +149,7 @@ export const AUDIT_OUTPUT = {
                 stats: {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['vault_count', 'shared_vault_count', 'note_count', 'archived_count', 'total_bytes', 'vault_usage', 'oversized_notes', 'huge_not_read_notes', 'malformed_notes', 'indexer', 'collection_count', 'expected_chunks', 'last_dream_at', 'dreaming_schedules'],
+                    required: ['vault_count', 'shared_vault_count', 'note_count', 'archived_count', 'total_bytes', 'vault_usage', 'oversized_notes', 'huge_not_read_notes', 'malformed_notes', 'indexer', 'collection_count', 'expected_chunks', 'last_dream_at', 'dreaming_schedules', 'git'],
                     properties: {
                         vault_count: { type: 'integer' },
                         shared_vault_count: { type: 'integer' },
@@ -159,6 +177,7 @@ export const AUDIT_OUTPUT = {
                         expected_chunks: NullableIntegerSchema,
                         last_dream_at: NullableStringSchema,
                         dreaming_schedules: { type: 'integer' },
+                        git: { type: 'array', items: GIT_SCHEMA },
                     },
                 },
                 rows: { type: 'array', items: ROW_SCHEMA },
@@ -227,6 +246,13 @@ function mapReport(report) {
             expected_chunks: report.stats.expectedChunks,
             last_dream_at: report.stats.lastDreamAt === null ? null : new Date(report.stats.lastDreamAt).toISOString(),
             dreaming_schedules: report.stats.dreamingSchedules,
+            git: report.stats.git.map((entry) => ({
+                vault: entry.vault,
+                initialized: entry.initialized,
+                clean: entry.clean,
+                head_hash: entry.headHash,
+                error: entry.error,
+            })),
         },
         rows: report.rows.map((row) => ({
             path: row.path,
@@ -238,13 +264,36 @@ function mapReport(report) {
             indexed: row.indexed,
             flagged_not_read: row.flaggedNotRead,
             oversized: row.oversized,
+            churn: row.churn,
         })),
         rows_total: report.totalRows,
         budget: mapBudgetSection(report.budget),
     };
 }
-/** Model-facing rendering of one memory_audit value. */
-export function renderAudit(value) {
+/**
+ * FirstSharedVaultPath answers the first registered shared vault's path,
+ * falling back to the default vault path (which provisioning registers as
+ * shared) when no shared vault is registered. Pure: reads only the vault
+ * list handed to it. Mirrors the events turn-end pick; TASK-010 retires
+ * that copy.
+ */
+export function firstSharedVaultPath(vaults, homedirValue = homedir()) {
+    const shared = vaults.find((entry) => entry.mode === VAULT_MODE_SHARED);
+    return shared?.path ?? defaultVaultPath(homedirValue);
+}
+// CheckpointSection fills the prepared instructions' {{FIRST_SHARED_VAULT}}
+// hole; the constant itself stays byte-identical (pinned by the TASK-015
+// carrier suite).
+function checkpointSection(vaults) {
+    const vaultPath = firstSharedVaultPath(vaults);
+    return AUDIT_CHECKPOINT_PROMPT_SECTION_TEXT.replace('{{FIRST_SHARED_VAULT}}', () => vaultPath);
+}
+/**
+ * RenderAudit is the model-facing rendering of one memory_audit value.
+ * `vaults` only supplies the first shared vault the `checkpoint` view's
+ * appended instructions point at; every other section ignores it.
+ */
+export function renderAudit(value, vaults = []) {
     if (value.kind === 'failed') {
         return value.message;
     }
@@ -287,7 +336,20 @@ export function renderAudit(value) {
             row.oversized ? 'oversized' : '',
         ].filter((flag) => flag !== '').join(', ');
         const read = row.last_read_at === '' ? 'never read' : `read ${row.last_read_at} (${String(row.read_count)}x)`;
-        lines.push(`- ${row.path} (${formatBytes(row.size_bytes)}, ${read}${flags === '' ? '' : `, ${flags}`})`);
+        // Token discipline: churn renders only for churned notes.
+        const churn = row.churn > 0 ? `, churn ${String(Math.round(row.churn * 100))}%` : '';
+        lines.push(`- ${row.path} (${formatBytes(row.size_bytes)}, ${read}${flags === '' ? '' : `, ${flags}`}${churn})`);
+    }
+    if (value.stats.git.length > 0) {
+        lines.push('');
+        for (const entry of value.stats.git) {
+            const state = entry.error !== null || entry.clean === null ? 'unavailable' : entry.clean ? 'clean' : 'dirty';
+            const head = entry.head_hash === null ? '' : ` [head ${entry.head_hash.slice(0, 7)}]`;
+            lines.push(`Git (${entry.vault}): ${state}${head}`);
+        }
+    }
+    if (value.view === 'checkpoint') {
+        lines.push('', checkpointSection(vaults));
     }
     return lines.join('\n');
 }
@@ -311,7 +373,7 @@ export function createAuditTool(service) {
         output: AUDIT_OUTPUT,
         timeoutMs: AUDIT_TIMEOUT_MS,
         execute: async (args) => await executeAudit(service, args),
-        render: renderAudit,
+        render: (value) => renderAudit(value, service.listVaults()),
         presentCall: makePresentCall({ tool: TOOL_MEMORY_AUDIT, kind: 'read', field: 'view', fallback: 'full' }),
     });
 }

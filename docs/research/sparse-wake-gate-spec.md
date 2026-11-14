@@ -786,6 +786,21 @@ via follow-up; see vault `.INTENTS.md` how-line). Expected: the
 think-channel Drupal/npm collision rows stop appearing at turn-start;
 machinae/domain rows unaffected.
 
+Step 4 status (2026-11-13, boundary reached): the profile bundle is a
+SYMLINK to this workspace
+(`~/.dsh/profiles/web/node_modules/dsh-plugin-obsidian-mem ->
+/home/derek/src/dsh-plugin-obsidian-mem`, same install style as
+dsh-plugin-local-infer), so no reinstall step exists; the grep checks
+already pass through the link (`SPARSE_WAKE_GATE` 11 occurrences,
+`SPARSE_SEARCH_RADIUS = 4.75`). What remains is the host restart
+(only step that activates the new host lib), then the one live probe
+iteration on the continuation. A restart also resets the global recall
+budget, which the probe needs. Side effects to expect after the
+restart: think-injection headers now read `Memory related to: ...`
+(the 4bf4f8f relevancy tagging finally loads), and wake arrays of any
+note the host re-indexes post-restart use the post-fix extraction
+(generic markers gone, Han runs included).
+
 ## Decision rules
 
 - PASS → done; mirror one paragraph into `stopword-strip-findings.md`'s

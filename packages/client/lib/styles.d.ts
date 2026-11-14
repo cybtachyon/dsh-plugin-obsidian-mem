@@ -20,6 +20,8 @@ export declare const SECTION_BODY_STYLE: CSSProperties;
 export declare const ROW_STYLE: CSSProperties;
 /** A quiet label inside a row (the key of a key/value pair). */
 export declare const KEY_STYLE: CSSProperties;
+/** A group heading (the Configuration section's knob groups). */
+export declare const GROUP_HEADING_STYLE: CSSProperties;
 /** The quietest text tier: hints, help lines, and empty states. */
 export declare const HINT_STYLE: CSSProperties;
 /** A mono value (paths, expressions, ids). */

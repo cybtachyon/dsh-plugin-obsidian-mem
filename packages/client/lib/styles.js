@@ -69,6 +69,8 @@ export const ROW_STYLE = {
 };
 /** A quiet label inside a row (the key of a key/value pair). */
 export const KEY_STYLE = { color: LABEL_SECONDARY };
+/** A group heading (the Configuration section's knob groups). */
+export const GROUP_HEADING_STYLE = { ...KEY_STYLE, fontWeight: 600 };
 /** The quietest text tier: hints, help lines, and empty states. */
 export const HINT_STYLE = { color: LABEL_TERTIARY, fontSize: 12 };
 /** A mono value (paths, expressions, ids). */

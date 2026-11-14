@@ -1,6 +1,7 @@
 /**
- * The card root: header, the 10 s status poll, and the five collapsible
- * sections (Vaults, Index status, Audit, Dreaming, Search test).
+ * The card root: header, the 10 s status poll, and the six collapsible
+ * sections (Vaults, Configuration, Index status, Audit, Dreaming, Search
+ * test).
  *
  * The poll owns the only shared data (GET /obsidian-mem/status; the interval
  * is cleared on unmount and a re-render after unmount never lands). Every

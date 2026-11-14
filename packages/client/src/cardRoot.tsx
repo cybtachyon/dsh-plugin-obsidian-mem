@@ -1,6 +1,7 @@
 /**
- * The card root: header, the 10 s status poll, and the five collapsible
- * sections (Vaults, Index status, Audit, Dreaming, Search test).
+ * The card root: header, the 10 s status poll, and the six collapsible
+ * sections (Vaults, Configuration, Index status, Audit, Dreaming, Search
+ * test).
  *
  * The poll owns the only shared data (GET /obsidian-mem/status; the interval
  * is cleared on unmount and a re-render after unmount never lands). Every
@@ -25,6 +26,7 @@ import {
   WARNING_BANNER_STYLE,
 } from './styles.js'
 import { AuditSection } from './sections/audit.js'
+import { ConfigurationSection } from './sections/configuration.js'
 import { DreamingSection } from './sections/dreaming.js'
 import { IndexStatusSection } from './sections/indexStatus.js'
 import { SearchSection } from './sections/search.js'
@@ -98,6 +100,9 @@ export function CardRoot(): ReactNode {
       )}
       <Section title="Vaults" badge={countBadge(status === null ? null : String(status.vaults.length))} defaultOpen>
         <VaultsSection status={status} refresh={refresh} />
+      </Section>
+      <Section title="Configuration">
+        <ConfigurationSection />
       </Section>
       <Section title="Index status" defaultOpen>
         <IndexStatusSection status={status} lastBudget={lastBudget} />

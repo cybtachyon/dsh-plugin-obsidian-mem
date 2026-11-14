@@ -1,6 +1,7 @@
 /**
- * The card root: header, the 10 s status poll, and the five collapsible
- * sections (Vaults, Index status, Audit, Dreaming, Search test).
+ * The card root: header, the 10 s status poll, and the six collapsible
+ * sections (Vaults, Configuration, Index status, Audit, Dreaming, Search
+ * test).
  *
  * The poll owns the only shared data (GET /obsidian-mem/status; the interval
  * is cleared on unmount and a re-render after unmount never lands). Every
@@ -14,6 +15,7 @@ import { renderStateDot, renderTag } from './primitives.js';
 import { react } from './react.js';
 import { CARD_STYLE, HEADER_STYLE, HINT_STYLE, SECTION_BODY_STYLE, SECTION_STYLE, SUMMARY_STYLE, WARNING_BANNER_STYLE, } from './styles.js';
 import { AuditSection } from './sections/audit.js';
+import { ConfigurationSection } from './sections/configuration.js';
 import { DreamingSection } from './sections/dreaming.js';
 import { IndexStatusSection } from './sections/indexStatus.js';
 import { SearchSection } from './sections/search.js';
@@ -74,6 +76,8 @@ export function CardRoot() {
         statusError !== null && (react.createElement("div", { style: WARNING_BANNER_STYLE }, `Memory routes unreachable: ${statusError}`)),
         react.createElement(Section, { title: "Vaults", badge: countBadge(status === null ? null : String(status.vaults.length)), defaultOpen: true },
             react.createElement(VaultsSection, { status: status, refresh: refresh })),
+        react.createElement(Section, { title: "Configuration" },
+            react.createElement(ConfigurationSection, null)),
         react.createElement(Section, { title: "Index status", defaultOpen: true },
             react.createElement(IndexStatusSection, { status: status, lastBudget: lastBudget })),
         react.createElement(Section, { title: "Audit" },

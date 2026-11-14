@@ -36,7 +36,7 @@ judgment call, not an implicit write step.
    values.
 3. Before writing a new note, use the \`memory_search\` tool and see if a note
    already covers the fact. Settled facts accumulate by update, not by
-   accumulation: use the \`memory_read\` tool on the existing note and the
+   accumulation: use the \`memory_read\` tool on the existing note and the 
    \`memory_write\` tool on the same path with the corrected content instead of
    writing a second, contradicting note.
 4. Save once a fact is settled (a decision made, a bug root-caused, a

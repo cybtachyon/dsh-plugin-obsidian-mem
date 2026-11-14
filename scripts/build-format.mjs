@@ -1,6 +1,26 @@
 import fs from 'node:fs/promises';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// PreparedPromptCarriers: names the six files that hold the prepared prompt
+// constants (PLAN-git-versioning source of truth). The trailing spaces
+// inside those prompt literals are load-bearing bytes, so this script's
+// per-line strip pass must pass over them. The set mirrors the prek.toml
+// trailing-whitespace exclude regex
+// ^packages/(service/(src|lib)/dream\.(ts|js)|tools/(src|lib)/(prompt|audit)\.(ts|js))$
+// and is the build's single home for that path set; the src entries are
+// no-ops here (this script only visits emitted trees) and keep the two
+// lists name-for-name. scripts/verify-emit.mjs fails the build when a lib
+// carrier ever stops matching its src constant's exact bytes.
+export const PREPARED_PROMPT_CARRIERS = new Set([
+    'packages/service/src/dream.ts',
+    'packages/service/lib/dream.js',
+    'packages/tools/src/prompt.ts',
+    'packages/tools/lib/prompt.js',
+    'packages/tools/src/audit.ts',
+    'packages/tools/lib/audit.js',
+]);
 
 // Target directories: the hand-written dsh/ carriers plus every workspace
 // package's tsc outDir. Package lib dirs are derived from the packages/ tree
@@ -45,11 +65,20 @@ async function processDirectory(dir) {
                 // Strip per-line trailing whitespace (tsc emits some after
                 // collapsed multi-line calls) and keep the final newline, so
                 // the trailing-whitespace and end-of-file-fixer hooks stay
-                // no-ops for lib files.
-                let normalized = content
-                    .split('\n')
-                    .map(line => line.replace(/[ \t]+$/, ''))
-                    .join('\n');
+                // no-ops for lib files. The prompt carriers skip only the
+                // strip: their load-bearing trailing spaces must survive to
+                // the shipped lib copy, exactly as the prek.toml
+                // trailing-whitespace exclude leaves them; the final-newline
+                // fix keeps end-of-file-fixer (which does exclude nothing)
+                // satisfied for them too.
+                const isPromptCarrier = PREPARED_PROMPT_CARRIERS.has(
+                    path.relative(process.cwd(), fullPath).split(path.sep).join('/'));
+                let normalized = isPromptCarrier
+                    ? content
+                    : content
+                        .split('\n')
+                        .map(line => line.replace(/[ \t]+$/, ''))
+                        .join('\n');
                 if (!normalized.endsWith('\n')) {
                     normalized += '\n';
                 }
@@ -67,5 +96,9 @@ async function processDirectory(dir) {
     }
 }
 
-// Kick off all root-level directories concurrently
-await Promise.all(TARGET_DIRS.map(dir => processDirectory(dir)));
+// Kick off all root-level directories concurrently. The entry guard lets a
+// spec import PREPARED_PROMPT_CARRIERS without running the pass.
+if (process.argv[1] !== undefined
+    && import.meta.url === pathToFileURL(process.argv[1]).href) {
+    await Promise.all(TARGET_DIRS.map(dir => processDirectory(dir)));
+}

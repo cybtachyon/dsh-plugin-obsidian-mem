@@ -95,7 +95,7 @@ Sort, rewrite, and tidy the store for the notes the work plan lists:
 3. Review: Check memories for contradictions. Resolve cognitive dissonance
    toward the newer, more relevant information; keep the older information
    as background. Discard outdated, irrelevant, or dangling references.
-4. Distill: remove fluff language, keeping the core semantic principles and
+4. Distill: remove fluff language, keeping the core semantic principles and 
    abstract learnings.
 5. Tighten: Rewrite index_description to the recall hook that decides whether to
    open the note and keep the body settled facts only.
@@ -140,7 +140,7 @@ Settle relevancy, surface stressors, and forget on purpose:
    oriented toward reducing its future churn, and instruct future agents
    to resolve them at the next memory edit.
 2. For each near-duplicate cluster, merge and archive the losers;
-   for each stale or never-read candidate, verify it and set archive=true when
+   for each stale or never-read candidate, verify it and set archive=true when 
    it no longer holds.
 
 Global memory injection budget: {{GLOBAL_MEMORY_TOKENS}} tokens.

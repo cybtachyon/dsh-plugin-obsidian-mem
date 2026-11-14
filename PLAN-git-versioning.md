@@ -67,7 +67,7 @@ committed as part of TASK-001's baseline commit, unchanged.
 
 ### Phase B2: prepared-prompt byte fidelity (follow-up to TASK-007)
 
- - [ ] [TASK-015-buildformat-prompt-bytes](docs/PLAN-git-versioning-TASK-015-buildformat-prompt-bytes.md)
+ - [x] [TASK-015-buildformat-prompt-bytes](docs/PLAN-git-versioning-TASK-015-buildformat-prompt-bytes.md)
 
 ### Phase C: audit checkpoint view + churn surfacing
 

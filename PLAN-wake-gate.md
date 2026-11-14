@@ -78,7 +78,7 @@ pid 1091813 verified alive 2026-11-13).
 ### Phase A2: wake-extraction fix (spec Step 1.1 STOP consequence)
 
  - [x] [TASK-014-wake-extraction-fix](docs/PLAN-wake-gate-TASK-014-wake-extraction-fix.md)
- - [ ] [TASK-016-thinkintercept-spec-repair](docs/PLAN-wake-gate-TASK-016-thinkintercept-spec-repair.md)
+ - [x] [TASK-016-thinkintercept-spec-repair](docs/PLAN-wake-gate-TASK-016-thinkintercept-spec-repair.md)
  - [ ] [TASK-015-reindex-refresh](docs/PLAN-wake-gate-TASK-015-reindex-refresh.md)
 
  TASK-014 result (2026-11-13, spec "Pre-flight measurements", commit
@@ -88,6 +88,13 @@ pid 1091813 verified alive 2026-11-13).
  chunks 39 -> 0 (18.6% -> 0%), generic-label entries 347 -> 0,
  fragment-shape terms 27 -> 0. TASK-015 (live reindex + wake-audit
  re-run, <=5% gate) is next and unblocks Phase B.
+
+ TASK-016 result (2026-11-13): the 3 red tests were pure header
+ rewording; `4bf4f8f` behavior is intended and shipped lib in
+ lockstep. Synced `packages/events/tests/thinkIntercept.spec.ts`
+ assertions to the `Memory related to: <queryString>.` shape, no
+ src or behavior change. Full suite green again (833 passed, 2
+ skipped); lint green. TASK-015 inherits a green baseline.
 
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 
@@ -136,9 +143,10 @@ pid 1091813 verified alive 2026-11-13).
   is ignored. Full-enumeration probes must use chunk_id range-split
   windows (wake-audit-probe pattern); TASK-002 and any future
   row-enumerating harness code follows that pattern.
-- BEING FIXED (TASK-016): `packages/events/tests/thinkIntercept.spec.ts`
-  stale header assertions from sibling commit 4bf4f8f; full `pnpm test`
-  red at HEAD until it lands.
+- RESOLVED (TASK-016): `packages/events/tests/thinkIntercept.spec.ts`
+  stale header assertions from sibling commit 4bf4f8f; the spec is
+  synced to the `Memory related to:` shape and full `pnpm test` is
+  green at HEAD again.
 - NOTED (out of scope): think-channel still treats when/what/etc as
   recall trigger terms (INTENT_MARKERS shared with wake extraction);
   separate hygiene fix if ever scheduled.

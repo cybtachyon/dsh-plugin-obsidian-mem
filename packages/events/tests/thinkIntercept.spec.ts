@@ -178,7 +178,8 @@ describe('think-stream recall', () => {
     })
     expect(h.agent.injected).toHaveLength(1)
     const blocks = h.agent.injected[0]?.content.map((block) => block.text) ?? []
-    expect(blocks[0]).toContain('terms: why')
+    // 4bf4f8f: the header names the scoped query, not the matched terms.
+    expect(blocks[0]).toContain('Memory related to: why does the build fail.')
     expect(blocks[1]).toContain('<recalled_memory source="milvus-ops.md">')
     expect(h.registry.recallTokensUsed('session-1')).toBeGreaterThan(0)
     expect(h.memory.ensureCalls).toBe(1)
@@ -256,7 +257,7 @@ describe('think-stream recall', () => {
     await h.settle()
     expect(h.agent.injected.map((message) => message.content[0]?.text)).toEqual([
       'Default vault created at /v/default',
-      expect.stringContaining('terms: debug'),
+      'Memory related to: debug this.',
     ])
   })
 
@@ -278,7 +279,7 @@ describe('think-stream recall', () => {
     await h.settle()
     expect(h.agent.injected.map((message) => message.content[0]?.text)).toEqual([
       'Default vault created at /v/default',
-      expect.stringContaining('terms: why'),
+      'Memory related to: why the rebuild fails.',
     ])
     expect(
       h.agent.injected.filter((message) =>

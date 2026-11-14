@@ -144,7 +144,20 @@ pid 1091813 verified alive 2026-11-13).
 
 ### Phase A3: Han wake-key harvest (Q4 answer; last blocker)
 
- - [ ] [TASK-017-han-wake-keys](docs/PLAN-wake-gate-TASK-017-han-wake-keys.md)
+ - [x] [TASK-017-han-wake-keys](docs/PLAN-wake-gate-TASK-017-han-wake-keys.md)
+
+ TASK-017 result (2026-11-13, spec §"Han wake keys (TASK-017)", commit
+ 68e4a02): core wake extraction harvests the chunk text's maximal Han
+ runs after the existing entries through the one legality gate
+ (isUsableKeyword gains the whole-run function-word noise rule, small
+ core-local char list). Live refresh via scripts/live-reindex.mjs:
+ 125 files indexed, 19 archived purged, 213 → 213 rows. Wake-audit
+ re-run: 0 empty (0.000%, no-STOP), markers 0, 17 distinct Han wake
+ terms on the two Han-content chunks (记忆/智能体/的共享记忆 each on
+ 2 rows). zh gate PREVIEW: all three run-* probes keep BOTH pinned
+ hits gated (lost none); shipped-strip-out stays empty as pinned; the
+ substring-vs-maximal-run STOP did NOT fire. Verdict: Han wake keys
+ live, gate safe for zh; Phase B unblocked.
 
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 
@@ -223,6 +236,12 @@ pid 1091813 verified alive 2026-11-13).
   the zh probe says "exactly two Han-bearing chunks"; that is the
   LOCATE-word pair, a third chunk (`266388258919095`) carries the
   standalone `的` character and answers `cp-的`.
+  SUPERSEDED by TASK-017 (commit 68e4a02, spec §"Han wake keys"): the
+  three Han-hitting chunks now carry Han wake keys, and the zh gate
+  PREVIEW shows all three `run-*` probes keep BOTH pinned hits gated
+  (lost none). The predicted three-probe zh drop is retired; TASK-011
+  is now scored against the "zh probe hits unchanged" PASS criterion
+  directly, with the post-Task-017 collection as the control.
 - RECIPE for TASK-006 fixture edits (vault note
   `dsh-plugin-obsidian-mem-type-checking-the-test-trees-with-a-throwaway-tsconfig`):
   after changing fixture shapes, typecheck the test trees with the

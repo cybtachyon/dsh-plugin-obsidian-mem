@@ -368,6 +368,82 @@ Decision rules' named FAIL condition ("zh hits drop") realized as
 predicted, and the root cause is wake extraction emitting no Han wake
 keys, not gate wiring.
 
+### Han wake keys (TASK-017): the §Step 1.3 gap repaired, gate re-verified for zh
+
+Q4 answer (2026-11-13): "Fix wake extraction to emit Han wake keys
+first", then wire the gate per the spec unchanged. Landed in core
+commit 68e4a02 (`packages/core/src/triggers.ts` + rebuilt lib +
+`tests/triggers.spec.ts`, 7 new tests): the chunk text's maximal
+`[\p{Script=Han}]+` runs are harvested as wake candidates after every
+existing entry, flowing through the same ONE legality gate
+(`isUsableKeyword`, which gained the whole-run noise rule: a candidate
+made entirely of standalone Han function-word characters drops, the
+analyzer strip's rule mirrored with a 26-char core-local list, no
+stopword import into core; single chars die at the length-2 floor).
+Element cap 64 and column capacity 96 unchanged; Latin wake arrays are
+byte-unchanged (a pinned collision-row-shape test). Gate: `pnpm build
+&& pnpm test && pnpm lint` green (840 passed).
+
+Live refresh (`node scripts/live-reindex.mjs`, the only write path):
+125 files indexed (every non-archived file re-embedded and inserted),
+19 purged (archived/removed files, idempotent, zero rows dropped), 0
+errors; 213 rows before == 213 after == 213 state chunk ids.
+Wake-audit re-run: FINAL 213 rows, scanComplete 213/213, EMPTY wake
+rows 0 (0.000%, no-STOP), intent-marker `ARRAY_CONTAINS_ANY` query 0
+rows (markers 0 corpus-wide), TERMS distinct 602 (top Latin: drupal11
+22, mem 20, obsidian 20, test 17, lywa 16, config 15, kernel 15, dsh
+14…). TERMS top-40 carries no Han (Han terms sit at 1–2 rows each);
+the full-scan Han vocabulary is recorded here instead — 2 rows carry
+Han wake keys, 17 distinct Han terms: 智能体 2, 的共享记忆 2, 记忆 2,
+允许 1, 允许你 1, 共享 1, 共享智能体 1, 可将你的 1, 可将您的 1, 它允许
+1, 插件 1, 是一款 1, 智能体记忆 1, 知识库用作 1, 知识库用作智能体 1,
+自己 1, 自己的 1.
+
+The three §Step 1.3 chunks' post-refresh wake arrays (verbatim):
+
+| chunk_id | source_path | wake_keywords |
+| --- | --- | --- |
+| 2725569707718867 | chinese-copy-plugin-description-grammar-rules.md | chinese, copy, plugin, description, grammar, rules, 是一款, 插件, 可将你的, 知识库用作智能体, 的共享记忆, 可将您的, 知识库用作, 它允许, 允许, 允许你, 共享智能体, 记忆, 共享, 智能体记忆, 智能体, 自己, 自己的 |
+| 5384054551459882 | stopword-3-1-5-api-shape-and-zh-list-limits.md | stopword, api, shape, and, zh, list, limits, 记忆, 智能体, 的共享记忆 |
+| 266388258919095 | stopword-3-1-5-api-shape-and-zh-list-limits.md (2nd chunk) | stopword, api, shape, and, zh, list, limits |
+
+Chunk 266388258919095 stores no Han by design: its only Han content is
+the standalone 的 地 得 和 list illustration, dropped by the length-2
+floor and the function-run rule.
+
+**zh gate PREVIEW (read-only, throwaway script, not the TASK-007
+flag):** for each Han-bearing probe text, BM25 search (production
+sparse shape, limit 12) with and without
+`ARRAY_CONTAINS_ANY(wake_keywords, [<maximal-run token>])`, the
+expression the gate will emit; tokens are the probe texts themselves
+(all pass the len 2–64 filter-token legality):
+
+| probe | gate token | ungated hits | gated hits | lost |
+| --- | --- | --- | --- | --- |
+| run-记忆 | 记忆 | 5384054551459882, 2725569707718867 | 5384054551459882, 2725569707718867 | none |
+| run-智能体 | 智能体 | 5384054551459882, 2725569707718867 | 5384054551459882, 2725569707718867 | none |
+| run-的共享记忆 | 的共享记忆 | 2725569707718867, 5384054551459882 | 2725569707718867, 5384054551459882 | none |
+| shipped-strip-out | 智能体的共享记忆 | (empty) | (empty) | none |
+
+**Survival check (the key risk, verified not assumed):** the probes
+query SUBSTRINGS (记忆, 智能体) while wake stores MAXIMAL RUNS. Exact
+maximal-run matching survives every probe on this corpus because each
+queried substring ALSO appears as a standalone maximal run somewhere
+in each Han-bearing chunk's own text (e.g. `共享智能体（Agent）记忆`
+and `智能体（Agent）的共享记忆` split at the full-width parens; the
+`智能体的共享记忆` README string never occurs unbroken, matching the
+pin's own 0 hits for that shape). The design limit stays: a future
+zh note whose text only ever embeds a substring inside a longer run
+stores no substring key, and a gate probe of that substring still
+dies — the CJK carve-out Q4 rejected, unchanged by this task. The
+TASK-017 STOP condition (any run-* probe dying in preview) did NOT
+fire.
+
+**Verdict: Han wake keys live, gate safe for zh.** The §Step 1.3
+prediction (three probes 2→0) is superseded for TASK-010/011: after
+this refresh the pinned control's three run-* probes are predicted to
+survive the gate UNCHANGED. Phase B (spec Step 2) is unblocked.
+
 ## Step 2: implement (TDD, single commit with lib)
 
 1. `packages/service/src/search.ts`: pure helper

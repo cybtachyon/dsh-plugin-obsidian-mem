@@ -37,6 +37,8 @@ export {
   withObsidianMemHooks,
 } from './service.js'
 export type {
+  CardSettingsPatch,
+  CardSettingsView,
   GlobalMemoryIndex,
   GlobalMemorySource,
   IndexerLike,
@@ -56,6 +58,7 @@ export type {
 
 export {
   DEFAULT_READINESS_TIMEOUT_MS,
+  CARD_SETTINGS_KEYS,
   ObsidianMemConfigSchema,
   resolveServiceConfig,
   UNKNOWN_CONFIG_KEYS,
@@ -63,6 +66,8 @@ export {
   vaultKey,
 } from './config.js'
 export type {
+  CardEditableConfig,
+  CardEditablePartial,
   DreamingSchedule,
   ObsidianMemConfig,
   ObsidianMemResolvedConfig,

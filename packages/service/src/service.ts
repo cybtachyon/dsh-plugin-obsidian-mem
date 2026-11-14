@@ -82,7 +82,12 @@ import {
   validateObsidianMemConfig,
   vaultKey,
 } from './config.js'
-import type { ObsidianMemConfig, ResolvedObsidianMemConfig } from './config.js'
+import type {
+  CardEditableConfig,
+  CardEditablePartial,
+  ObsidianMemConfig,
+  ResolvedObsidianMemConfig,
+} from './config.js'
 import { inventoryVault, nodeAuditFs, runStoreAudit } from './audit.js'
 import type { AuditFs, AuditReport, AuditRequest, CollectionProbeResult, VaultInventory } from './audit.js'
 import { DreamOrchestrator } from './dream.js'
@@ -255,6 +260,27 @@ export interface VaultAddRequest {
 }
 
 /**
+ * CardSettingsView is the Configuration pane's whole answer from
+ * {@link ObsidianMemService.cardSettings}.
+ */
+export interface CardSettingsView {
+  /** The persisted effective values the card edits and displays (paths home-expanded). */
+  settings: CardEditableConfig
+  /** Exactly the whitelisted keys the card has set (the "custom" badges and per-key reset source). */
+  overrides: CardEditablePartial
+  /** Whitelisted dot-paths whose persisted value differs from the in-process config (the "restart to apply" chips). */
+  restartPending: string[]
+}
+
+/** Patch accepted by {@link ObsidianMemService.updateCardSettings}. */
+export interface CardSettingsPatch {
+  /** Whitelisted leaves to store; values failing the config schema reject the whole patch. */
+  set: CardEditablePartial
+  /** Whitelisted dot-paths to drop from the stored overrides, falling back to the profile row. */
+  unset?: string[]
+}
+
+/**
  * ServiceFs is the seam the service itself touches disk through; tests
  * pass an in-memory tree, production gets the node:fs object below.
  */
@@ -378,6 +404,12 @@ export class ObsidianMemService extends Service {
   /** The resolved config: schema defaults plus home-expanded paths. */
   readonly config: ResolvedObsidianMemConfig
 
+  // The profile-row config resolved WITHOUT card overrides. The persisted
+  // card view is row + settings.json computed from this base (an `unset`
+  // then genuinely returns a row value, which this.config may have
+  // overwritten at boot); the live-apply escalation never mutates it.
+  private readonly rowConfig: ResolvedObsidianMemConfig
+
   private readonly fs: ServiceFs
   private readonly homedir: () => string
   private readonly launcherFactory: (options: MilvusLauncherOptions) => MilvusLauncherLike
@@ -433,6 +465,7 @@ export class ObsidianMemService extends Service {
     // Card overrides merge over the row BEFORE path resolution, so `~` and
     // the '' sentinel defaults in an override resolve exactly like row
     // values (the README promise for card-edited paths).
+    this.rowConfig = resolveServiceConfig(resolved, this.homedir())
     this.config = resolveServiceConfig(this.applySettingsOverrides(resolved), this.homedir())
     // Warn-don't-die: unknown keys never reach this.config (defaults only)
     // and never stop the plugin; the author just hears what was ignored.
@@ -863,6 +896,80 @@ export class ObsidianMemService extends Service {
       lastDreamAt: engine.lastDreamAt(),
       lastRun: last === null ? null : { ...last, archiveCandidates: [...last.archiveCandidates] },
     }
+  }
+
+  /**
+   * CardSettings answers the Configuration pane without ever provisioning:
+   * `settings` are the persisted effective values (the profile row merged
+   * with settings.json and home-expanded, so a pending milvus.dbPath
+   * displays the path the next host start will use), `overrides` are
+   * exactly the whitelisted keys the card has set, and `restartPending`
+   * names the whitelisted dot-paths whose persisted value the running
+   * config has not caught up with. A hand-edited stored value that fails
+   * schema validation is kept out of the view (the running values stand
+   * in), mirroring the boot fallback.
+   */
+  cardSettings(): CardSettingsView {
+    const { settings, overrides } = this.effectiveCardSettings()
+    return {
+      settings,
+      overrides,
+      restartPending: divergingCardSettingsPaths(settings, this.config),
+    }
+  }
+
+  /**
+   * UpdateCardSettings applies a whitelisted settings patch. `set` paths
+   * outside CARD_SETTINGS_KEYS, `unset` paths that are not whitelisted
+   * leaves, and values failing the full config schema (deep-merged into a
+   * draft of the effective config) throw with the joined messages for the
+   * route to map to 400; nothing persists on a rejected patch. The merged
+   * overrides record is written atomically, a persisted milvus.dbPath move
+   * carries the current vaults.json into the new state dir best-effort,
+   * the live-apply escalation (TASK-004) runs, and the fresh view answers.
+   * It never provisions.
+   */
+  updateCardSettings(patch: CardSettingsPatch): CardSettingsView {
+    const unset = patch.unset ?? []
+    const rejected: string[] = []
+    collectNonCardSettingsPaths(patch.set ?? {}, [], rejected)
+    for (const path of unset) {
+      if (!CARD_SETTINGS_KEYS.includes(path)) rejected.push(path)
+    }
+    if (rejected.length > 0) {
+      throw new Error(
+        `obsidian-mem card settings rejected: not card-editable: ${rejected.join(', ')}`,
+      )
+    }
+
+    const overrides = this.readSettingsOverrides()
+    for (const path of unset) {
+      removeCardSettingsPath(overrides, path)
+    }
+    mergeCardSettingsPatch(overrides, patch.set ?? {})
+    // The draft IS the record about to be written: the row merged with the
+    // full new override tree, so a hand-corrupted stored key rejects the
+    // apply instead of being persisted and silently dropped at boot.
+    const draft = validateObsidianMemConfig(
+      mergeCardSettingsOverrides(this.rowConfig, overrides),
+    )
+    if (draft.issues !== undefined) {
+      throw new Error(
+        `obsidian-mem card settings rejected: ${draft.issues.map((issue) => issue.message).join('; ')}`,
+      )
+    }
+    return this.commitCardSettings(overrides)
+  }
+
+  /**
+   * ResetCardSettings ("Reset all to profile settings") clears every
+   * stored override: the file keeps its version stamp with an empty
+   * overrides object, a dbPath the overrides had moved goes back to the
+   * row's state dir via the vaults.json carry, the escalation re-applies
+   * toward the row values, and the fresh view answers.
+   */
+  resetCardSettings(): CardSettingsView {
+    return this.commitCardSettings({})
   }
 
   /**
@@ -1297,6 +1404,80 @@ export class ObsidianMemService extends Service {
     return kept
   }
 
+  // CommitCardSettings is the ONE persistence tail both updateCardSettings
+  // and resetCardSettings share: snapshot the persisted view, write the
+  // record atomically, carry vaults.json forward when the persisted
+  // milvus.dbPath moved, run the single live-apply call site, then answer
+  // the fresh view (so restartPending reflects what the escalation did not
+  // apply in-process).
+  private commitCardSettings(overrides: Record<string, unknown>): CardSettingsView {
+    const before = this.effectiveCardSettings().settings
+    this.persistSettingsOverrides(overrides)
+    const after = this.effectiveCardSettings().settings
+    const changed = changedCardSettingsPaths(before, after)
+    if (changed.includes('milvus.dbPath')) {
+      this.copyVaultsFileToStateDir(dbStateDir(after.milvus.dbPath))
+    }
+    this.escalateCardSettings(changed)
+    return this.cardSettings()
+  }
+
+  // EffectiveCardSettings is the persisted view cardSettings displays: the
+  // profile row re-merged with settings.json and run through
+  // resolveServiceConfig, so `~` and the '' sentinels in a stored override
+  // expand exactly like row values, the slice carries resolved paths, and
+  // an `unset` leaf really returns its row value (this.config may still
+  // carry the value it booted with). A merged draft that fails schema
+  // validation (a file hand-edited after boot) answers the running values
+  // instead, the boot fallback mirrored; `overrides` always answer exactly
+  // what the file stored.
+  private effectiveCardSettings(): {
+    settings: CardEditableConfig
+    overrides: CardEditablePartial
+  } {
+    const overrides = this.readSettingsOverrides()
+    const merged = validateObsidianMemConfig(
+      mergeCardSettingsOverrides(this.rowConfig, overrides),
+    )
+    const settings = merged.issues === undefined
+      ? cardEditableSlice(resolveServiceConfig(merged.value, this.homedir()))
+      : cardEditableSlice(this.config)
+    return { settings, overrides: overrides as CardEditablePartial }
+  }
+
+  private persistSettingsOverrides(overrides: Record<string, unknown>): void {
+    const record: SettingsFileRecord = { version: SETTINGS_FILE_VERSION, overrides }
+    this.fs.mkdirp(stateDir(this.homedir()))
+    this.writeAtomic(this.settingsFilePath(), `${JSON.stringify(record, null, 2)}\n`)
+  }
+
+  // CopyVaultsFileToStateDir carries the live vaults.json into targetDir
+  // best-effort when a persisted milvus.dbPath change moves where the next
+  // host start reads it, so card-registered vaults survive the restart.
+  // settings.json itself stays anchored (settingsFilePath); a missing
+  // current file is the empty answer, and a failed copy only warns.
+  private copyVaultsFileToStateDir(targetDir: string): void {
+    try {
+      const contents = this.fs.readFile(this.vaultsFilePath())
+      if (contents === null) return
+      this.fs.mkdirp(targetDir)
+      this.writeAtomic(join(targetDir, VAULTS_FILE_NAME), contents)
+    } catch (error: unknown) {
+      this.log.warn(`vaults.json carry to ${targetDir} failed: ${describeError(error)}`)
+    }
+  }
+
+  // EscalateCardSettings is the single live-apply call site for an
+  // accepted card change. TASK-004 fills the escalation ladder (budgets/llm
+  // in-place swaps, the thinkShots setter, the embedder/collection
+  // re-forms); milvus.dbPath is persist-only by plan decision, its one
+  // in-process effect being commitCardSettings' vaults.json carry.
+  private escalateCardSettings(_changed: readonly string[]): void {
+    // Intentionally empty until TASK-004: the persisted values already
+    // stand, and cardSettings reports the un-applied delta as
+    // restartPending.
+  }
+
   private writeAtomic(path: string, contents: string): void {
     const tmp = `${path}.obsidian-mem.tmp`
     this.fs.writeFile(tmp, contents)
@@ -1556,6 +1737,110 @@ function mergeCardSettingsOverrides(
     target[parts[parts.length - 1]!] = found
   }
   return merged
+}
+
+// CollectNonCardSettingsPaths gathers every patch path that is not a
+// CARD_SETTINGS_KEYS leaf: the same whitelist-membership walk
+// filterCardSettingsOverrides keeps with, group prefixes recurse, anything
+// else reports at its dot-path (a group key holding a non-object value
+// included).
+function collectNonCardSettingsPaths(
+  value: Record<string, unknown>,
+  prefix: string[],
+  out: string[],
+): void {
+  for (const [key, given] of Object.entries(value)) {
+    const path = [...prefix, key].join('.')
+    if (CARD_SETTINGS_KEYS.includes(path)) continue
+    if (isRecord(given) && CARD_SETTINGS_KEYS.some((leaf) => leaf.startsWith(`${path}.`))) {
+      collectNonCardSettingsPaths(given, [...prefix, key], out)
+      continue
+    }
+    out.push(path)
+  }
+}
+
+// MergeCardSettingsPatch folds a path-validated patch into the stored
+// overrides tree: groups merge key-wise so a partial group keeps its
+// stored siblings, leaves overwrite.
+function mergeCardSettingsPatch(
+  target: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): void {
+  for (const [key, given] of Object.entries(patch)) {
+    if (isRecord(given)) {
+      const existing = target[key]
+      const nested = isRecord(existing) ? existing : {}
+      mergeCardSettingsPatch(nested, given)
+      target[key] = nested
+      continue
+    }
+    target[key] = given
+  }
+}
+
+// RemoveCardSettingsPath deletes one whitelist dot-path from the stored
+// overrides tree and prunes the group the deletion emptied, so the file
+// records only real edits. A missing intermediate is already the unset
+// answer.
+function removeCardSettingsPath(tree: Record<string, unknown>, path: string): void {
+  const [head, ...rest] = path.split('.')
+  if (rest.length === 0) {
+    delete tree[head!]
+    return
+  }
+  const nested = tree[head!]
+  if (!isRecord(nested)) return
+  removeCardSettingsPath(nested, rest.join('.'))
+  if (Object.keys(nested).length === 0) delete tree[head!]
+}
+
+// CardEditableSlice copies the card-editable group fields out of a
+// (resolved) config so the view never aliases the running config object.
+function cardEditableSlice(config: ResolvedObsidianMemConfig): CardEditableConfig {
+  return {
+    vectorDim: config.vectorDim,
+    model: { id: config.model.id, cacheDir: config.model.cacheDir },
+    milvus: { dbPath: config.milvus.dbPath },
+    budgets: { ...config.budgets },
+    llm: { ...config.llm },
+  }
+}
+
+// ChangedCardSettingsPaths returns the whitelisted dot-paths where two
+// persisted views differ; every card-editable leaf is a scalar, so strict
+// inequality IS the deep diff.
+function changedCardSettingsPaths(
+  before: CardEditableConfig,
+  after: CardEditableConfig,
+): string[] {
+  return CARD_SETTINGS_KEYS.filter(
+    (key) => pickCardSettingsPath(after, key) !== pickCardSettingsPath(before, key),
+  )
+}
+
+// DivergingCardSettingsPaths is the restartPending answer: whitelisted
+// paths where the persisted view has left the in-process config behind
+// (today: milvus.dbPath after a change; TASK-004 shrinks this set live).
+function divergingCardSettingsPaths(
+  persisted: CardEditableConfig,
+  running: ResolvedObsidianMemConfig,
+): string[] {
+  return CARD_SETTINGS_KEYS.filter(
+    (key) => pickCardSettingsPath(persisted, key) !== pickCardSettingsPath(running, key),
+  )
+}
+
+function pickCardSettingsPath(
+  value: CardEditableConfig | ResolvedObsidianMemConfig,
+  key: string,
+): unknown {
+  let current: unknown = value
+  for (const part of key.split('.')) {
+    if (!isRecord(current)) return undefined
+    current = current[part]
+  }
+  return current
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -26,7 +26,7 @@ import { Service } from '@deepseek-ai/cordis';
 import type { Context, Plugin } from '@deepseek-ai/cordis';
 import type { MilvusClient } from '@zilliz/milvus2-sdk-node';
 import type { NoteMeta, VaultConfig, VaultMode } from '../../core/lib/index.js';
-import type { ObsidianMemConfig, ResolvedObsidianMemConfig } from './config.js';
+import type { CardEditableConfig, CardEditablePartial, ObsidianMemConfig, ResolvedObsidianMemConfig } from './config.js';
 import type { AuditFs, AuditReport, AuditRequest } from './audit.js';
 import type { DreamEngineResult, DreamRequest, DreamRunSummary } from './dream.js';
 import type { Embedder } from './embedder.js';
@@ -163,6 +163,25 @@ export interface VaultAddRequest {
     globalFile?: string;
 }
 /**
+ * CardSettingsView is the Configuration pane's whole answer from
+ * {@link ObsidianMemService.cardSettings}.
+ */
+export interface CardSettingsView {
+    /** The persisted effective values the card edits and displays (paths home-expanded). */
+    settings: CardEditableConfig;
+    /** Exactly the whitelisted keys the card has set (the "custom" badges and per-key reset source). */
+    overrides: CardEditablePartial;
+    /** Whitelisted dot-paths whose persisted value differs from the in-process config (the "restart to apply" chips). */
+    restartPending: string[];
+}
+/** Patch accepted by {@link ObsidianMemService.updateCardSettings}. */
+export interface CardSettingsPatch {
+    /** Whitelisted leaves to store; values failing the config schema reject the whole patch. */
+    set: CardEditablePartial;
+    /** Whitelisted dot-paths to drop from the stored overrides, falling back to the profile row. */
+    unset?: string[];
+}
+/**
  * ServiceFs is the seam the service itself touches disk through; tests
  * pass an in-memory tree, production gets the node:fs object below.
  */
@@ -227,6 +246,7 @@ export declare class ObsidianMemService extends Service {
     static Config: NonNullable<Plugin.Base<ResolvedObsidianMemConfig>['Config']>;
     /** The resolved config: schema defaults plus home-expanded paths. */
     readonly config: ResolvedObsidianMemConfig;
+    private readonly rowConfig;
     private readonly fs;
     private readonly homedir;
     private readonly launcherFactory;
@@ -356,6 +376,38 @@ export declare class ObsidianMemService extends Service {
     status(): ObsidianMemStatus;
     private dreamStatus;
     /**
+     * CardSettings answers the Configuration pane without ever provisioning:
+     * `settings` are the persisted effective values (the profile row merged
+     * with settings.json and home-expanded, so a pending milvus.dbPath
+     * displays the path the next host start will use), `overrides` are
+     * exactly the whitelisted keys the card has set, and `restartPending`
+     * names the whitelisted dot-paths whose persisted value the running
+     * config has not caught up with. A hand-edited stored value that fails
+     * schema validation is kept out of the view (the running values stand
+     * in), mirroring the boot fallback.
+     */
+    cardSettings(): CardSettingsView;
+    /**
+     * UpdateCardSettings applies a whitelisted settings patch. `set` paths
+     * outside CARD_SETTINGS_KEYS, `unset` paths that are not whitelisted
+     * leaves, and values failing the full config schema (deep-merged into a
+     * draft of the effective config) throw with the joined messages for the
+     * route to map to 400; nothing persists on a rejected patch. The merged
+     * overrides record is written atomically, a persisted milvus.dbPath move
+     * carries the current vaults.json into the new state dir best-effort,
+     * the live-apply escalation (TASK-004) runs, and the fresh view answers.
+     * It never provisions.
+     */
+    updateCardSettings(patch: CardSettingsPatch): CardSettingsView;
+    /**
+     * ResetCardSettings ("Reset all to profile settings") clears every
+     * stored override: the file keeps its version stamp with an empty
+     * overrides object, a dbPath the overrides had moved goes back to the
+     * row's state dir via the vaults.json carry, the escalation re-applies
+     * toward the row values, and the fresh view answers.
+     */
+    resetCardSettings(): CardSettingsView;
+    /**
      * GlobalMemoryIndex is the global recall-budget view (TASK-045): the
      * configured budget against the recall tokens the wired
      * {@link ObsidianMemService.sessionRegistry} sums across every session it
@@ -417,6 +469,11 @@ export declare class ObsidianMemService extends Service {
      */
     private applySettingsOverrides;
     private readSettingsOverrides;
+    private commitCardSettings;
+    private effectiveCardSettings;
+    private persistSettingsOverrides;
+    private copyVaultsFileToStateDir;
+    private escalateCardSettings;
     private writeAtomic;
     private stateDirPath;
     private vaultsFilePath;

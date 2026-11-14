@@ -27,8 +27,8 @@ declare module '@deepseek-ai/cordis' {
     }
 }
 export { nodeServiceFs, OBSIDIAN_MEM_SEAM, ObsidianMemService, VAULTS_FILE_NAME, withObsidianMemHooks, } from './service.js';
-export type { GlobalMemoryIndex, GlobalMemorySource, IndexerLike, MilvusLauncherLike, ObsidianMemHooks, ObsidianMemReadResult, ObsidianMemStatus, ObsidianMemWriteRequest, ObsidianMemWriteResult, ReadRegistryEntry, ServiceFs, SessionRegistryView, VaultAddRequest, VaultEntry, VaultSource, } from './service.js';
-export { DEFAULT_READINESS_TIMEOUT_MS, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
-export type { DreamingSchedule, ObsidianMemConfig, ObsidianMemResolvedConfig, ResolvedObsidianMemConfig, } from './config.js';
+export type { CardSettingsPatch, CardSettingsView, GlobalMemoryIndex, GlobalMemorySource, IndexerLike, MilvusLauncherLike, ObsidianMemHooks, ObsidianMemReadResult, ObsidianMemStatus, ObsidianMemWriteRequest, ObsidianMemWriteResult, ReadRegistryEntry, ServiceFs, SessionRegistryView, VaultAddRequest, VaultEntry, VaultSource, } from './service.js';
+export { DEFAULT_READINESS_TIMEOUT_MS, CARD_SETTINGS_KEYS, ObsidianMemConfigSchema, resolveServiceConfig, UNKNOWN_CONFIG_KEYS, validateObsidianMemConfig, vaultKey, } from './config.js';
+export type { CardEditableConfig, CardEditablePartial, DreamingSchedule, ObsidianMemConfig, ObsidianMemResolvedConfig, ResolvedObsidianMemConfig, } from './config.js';
 export default ObsidianMemService;
 //# sourceMappingURL=index.d.ts.map

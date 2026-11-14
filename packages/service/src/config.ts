@@ -179,6 +179,41 @@ export const CARD_SETTINGS_KEYS: readonly string[] = [
   'llm.apiKeyEnv',
 ]
 
+/**
+ * CardEditableConfig is the config slice the settings card edits: exactly
+ * the {@link CARD_SETTINGS_KEYS} leaves in nested shape (the settings tests
+ * pin it against the list). Values are the RESOLVED forms the service runs
+ * on: paths home-expanded, and a cleared `model.cacheDir` / `milvus.dbPath`
+ * already carrying the core layout default, never the `''` sentinel.
+ */
+export interface CardEditableConfig {
+  vectorDim: number
+  model: { id: string; cacheDir: string }
+  milvus: { dbPath: string }
+  budgets: {
+    turnStartRecallTokens: number
+    globalMemoryTokens: number
+    readSections: number
+    readSectionTokens: number
+    searchTopK: number
+    thinkShotsPerTurn: number
+  }
+  llm: { enabled: boolean; baseUrl: string; model: string; apiKeyEnv: string }
+}
+
+/**
+ * CardEditablePartial is {@link CardEditableConfig} with every group and
+ * every leaf optional in turn, the nested-partial shape of a settings
+ * patch `set` and of the stored settings.json overrides. A present group
+ * overrides only the leaves it carries; an absent key means "fall back to
+ * the profile row", never "clear".
+ */
+export type CardEditablePartial = {
+  [Key in keyof CardEditableConfig]?: CardEditableConfig[Key] extends object
+    ? { [Leaf in keyof CardEditableConfig[Key]]?: CardEditableConfig[Key][Leaf] }
+    : CardEditableConfig[Key]
+}
+
 // Known keys of a mounted `vaults` row; anything else lands in
 // UNKNOWN_CONFIG_KEYS.
 const VAULT_ENTRY_KEYS = ['path', 'mode', 'globalFile'] as const

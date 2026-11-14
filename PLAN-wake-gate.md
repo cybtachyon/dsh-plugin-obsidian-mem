@@ -77,8 +77,16 @@ pid 1091813 verified alive 2026-11-13).
 
 ### Phase A2: wake-extraction fix (spec Step 1.1 STOP consequence)
 
- - [ ] [TASK-014-wake-extraction-fix](docs/PLAN-wake-gate-TASK-014-wake-extraction-fix.md)
+ - [x] [TASK-014-wake-extraction-fix](docs/PLAN-wake-gate-TASK-014-wake-extraction-fix.md)
  - [ ] [TASK-015-reindex-refresh](docs/PLAN-wake-gate-TASK-015-reindex-refresh.md)
+
+ TASK-014 result (2026-11-13, spec "Pre-flight measurements", commit
+ 376108d): wake legality (one home, `isUsableKeyword`) drops the generic
+ intent labels and fragment shapes, and file-name slug words stand as
+ content wake keywords. Vault replay (143 files, 211 chunks): empty-wake
+ chunks 39 -> 0 (18.6% -> 0%), generic-label entries 347 -> 0,
+ fragment-shape terms 27 -> 0. TASK-015 (live reindex + wake-audit
+ re-run, <=5% gate) is next and unblocks Phase B.
 
 ### Phase B: implementation (spec Step 2, TDD, single commit with lib)
 

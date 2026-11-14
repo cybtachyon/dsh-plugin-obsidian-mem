@@ -144,6 +144,17 @@ Next task (surfaces the STOP): fix wake-keyword EXTRACTION in
 fragments stop entering `wake_keywords`; re-run this probe for ≤5%
 empty rows, then resume this spec at Step 1.2.
 
+Fix applied (2026-11-13, commit 376108d): wake legality in
+`packages/core/src/triggers.ts` (one home, `isUsableKeyword`) now drops
+the generic labels (who/what/when/where/why/how + "how to apply") and
+bounds wake-key SHAPE (letter-led; balanced parens/brackets/braces; no
+internal em dash), and the note file-name slug words stand as
+content wake keywords. Replay of pre-fix vs post-fix extraction over the
+indexed vault (143 files, 211 chunks, indexer-identical enumeration):
+empty-wake chunks 39 → 0 (18.6% → 0%), generic-label wake entries
+347 → 0, fragment-shape terms 27 → 0, distinct terms 179 → 578. The
+live reindex + wake-audit re-run that gates Phase B is TASK-015.
+
 ## Step 2: implement (TDD, single commit with lib)
 
 1. `packages/service/src/search.ts`: pure helper

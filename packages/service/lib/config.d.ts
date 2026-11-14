@@ -145,6 +145,15 @@ export type ObsidianMemConfigValidation = {
 } | {
     issues: readonly ConfigIssue[];
 };
+/**
+ * CARD_SETTINGS_KEYS whitelists the config leaf dot-paths the settings card
+ * may edit and persist to settings.json (the README Configuration table).
+ * The service override filter, the ui route descriptions, and the tests all
+ * read this one list, so the card cannot drift from what is persistable.
+ * milvus.mode/address/readinessTimeoutMs and model.dtype are infra knobs
+ * and stay profile-row-config only.
+ */
+export declare const CARD_SETTINGS_KEYS: readonly string[];
 /** ObsidianMemConfigSchema validates a mounted row config and defaults it whole. */
 export declare const ObsidianMemConfigSchema: ConfigSchema;
 /**

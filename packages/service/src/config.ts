@@ -154,6 +154,31 @@ type Issue = ConfigIssue
 
 const TOP_KEYS = ['vaults', 'vectorDim', 'model', 'milvus', 'budgets', 'llm', 'dreaming'] as const
 
+/**
+ * CARD_SETTINGS_KEYS whitelists the config leaf dot-paths the settings card
+ * may edit and persist to settings.json (the README Configuration table).
+ * The service override filter, the ui route descriptions, and the tests all
+ * read this one list, so the card cannot drift from what is persistable.
+ * milvus.mode/address/readinessTimeoutMs and model.dtype are infra knobs
+ * and stay profile-row-config only.
+ */
+export const CARD_SETTINGS_KEYS: readonly string[] = [
+  'vectorDim',
+  'model.id',
+  'model.cacheDir',
+  'milvus.dbPath',
+  'budgets.turnStartRecallTokens',
+  'budgets.globalMemoryTokens',
+  'budgets.readSections',
+  'budgets.readSectionTokens',
+  'budgets.searchTopK',
+  'budgets.thinkShotsPerTurn',
+  'llm.enabled',
+  'llm.baseUrl',
+  'llm.model',
+  'llm.apiKeyEnv',
+]
+
 // Known keys of a mounted `vaults` row; anything else lands in
 // UNKNOWN_CONFIG_KEYS.
 const VAULT_ENTRY_KEYS = ['path', 'mode', 'globalFile'] as const

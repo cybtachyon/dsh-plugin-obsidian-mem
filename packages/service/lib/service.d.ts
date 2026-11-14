@@ -38,6 +38,8 @@ import type { ExactSectionRequest, MemorySearchResult, SearchRequest } from './s
 export declare const OBSIDIAN_MEM_SEAM = "obsidianMem";
 /** File holding the card-managed vault additions under the state dir. */
 export declare const VAULTS_FILE_NAME = "vaults.json";
+/** File holding card settings overrides, anchored at the fixed core state dir. */
+export declare const SETTINGS_FILE_NAME = "settings.json";
 /** Who registered a vault: the row config, the settings card, or lazy provisioning. */
 export type VaultSource = 'settings' | 'card' | 'default';
 /** A registered vault plus who registered it (the card's remove affordance). */
@@ -214,10 +216,11 @@ export interface ObsidianMemHooks {
 }
 /**
  * ObsidianMemService is `ctx.obsidianMem`. Construction resolves config
- * (schema defaults applied, `~` expanded) and touches nothing on disk;
- * `ensureMemoryAccess()` runs the one-time provisioning pass; every
- * memory-facing method (read, write, search, addVault persistence) routes
- * through it or owns its explicit disk effect.
+ * (schema defaults applied, persisted card overrides merged over the row,
+ * `~` expanded) and writes or spawns nothing; `ensureMemoryAccess()` runs
+ * the one-time provisioning pass; every memory-facing method (read, write,
+ * search, addVault persistence) routes through it or owns its explicit disk
+ * effect.
  */
 export declare class ObsidianMemService extends Service {
     /** The plugin config schema every mounted row validates against. */
@@ -404,9 +407,20 @@ export declare class ObsidianMemService extends Service {
     private loadRegistry;
     private readVaultsFile;
     private persistVaultsFile;
+    /**
+     * ApplySettingsOverrides merges the whitelisted card overrides from
+     * settings.json over the validated row config, card winning per leaf key
+     * (the card edit is the newer user intent). A merged value that fails
+     * schema re-validation (hand-edited junk) falls back to the row-only
+     * config with a warn: a bad settings file costs its own edits, never the
+     * boot. Runs before resolveServiceConfig.
+     */
+    private applySettingsOverrides;
+    private readSettingsOverrides;
     private writeAtomic;
     private stateDirPath;
     private vaultsFilePath;
+    private settingsFilePath;
     private vaultFs;
     private canonicalize;
     private duplicateVaultMessage;

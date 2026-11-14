@@ -60,6 +60,7 @@ import {
   resolveVaults,
   seedIntentsFile,
   serializeNoteWithRaw,
+  stateDir,
   validateMeta,
   VAULT_MODE_SHARED,
   VAULT_MODES,
@@ -72,6 +73,7 @@ import type {
   VaultMode,
 } from '../../core/lib/index.js'
 import {
+  CARD_SETTINGS_KEYS,
   expandHomePath,
   globalFileShapeIssue,
   ObsidianMemConfigSchema,
@@ -111,6 +113,12 @@ export const VAULTS_FILE_NAME = 'vaults.json'
 
 /** Schema version stamped on vaults.json; loading tolerates older files by key defaults. */
 const VAULTS_FILE_VERSION = 1
+
+/** File holding card settings overrides, anchored at the fixed core state dir. */
+export const SETTINGS_FILE_NAME = 'settings.json'
+
+/** Schema version stamped on settings.json; a newer file is ignored, never misread. */
+const SETTINGS_FILE_VERSION = 1
 
 /** Who registered a vault: the row config, the settings card, or lazy provisioning. */
 export type VaultSource = 'settings' | 'card' | 'default'
@@ -339,6 +347,17 @@ interface VaultFileEntry {
   globalFile?: string
 }
 
+/**
+ * The persisted settings file shape: a partial config carrying only
+ * CARD_SETTINGS_KEYS leaves (nested under their group keys, e.g.
+ * `{ budgets: { searchTopK: 9 } }`). A key removed from the map means
+ * "fall back to the profile row", never "set the default sentinel".
+ */
+interface SettingsFileRecord {
+  version: number
+  overrides: Record<string, unknown>
+}
+
 // One registry generation: resolved vaults plus who registered each path.
 interface VaultRegistryView {
   vaults: VaultEntry[]
@@ -346,10 +365,11 @@ interface VaultRegistryView {
 
 /**
  * ObsidianMemService is `ctx.obsidianMem`. Construction resolves config
- * (schema defaults applied, `~` expanded) and touches nothing on disk;
- * `ensureMemoryAccess()` runs the one-time provisioning pass; every
- * memory-facing method (read, write, search, addVault persistence) routes
- * through it or owns its explicit disk effect.
+ * (schema defaults applied, persisted card overrides merged over the row,
+ * `~` expanded) and writes or spawns nothing; `ensureMemoryAccess()` runs
+ * the one-time provisioning pass; every memory-facing method (read, write,
+ * search, addVault persistence) routes through it or owns its explicit disk
+ * effect.
  */
 export class ObsidianMemService extends Service {
   /** The plugin config schema every mounted row validates against. */
@@ -410,7 +430,10 @@ export class ObsidianMemService extends Service {
     }
     const resolved = validated.value
     const unknownKeys = (resolved as { [UNKNOWN_CONFIG_KEYS]?: string[] })[UNKNOWN_CONFIG_KEYS]
-    this.config = resolveServiceConfig(resolved, this.homedir())
+    // Card overrides merge over the row BEFORE path resolution, so `~` and
+    // the '' sentinel defaults in an override resolve exactly like row
+    // values (the README promise for card-edited paths).
+    this.config = resolveServiceConfig(this.applySettingsOverrides(resolved), this.homedir())
     // Warn-don't-die: unknown keys never reach this.config (defaults only)
     // and never stop the plugin; the author just hears what was ignored.
     if (unknownKeys !== undefined && unknownKeys.length > 0) {
@@ -1215,6 +1238,65 @@ export class ObsidianMemService extends Service {
     this.writeAtomic(this.vaultsFilePath(), `${JSON.stringify(record, null, 2)}\n`)
   }
 
+  /**
+   * ApplySettingsOverrides merges the whitelisted card overrides from
+   * settings.json over the validated row config, card winning per leaf key
+   * (the card edit is the newer user intent). A merged value that fails
+   * schema re-validation (hand-edited junk) falls back to the row-only
+   * config with a warn: a bad settings file costs its own edits, never the
+   * boot. Runs before resolveServiceConfig.
+   */
+  private applySettingsOverrides(resolved: ResolvedObsidianMemConfig): ResolvedObsidianMemConfig {
+    const overrides = this.readSettingsOverrides()
+    if (Object.keys(overrides).length === 0) return resolved
+    const merged = mergeCardSettingsOverrides(resolved, overrides)
+    const revalidated = validateObsidianMemConfig(merged)
+    if (revalidated.issues !== undefined) {
+      this.log.warn(
+        `${SETTINGS_FILE_NAME} overrides rejected: `
+        + `${revalidated.issues.map((issue) => issue.message).join('; ')}; using the row config only`,
+      )
+      return resolved
+    }
+    return revalidated.value
+  }
+
+  // Card overrides from settings.json: a missing file answers {}, a corrupt
+  // one is logged and answers {} (self-healing persistence, the vaults.json
+  // precedent), a version newer than this plugin's is ignored, and keys
+  // outside CARD_SETTINGS_KEYS are dropped with a warn naming them.
+  private readSettingsOverrides(): Record<string, unknown> {
+    const path = this.settingsFilePath()
+    const raw = this.fs.readFile(path)
+    if (raw === null) return {}
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch (error: unknown) {
+      this.log.warn(`${SETTINGS_FILE_NAME} unreadable (${path}): ${describeError(error)}; starting without overrides`)
+      return {}
+    }
+    if (!isRecord(parsed)) {
+      this.log.warn(`${SETTINGS_FILE_NAME} malformed (${path}); starting without overrides`)
+      return {}
+    }
+    const record = parsed as Partial<SettingsFileRecord>
+    if (typeof record.version === 'number' && record.version > SETTINGS_FILE_VERSION) {
+      this.log.warn(
+        `${SETTINGS_FILE_NAME} version ${String(record.version)} is newer than this plugin understands; `
+        + 'ignoring its overrides',
+      )
+      return {}
+    }
+    if (!isRecord(record.overrides)) return {}
+    const dropped: string[] = []
+    const kept = filterCardSettingsOverrides(record.overrides, [], dropped)
+    if (dropped.length > 0) {
+      this.log.warn(`ignoring non card-editable ${SETTINGS_FILE_NAME} keys: ${dropped.join(', ')}`)
+    }
+    return kept
+  }
+
   private writeAtomic(path: string, contents: string): void {
     const tmp = `${path}.obsidian-mem.tmp`
     this.fs.writeFile(tmp, contents)
@@ -1230,6 +1312,15 @@ export class ObsidianMemService extends Service {
 
   private vaultsFilePath(): string {
     return join(this.stateDirPath(), VAULTS_FILE_NAME)
+  }
+
+  // settings.json anchors at the FIXED core stateDir(homedir), not the
+  // config-derived stateDirPath(): a pending milvus.dbPath override lives
+  // in this very file, so the file may never move with dbPath, or loading
+  // it would be chicken-and-egg on exactly that knob. vaults.json keeps its
+  // dbPath-derived location.
+  private settingsFilePath(): string {
+    return join(stateDir(this.homedir()), SETTINGS_FILE_NAME)
   }
 
   // The VaultFs view of the service seam for core's provisioning helpers.
@@ -1398,6 +1489,77 @@ export function withObsidianMemHooks(hooks: ObsidianMemHooks): typeof ObsidianMe
       super(ctx, config, hooks)
     }
   }
+}
+
+// FilterCardSettingsOverrides keeps only CARD_SETTINGS_KEYS leaf paths from
+// a persisted overrides tree: whitelist leaves pass through untyped (the
+// merged config is schema-revalidated as a whole), objects that prefix a
+// whitelist key recurse, and everything else lands in `dropped` as its
+// dot-path for the caller's warn.
+function filterCardSettingsOverrides(
+  value: Record<string, unknown>,
+  prefix: string[],
+  dropped: string[],
+): Record<string, unknown> {
+  const kept: Record<string, unknown> = {}
+  for (const [key, given] of Object.entries(value)) {
+    const path = [...prefix, key].join('.')
+    if (CARD_SETTINGS_KEYS.includes(path)) {
+      kept[key] = given
+      continue
+    }
+    if (isRecord(given) && CARD_SETTINGS_KEYS.some((leaf) => leaf.startsWith(`${path}.`))) {
+      const nested = filterCardSettingsOverrides(given, [...prefix, key], dropped)
+      if (Object.keys(nested).length > 0) kept[key] = nested
+      continue
+    }
+    dropped.push(path)
+  }
+  return kept
+}
+
+// MergeCardSettingsOverrides writes each present whitelist path onto a
+// structural copy of the resolved row config, so a partial override keeps
+// every sibling the row already set (an override of budgets.searchTopK
+// alone leaves the row's other budgets in place).
+function mergeCardSettingsOverrides(
+  resolved: ResolvedObsidianMemConfig,
+  overrides: Record<string, unknown>,
+): ResolvedObsidianMemConfig {
+  const merged: ResolvedObsidianMemConfig = {
+    ...resolved,
+    vaults: resolved.vaults.map((vault) => ({ ...vault })),
+    model: { ...resolved.model },
+    milvus: { ...resolved.milvus },
+    budgets: { ...resolved.budgets },
+    llm: { ...resolved.llm },
+    dreaming: {
+      ...resolved.dreaming,
+      schedules: resolved.dreaming.schedules.map((schedule) => ({ ...schedule })),
+    },
+  }
+  for (const key of CARD_SETTINGS_KEYS) {
+    const parts = key.split('.')
+    let found: unknown = overrides
+    for (const part of parts) {
+      if (!isRecord(found)) {
+        found = undefined
+        break
+      }
+      found = found[part]
+    }
+    if (found === undefined) continue
+    let target = merged as unknown as Record<string, unknown>
+    for (const part of parts.slice(0, -1)) {
+      target = target[part] as Record<string, unknown>
+    }
+    target[parts[parts.length - 1]!] = found
+  }
+  return merged
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** DefaultUvxPrewarm warms the uv cache for the pinned milvus-lite wheel. */

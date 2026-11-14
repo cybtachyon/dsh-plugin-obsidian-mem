@@ -205,3 +205,9 @@ pid 1091813 verified alive 2026-11-13).
   re-pollution, re-run `node scripts/live-reindex.mjs` (~15 s, durable)
   + wake-audit re-check, then proceed. TASK-002/003/010/011 agents get
   the same no-memory-tools instruction.
+- PROTOCOL AMENDMENT (TASK-002 report): the agent-side no-memory-tools
+  rule is NOT a complete shield; host lifecycle recall hooks can dirty
+  notes on their own. Every collection-reading task (003, 010, 011)
+  STARTS with the wake-audit invariant check (213 rows, empty 0,
+  markers 0) and repairs via live-reindex before measuring; TASK-011
+  re-checks invariants immediately after its gated run.

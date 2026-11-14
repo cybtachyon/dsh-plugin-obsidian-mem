@@ -235,6 +235,26 @@ describe('think budget (TASK-043 input)', () => {
     expect(registry.thinkBudgetLeft('s1')).toBe(2)
     expect(registry.consumeThinkShot('s1')).toBe(true)
   })
+
+  it('rebases the cap live through setThinkShotsPerTurn (TASK-004)', () => {
+    const { file } = tempFile()
+    const registry = makeRegistry(file, { thinkShotsPerTurn: 1 })
+    expect(registry.consumeThinkShot('s1')).toBe(true)
+    expect(registry.consumeThinkShot('s1')).toBe(false)
+    // A raise applies immediately; the spent shot of the turn stays spent.
+    registry.setThinkShotsPerTurn(3)
+    expect(registry.thinkBudgetLeft('s1')).toBe(2)
+    expect(registry.consumeThinkShot('s1')).toBe(true)
+    // A lower cap bites at once: budget floors at 0, never negative.
+    registry.setThinkShotsPerTurn(1)
+    expect(registry.thinkBudgetLeft('s1')).toBe(0)
+    expect(registry.consumeThinkShot('s1')).toBe(false)
+    // Non-integer input truncates; non-finite input keeps the current cap.
+    registry.setThinkShotsPerTurn(2.9)
+    expect(registry.thinkBudgetLeft('s2')).toBe(2)
+    registry.setThinkShotsPerTurn(Number.NaN)
+    expect(registry.thinkBudgetLeft('s2')).toBe(2)
+  })
 })
 
 describe('read-intercept throttle state (TASK-042 input)', () => {

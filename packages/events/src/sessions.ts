@@ -202,7 +202,10 @@ interface SessionsFile {
  */
 export class SessionRegistry {
   private readonly file: string
-  private readonly thinkShotsPerTurn: number
+  // Mutable: the card's live settings apply rebases the cap through
+  // setThinkShotsPerTurn (PLAN-config-pane TASK-004); every other field
+  // stays constructor-pinned.
+  private thinkShotsPerTurn: number
   private readonly fs: ServiceFs
   private readonly now: () => number
   private readonly maxSessions: number
@@ -401,6 +404,21 @@ export class SessionRegistry {
   /** ThinkBudgetLeft answers the per-turn Think-intercept cap (TASK-043). */
   thinkBudgetLeft(sessionId: string): number {
     return Math.max(0, this.thinkShotsPerTurn - this.ensure(sessionId).thinkShots)
+  }
+
+  /**
+   * SetThinkShotsPerTurn rebases the per-turn Think cap without a restart
+   * (PLAN-config-pane TASK-004): the card edits budgets.thinkShotsPerTurn
+   * and the running service forwards the new value here. Shots already
+   * spent in the current turn stay spent, so a lowered cap bites as soon
+   * as the spend passes it and a raised cap applies immediately. Garbage
+   * input (non-finite) keeps the current cap; negative values clamp to 0.
+   */
+  setThinkShotsPerTurn(shots: number): void {
+    if (!Number.isFinite(shots)) {
+      return
+    }
+    this.thinkShotsPerTurn = Math.max(0, Math.trunc(shots))
   }
 
   /** ConsumeThinkShot spends one Think shot; false when the turn's cap is spent. */

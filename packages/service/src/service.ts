@@ -211,6 +211,14 @@ export interface SessionRegistryView {
   totalRecallTokensUsed(): number
   /** Zeroes every live session's recall counter; wired to the dream ok path. */
   resetRecallUsage(): void
+  /**
+   * Rebases the per-turn Think cap to a newly applied
+   * budgets.thinkShotsPerTurn (TASK-004 live apply). OPTIONAL: the live
+   * SessionRegistry grew this method after the view existed, so the service
+   * calls it through optional chaining and an older wired registry simply
+   * keeps its boot-baked cap until a restart.
+   */
+  setThinkShotsPerTurn?(shots: number): void
 }
 
 /** The seam's status answer; sync so the card can poll without provisioning. */
@@ -437,9 +445,15 @@ export class ObsidianMemService extends Service {
   private milvusVersion: string | null = null
   private milvusError: string | null = null
   private embedderStore: Embedder | null = null
+  // True when hooks.embedder supplied the embedder: that seam stays
+  // authoritative across card settings applies (TASK-004 never drops it).
+  private readonly embedderSeamProvided: boolean
   private indexer: IndexerLike | null = null
   private teardownRegistered = false
   private teardownPromise: Promise<void> | null = null
+  // The single in-flight card-settings apply (TASK-004 ordering guard);
+  // a second concurrent updateCardSettings/resetCardSettings rejects.
+  private cardSettingsApplying: Promise<CardSettingsView> | null = null
 
   /**
    * @param ctx - the cordis context the seam mounts into.
@@ -481,6 +495,7 @@ export class ObsidianMemService extends Service {
     this.prewarm = hooks.prewarm ?? defaultUvxPrewarm
     this.auditFs = hooks.auditFs ?? nodeAuditFs
     this.embedderStore = hooks.embedder ?? null
+    this.embedderSeamProvided = hooks.embedder !== undefined
   }
 
   /**
@@ -921,15 +936,19 @@ export class ObsidianMemService extends Service {
   /**
    * UpdateCardSettings applies a whitelisted settings patch. `set` paths
    * outside CARD_SETTINGS_KEYS, `unset` paths that are not whitelisted
-   * leaves, and values failing the full config schema (deep-merged into a
-   * draft of the effective config) throw with the joined messages for the
+   * leaves, values failing the full config schema (deep-merged into a draft
+   * of the effective config), and a call racing an apply still in flight
+   * (one apply runs at a time) all REJECT with the joined messages for the
    * route to map to 400; nothing persists on a rejected patch. The merged
    * overrides record is written atomically, a persisted milvus.dbPath move
-   * carries the current vaults.json into the new state dir best-effort,
-   * the live-apply escalation (TASK-004) runs, and the fresh view answers.
-   * It never provisions.
+   * carries the current vaults.json into the new state dir best-effort, and
+   * the live-apply escalation (TASK-004) swaps the running config and
+   * re-forms the subsystems with the smallest safe escalation. The promise
+   * answers the fresh view; an escalation failure rejects with the previous
+   * config values left applied, so the persisted delta reports itself as
+   * restartPending. It never provisions.
    */
-  updateCardSettings(patch: CardSettingsPatch): CardSettingsView {
+  async updateCardSettings(patch: CardSettingsPatch): Promise<CardSettingsView> {
     const unset = patch.unset ?? []
     const rejected: string[] = []
     collectNonCardSettingsPaths(patch.set ?? {}, [], rejected)
@@ -966,9 +985,10 @@ export class ObsidianMemService extends Service {
    * stored override: the file keeps its version stamp with an empty
    * overrides object, a dbPath the overrides had moved goes back to the
    * row's state dir via the vaults.json carry, the escalation re-applies
-   * toward the row values, and the fresh view answers.
+   * toward the row values, and the fresh view answers. Same rejection
+   * behavior as {@link ObsidianMemService.updateCardSettings}.
    */
-  resetCardSettings(): CardSettingsView {
+  async resetCardSettings(): Promise<CardSettingsView> {
     return this.commitCardSettings({})
   }
 
@@ -1405,12 +1425,32 @@ export class ObsidianMemService extends Service {
   }
 
   // CommitCardSettings is the ONE persistence tail both updateCardSettings
-  // and resetCardSettings share: snapshot the persisted view, write the
-  // record atomically, carry vaults.json forward when the persisted
-  // milvus.dbPath moved, run the single live-apply call site, then answer
-  // the fresh view (so restartPending reflects what the escalation did not
+  // and resetCardSettings share, and the home of the single in-flight
+  // guard (TASK-004): while one apply chain runs, any other commit throws
+  // (rejects at the public boundary) before it persists. The chain itself
+  // (applyCardSettings) persists, carries, escalates, then answers the
+  // fresh view (so restartPending reflects what the escalation did not
   // apply in-process).
-  private commitCardSettings(overrides: Record<string, unknown>): CardSettingsView {
+  private commitCardSettings(overrides: Record<string, unknown>): Promise<CardSettingsView> {
+    if (this.cardSettingsApplying !== null) {
+      throw new Error(
+        'obsidian-mem card settings rejected: another apply is still in flight; retry once it answers',
+      )
+    }
+    const applying = this.applyCardSettings(overrides)
+    this.cardSettingsApplying = applying
+    const clear = (): void => {
+      if (this.cardSettingsApplying === applying) this.cardSettingsApplying = null
+    }
+    applying.then(clear, clear)
+    return applying
+  }
+
+  // The apply chain behind commitCardSettings: snapshot the persisted
+  // view, write the record atomically, carry vaults.json forward when the
+  // persisted milvus.dbPath moved, run the single live-apply call site,
+  // then answer the fresh view.
+  private async applyCardSettings(overrides: Record<string, unknown>): Promise<CardSettingsView> {
     const before = this.effectiveCardSettings().settings
     this.persistSettingsOverrides(overrides)
     const after = this.effectiveCardSettings().settings
@@ -1418,7 +1458,7 @@ export class ObsidianMemService extends Service {
     if (changed.includes('milvus.dbPath')) {
       this.copyVaultsFileToStateDir(dbStateDir(after.milvus.dbPath))
     }
-    this.escalateCardSettings(changed)
+    await this.escalateCardSettings(changed, after)
     return this.cardSettings()
   }
 
@@ -1467,15 +1507,128 @@ export class ObsidianMemService extends Service {
     }
   }
 
-  // EscalateCardSettings is the single live-apply call site for an
-  // accepted card change. TASK-004 fills the escalation ladder (budgets/llm
-  // in-place swaps, the thinkShots setter, the embedder/collection
-  // re-forms); milvus.dbPath is persist-only by plan decision, its one
-  // in-process effect being commitCardSettings' vaults.json carry.
-  private escalateCardSettings(_changed: readonly string[]): void {
-    // Intentionally empty until TASK-004: the persisted values already
-    // stand, and cardSettings reports the un-applied delta as
-    // restartPending.
+  // EscalateCardSettings is the single live-apply call site for an accepted
+  // card change (TASK-004), the smallest safe escalation per changed class.
+  // It mutates this.config ONLY (INVARIANT: never the rowConfig base) by
+  // replacing whole nested groups, then re-forms what the change touches:
+  //   budgets.*: object swap; every consumer reads budgets at call time.
+  //     budgets.thinkShotsPerTurn additionally reaches the boot-baked
+  //     SessionRegistry cap through the view's optional setter.
+  //   llm.*: object swap plus restartIndexer (buildIndexer reads config.llm).
+  //   vectorDim / model.id / model.cacheDir: config swap, drop the lazy
+  //     embedder (the hooks.embedder seam stays authoritative), and when
+  //     ready re-run the provision step-5 pair on a width move (rebuild +
+  //     dropVaultStateFiles) before restartIndexer. Same width or a
+  //     cacheDir-only move is just restartIndexer: chunk ids bake
+  //     modelId+vectorDim, so the indexer's state diff re-embeds changed
+  //     content and stale-deletes the old rows by itself. Not yet
+  //     provisioned: the config mutation is enough; provisioning picks the
+  //     new values up (dim drift is answered at its step 5 the same way).
+  //   milvus.dbPath: persist-only by plan decision; the subsystems keep the
+  //     old dir until a restart, and cardSettings' restartPending reports
+  //     it (the commit tail's vaults.json carry is its one in-process
+  //     effect).
+  // An apply landing during 'provisioning' waits the pass out first: that
+  // step-5 pair may already have run against the pre-change config, and no
+  // client exists before it. A failed re-form restores the snapshotted
+  // values so the previous config stays applied, then answers a
+  // validation-style error.
+  private async escalateCardSettings(
+    changed: readonly string[],
+    target: CardEditableConfig,
+  ): Promise<void> {
+    if (changed.length === 0) {
+      return
+    }
+    if (this.phase === 'provisioning' && this.access !== null) {
+      // Wait out the in-flight pass, failure included: the phase settles,
+      // and a config-only apply stays correct when it never reaches ready.
+      await this.access.promise.catch(() => undefined)
+    }
+
+    const budgetsChanged = changed.some((key) => key.startsWith('budgets.'))
+    const llmChanged = changed.some((key) => key.startsWith('llm.'))
+    const embedderChanged = changed.includes('vectorDim')
+      || changed.includes('model.id')
+      || changed.includes('model.cacheDir')
+    const dimChanged = changed.includes('vectorDim')
+    const thinkShotsChanged = changed.includes('budgets.thinkShotsPerTurn')
+
+    // Snapshot every field this escalation may swap; the catch restores it.
+    const previous = {
+      budgets: this.config.budgets,
+      llm: this.config.llm,
+      model: this.config.model,
+      vectorDim: this.config.vectorDim,
+      embedder: this.embedderStore,
+    }
+
+    if (budgetsChanged) this.config.budgets = { ...target.budgets }
+    if (llmChanged) this.config.llm = { ...target.llm }
+    if (changed.includes('model.id') || changed.includes('model.cacheDir')) {
+      // The model group swap keeps the non-card dtype leaf untouched.
+      this.config.model = {
+        ...this.config.model,
+        id: target.model.id,
+        cacheDir: target.model.cacheDir,
+      }
+    }
+    if (dimChanged) this.config.vectorDim = target.vectorDim
+    if (thinkShotsChanged) {
+      this.sessionRegistryValue?.setThinkShotsPerTurn?.(this.config.budgets.thinkShotsPerTurn)
+    }
+    if (embedderChanged && !this.embedderSeamProvided) {
+      this.embedderStore = null
+    }
+
+    if (!llmChanged && !embedderChanged) {
+      // Pure budgets patch: call-time readers need no further work.
+      return
+    }
+
+    try {
+      const client = this.client
+      if (dimChanged && this.phase === 'ready' && client !== null) {
+        const collection = await ensureCollection(client, { dim: this.config.vectorDim })
+        if (collection.needsRebuild) {
+          this.log.warn(
+            `card settings: vectorDim moved to ${String(this.config.vectorDim)} `
+            + `(stored dim ${String(collection.storedDim ?? 'unknown')}); rebuilding the `
+            + 'collection and forcing a full reindex',
+          )
+          await rebuildCollection(client, { dim: this.config.vectorDim })
+          this.dropVaultStateFiles()
+        }
+      }
+      // No-op while the index is not live; provisioning picks the swap up.
+      this.restartIndexer()
+    } catch (error: unknown) {
+      this.config.budgets = previous.budgets
+      this.config.llm = previous.llm
+      this.config.model = previous.model
+      this.config.vectorDim = previous.vectorDim
+      if (thinkShotsChanged) {
+        this.sessionRegistryValue?.setThinkShotsPerTurn?.(previous.budgets.thinkShotsPerTurn)
+      }
+      if (embedderChanged && !this.embedderSeamProvided) {
+        this.embedderStore = previous.embedder
+      }
+      // restartIndexer stops the old manager before building the new one,
+      // so the rollback re-forms over the restored config rather than
+      // leaving a stopped indexer in place.
+      try {
+        this.restartIndexer()
+      } catch (restoreError: unknown) {
+        this.log.error(`card settings rollback re-form failed: ${describeError(restoreError)}`)
+      }
+      this.log.error(
+        `card settings apply failed; previous values stay applied: ${describeError(error)}`,
+      )
+      throw new Error(
+        `obsidian-mem card settings apply failed: ${describeError(error)}`,
+        { cause: error },
+      )
+    }
   }
 
   private writeAtomic(path: string, contents: string): void {
@@ -1820,8 +1973,9 @@ function changedCardSettingsPaths(
 }
 
 // DivergingCardSettingsPaths is the restartPending answer: whitelisted
-// paths where the persisted view has left the in-process config behind
-// (today: milvus.dbPath after a change; TASK-004 shrinks this set live).
+// paths where the persisted view has left the in-process config behind.
+// escalateCardSettings applies every class except milvus.dbPath, so a
+// settled store only ever diverges on that one knob.
 function divergingCardSettingsPaths(
   persisted: CardEditableConfig,
   running: ResolvedObsidianMemConfig,

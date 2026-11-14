@@ -142,7 +142,7 @@ export interface SessionRegistryOptions {
  */
 export declare class SessionRegistry {
     private readonly file;
-    private readonly thinkShotsPerTurn;
+    private thinkShotsPerTurn;
     private readonly fs;
     private readonly now;
     private readonly maxSessions;
@@ -216,6 +216,15 @@ export declare class SessionRegistry {
     memoryToolUsed(sessionId: string): boolean;
     /** ThinkBudgetLeft answers the per-turn Think-intercept cap (TASK-043). */
     thinkBudgetLeft(sessionId: string): number;
+    /**
+     * SetThinkShotsPerTurn rebases the per-turn Think cap without a restart
+     * (PLAN-config-pane TASK-004): the card edits budgets.thinkShotsPerTurn
+     * and the running service forwards the new value here. Shots already
+     * spent in the current turn stay spent, so a lowered cap bites as soon
+     * as the spend passes it and a raised cap applies immediately. Garbage
+     * input (non-finite) keeps the current cap; negative values clamp to 0.
+     */
+    setThinkShotsPerTurn(shots: number): void;
     /** ConsumeThinkShot spends one Think shot; false when the turn's cap is spent. */
     consumeThinkShot(sessionId: string): boolean;
     /** AddRecallTokens accumulates injected tokens for TASK-045's global budget. */

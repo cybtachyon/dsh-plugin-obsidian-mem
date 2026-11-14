@@ -201,8 +201,11 @@ function stubClient(options: { existingDim?: number | null } = {}) {
         collection_name: 'obsidian_mem',
         schema: {
           fields: [
-            { name: 'content_vector', type: 'FloatVector', dim },
-            { name: 'text_sparse', type: 'SparseFloatVector' },
+            // The core MILVUS_FIELDS names (dense_vector, sparse): the dim
+            // and sparse-membership checks read them, so an existingDim
+            // must describe as a schema that actually matches.
+            { name: 'dense_vector', type: 'FloatVector', dim },
+            { name: 'sparse', type: 'SparseFloatVector' },
           ],
         },
       }
@@ -276,6 +279,8 @@ interface HarnessOptions {
   failFirstMkdirp?: boolean
   /** Host services the fake ctx.get answers for (agents, agentDefaultModel). */
   services?: Record<string, unknown>
+  /** Omit the embedder seam so getEmbedder builds real (lazy) embedders. */
+  noEmbedderSeam?: boolean
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -315,7 +320,9 @@ function harness(options: HarnessOptions = {}) {
       order.push(`client:${address}`)
       return client as never
     },
-    embedder: fakeEmbedder({ vectorDim: options.config?.vectorDim ?? VECTOR_DIM_DEFAULT }),
+    ...(options.noEmbedderSeam === true
+      ? {}
+      : { embedder: fakeEmbedder({ vectorDim: options.config?.vectorDim ?? VECTOR_DIM_DEFAULT }) }),
     indexerFactory: (managerOptions) => {
       indexer.builtWithOptions.push(managerOptions)
       return indexer
@@ -1209,6 +1216,188 @@ describe('dream budget rebaseline wiring', () => {
     expect(agents.created).toEqual([])
     expect(resets).toBe(0)
     expect(h.service.globalMemoryIndex().usedTokens).toBe(9999)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PLAN-config-pane TASK-004: the live card-settings escalation on a fully
+// provisioned stack (budgets in-place, thinkShots to the registry, llm and
+// model/dim re-forms, dbPath persist-only, ordering guard + rollback).
+
+describe('card settings live apply (TASK-004)', () => {
+  const vaultStatePath = join(metadataDir('/vault'), 'obsidian-mem-state.json')
+  const vaultSeeds = {
+    config: { vaults: [{ path: '/vault', mode: 'shared' }] } as ObsidianMemConfig,
+    seedDirs: ['/vault'],
+    seedFiles: { [vaultStatePath]: '{"version":1,"modelId":"x","vectorDim":384,"files":{}}' },
+  }
+
+  it('swaps budgets in place while ready: call-time readers see them, nothing pends', async () => {
+    const h = harness(vaultSeeds)
+    await h.service.ensureMemoryAccess()
+    // defaultTokenCap wiring: the stub row's chunk_text survives the
+    // 350-token default and truncates once the patched cap is in force.
+    const before = await h.service.search({ query: 'anything' })
+    expect(before[0]!.chunk_text).toBe('the fact, stated plainly')
+
+    const view = await h.service.updateCardSettings({
+      set: { budgets: { searchTopK: 8, readSectionTokens: 1 } },
+    })
+    expect(h.service.config.budgets.searchTopK).toBe(8)
+    expect(h.service.status().budgets.readSectionTokens).toBe(1)
+    expect(view.restartPending).toEqual([])
+    // Call-time reads: the search pipeline runs the new cap without a
+    // re-form, and budgets alone never re-form the indexer.
+    const after = await h.service.search({ query: 'anything' })
+    expect(after[0]!.chunk_text).toBe('the ')
+    expect(h.indexer.builtWithOptions).toHaveLength(1)
+  })
+
+  it('forwards budgets.thinkShotsPerTurn to the wired registry setter', async () => {
+    const h = harness(vaultSeeds)
+    await h.service.ensureMemoryAccess()
+    const setThinkShotsPerTurn = vi.fn()
+    h.service.setSessionRegistry({
+      totalRecallTokensUsed: () => 0,
+      resetRecallUsage: () => {},
+      setThinkShotsPerTurn,
+    })
+    await h.service.updateCardSettings({ set: { budgets: { thinkShotsPerTurn: 5 } } })
+    expect(h.service.config.budgets.thinkShotsPerTurn).toBe(5)
+    expect(setThinkShotsPerTurn).toHaveBeenCalledWith(5)
+  })
+
+  it('tolerates a wired registry without the optional setter', async () => {
+    const h = harness(vaultSeeds)
+    h.service.setSessionRegistry({ totalRecallTokensUsed: () => 0, resetRecallUsage: () => {} })
+    const view = await h.service.updateCardSettings({ set: { budgets: { thinkShotsPerTurn: 4 } } })
+    expect(h.service.config.budgets.thinkShotsPerTurn).toBe(4)
+    expect(view.restartPending).toEqual([])
+  })
+
+  it('re-forms the indexer with the new llm options on an llm patch', async () => {
+    const h = harness(vaultSeeds)
+    await h.service.ensureMemoryAccess()
+    expect(h.indexer.builtWithOptions[0]!.llm).toBeUndefined()
+    const view = await h.service.updateCardSettings({
+      set: { llm: { enabled: true, baseUrl: 'https://infer.local', model: 'm1', apiKeyEnv: 'LLM_KEY' } },
+    })
+    expect(h.indexer.stop).toHaveBeenCalledTimes(1)
+    expect(h.indexer.builtWithOptions).toHaveLength(2)
+    expect(h.indexer.builtWithOptions[1]!.llm).toEqual({
+      enabled: true,
+      baseUrl: 'https://infer.local',
+      model: 'm1',
+      apiKeyEnv: 'LLM_KEY',
+    })
+    expect(h.indexer.start).toHaveBeenCalledTimes(2)
+    expect(view.restartPending).toEqual([])
+    // No collection work for an llm move.
+    expect(h.client.calls).not.toContain('dropCollection')
+  })
+
+  it('rebuilds the collection and re-forms over a new embedder on a vectorDim move', async () => {
+    const h = harness({ ...vaultSeeds, existingDim: 384, noEmbedderSeam: true })
+    await h.service.ensureMemoryAccess()
+    expect(h.fs.has(vaultStatePath)).toBe(true)
+
+    const view = await h.service.updateCardSettings({ set: { vectorDim: 256 } })
+    expect(h.service.config.vectorDim).toBe(256)
+    // The provision step-5 pair ran: drift rebuild, forced full reindex.
+    expect(h.client.calls).toContain('dropCollection')
+    expect(h.client.calls.filter((call) => call === 'createCollection')).toHaveLength(1)
+    expect(h.fs.has(vaultStatePath)).toBe(false)
+    // The dropped lazy embedder re-built over the new width (the dim is
+    // baked into it), and the indexer re-formed.
+    expect(h.indexer.builtWithOptions).toHaveLength(2)
+    expect(h.indexer.builtWithOptions[0]!.embedder.dim).toBe(384)
+    expect(h.indexer.builtWithOptions[1]!.embedder.dim).toBe(256)
+    expect(h.indexer.builtWithOptions[1]!.embedder)
+      .not.toBe(h.indexer.builtWithOptions[0]!.embedder)
+    expect(view.restartPending).toEqual([])
+  })
+
+  it('keeps the hooks.embedder seam authoritative across a model.id move', async () => {
+    const h = harness({ ...vaultSeeds, existingDim: 384 })
+    await h.service.ensureMemoryAccess()
+    const callsBefore = h.client.calls.length
+    await h.service.updateCardSettings({ set: { model: { id: 'custom/embed-model' } } })
+    expect(h.service.config.model.id).toBe('custom/embed-model')
+    // Same width: no collection pair, just the indexer re-form.
+    expect(h.client.calls.slice(callsBefore)).not.toContain('dropCollection')
+    expect(h.fs.has(vaultStatePath)).toBe(true)
+    expect(h.indexer.builtWithOptions).toHaveLength(2)
+    expect(h.indexer.builtWithOptions[1]!.embedder)
+      .toBe(h.indexer.builtWithOptions[0]!.embedder)
+  })
+
+  it('mutates config only when nothing is provisioned', async () => {
+    const h = harness(vaultSeeds)
+    const view = await h.service.updateCardSettings({ set: { vectorDim: 256 } })
+    expect(h.service.config.vectorDim).toBe(256)
+    expect(h.client.calls).toEqual([])
+    expect(h.indexer.builtWithOptions).toEqual([])
+    expect(h.fs.has(vaultStatePath)).toBe(true)
+    expect(view.restartPending).toEqual([])
+  })
+
+  it('keeps milvus.dbPath persist-only: it pends, no subsystem is touched', async () => {
+    const h = harness(vaultSeeds)
+    await h.service.ensureMemoryAccess()
+    const callsBefore = h.client.calls.length
+    const view = await h.service.updateCardSettings({ set: { milvus: { dbPath: '/second/db' } } })
+    expect(view.settings.milvus.dbPath).toBe('/second/db')
+    expect(view.restartPending).toEqual(['milvus.dbPath'])
+    // The running subsystems stay on the boot dbPath.
+    expect(h.service.config.milvus.dbPath).toBe(DB_PATH)
+    expect(h.client.calls).toHaveLength(callsBefore)
+    expect(h.launcher.start).toHaveBeenCalledTimes(1)
+    expect(h.indexer.builtWithOptions).toHaveLength(1)
+  })
+
+  it('waits an in-flight provisioning pass before applying', async () => {
+    const h = harness(vaultSeeds)
+    const access = h.service.ensureMemoryAccess()
+    const applying = h.service.updateCardSettings({ set: { budgets: { searchTopK: 8 } } })
+    // The chain is parked on the provisioning pass: nothing applied yet.
+    expect(h.service.config.budgets.searchTopK).toBe(6)
+    await access
+    const view = await applying
+    expect(h.service.config.budgets.searchTopK).toBe(8)
+    expect(view.restartPending).toEqual([])
+  })
+
+  it('answers a vectorDim move during provisioning with the settled step-5 drift pass', async () => {
+    const h = harness({ ...vaultSeeds, existingDim: 384 })
+    const access = h.service.ensureMemoryAccess()
+    const applying = h.service.updateCardSettings({ set: { vectorDim: 256 } })
+    await access
+    const view = await applying
+    // Provisioning itself created the collection at the boot 384 width;
+    // the settled apply saw the drift and rebuilt.
+    expect(h.client.calls).toContain('dropCollection')
+    expect(h.fs.has(vaultStatePath)).toBe(false)
+    expect(h.indexer.builtWithOptions).toHaveLength(2)
+    expect(view.restartPending).toEqual([])
+  })
+
+  it('rolls the config back and rejects when the re-form fails', async () => {
+    const h = harness({ ...vaultSeeds, existingDim: 384 })
+    await h.service.ensureMemoryAccess()
+    // Break the collection pair after the boot pass succeeded.
+    const broken = h.client as unknown as { hasCollection(): Promise<never> }
+    broken.hasCollection = async () => {
+      throw new Error('milvus describe exploded')
+    }
+    await expect(h.service.updateCardSettings({ set: { vectorDim: 256 } }))
+      .rejects.toThrow(/card settings apply failed/)
+    // Previous values stay applied; the persisted delta reports itself.
+    expect(h.service.config.vectorDim).toBe(384)
+    expect(h.service.cardSettings().restartPending).toEqual(['vectorDim'])
+    // The rollback re-formed the indexer over the restored config: the
+    // old manager is stopped and a live one is in place, never dangling.
+    expect(h.indexer.builtWithOptions).toHaveLength(2)
+    expect(h.indexer.start).toHaveBeenCalledTimes(2)
   })
 })
 

@@ -118,6 +118,14 @@ export interface SessionRegistryView {
     totalRecallTokensUsed(): number;
     /** Zeroes every live session's recall counter; wired to the dream ok path. */
     resetRecallUsage(): void;
+    /**
+     * Rebases the per-turn Think cap to a newly applied
+     * budgets.thinkShotsPerTurn (TASK-004 live apply). OPTIONAL: the live
+     * SessionRegistry grew this method after the view existed, so the service
+     * calls it through optional chaining and an older wired registry simply
+     * keeps its boot-baked cap until a restart.
+     */
+    setThinkShotsPerTurn?(shots: number): void;
 }
 /** The seam's status answer; sync so the card can poll without provisioning. */
 export interface ObsidianMemStatus {
@@ -268,9 +276,11 @@ export declare class ObsidianMemService extends Service {
     private milvusVersion;
     private milvusError;
     private embedderStore;
+    private readonly embedderSeamProvided;
     private indexer;
     private teardownRegistered;
     private teardownPromise;
+    private cardSettingsApplying;
     /**
      * @param ctx - the cordis context the seam mounts into.
      * @param config - the mounted row config; every field defaults, `{}` is complete.
@@ -390,23 +400,28 @@ export declare class ObsidianMemService extends Service {
     /**
      * UpdateCardSettings applies a whitelisted settings patch. `set` paths
      * outside CARD_SETTINGS_KEYS, `unset` paths that are not whitelisted
-     * leaves, and values failing the full config schema (deep-merged into a
-     * draft of the effective config) throw with the joined messages for the
+     * leaves, values failing the full config schema (deep-merged into a draft
+     * of the effective config), and a call racing an apply still in flight
+     * (one apply runs at a time) all REJECT with the joined messages for the
      * route to map to 400; nothing persists on a rejected patch. The merged
      * overrides record is written atomically, a persisted milvus.dbPath move
-     * carries the current vaults.json into the new state dir best-effort,
-     * the live-apply escalation (TASK-004) runs, and the fresh view answers.
-     * It never provisions.
+     * carries the current vaults.json into the new state dir best-effort, and
+     * the live-apply escalation (TASK-004) swaps the running config and
+     * re-forms the subsystems with the smallest safe escalation. The promise
+     * answers the fresh view; an escalation failure rejects with the previous
+     * config values left applied, so the persisted delta reports itself as
+     * restartPending. It never provisions.
      */
-    updateCardSettings(patch: CardSettingsPatch): CardSettingsView;
+    updateCardSettings(patch: CardSettingsPatch): Promise<CardSettingsView>;
     /**
      * ResetCardSettings ("Reset all to profile settings") clears every
      * stored override: the file keeps its version stamp with an empty
      * overrides object, a dbPath the overrides had moved goes back to the
      * row's state dir via the vaults.json carry, the escalation re-applies
-     * toward the row values, and the fresh view answers.
+     * toward the row values, and the fresh view answers. Same rejection
+     * behavior as {@link ObsidianMemService.updateCardSettings}.
      */
-    resetCardSettings(): CardSettingsView;
+    resetCardSettings(): Promise<CardSettingsView>;
     /**
      * GlobalMemoryIndex is the global recall-budget view (TASK-045): the
      * configured budget against the recall tokens the wired
@@ -470,6 +485,7 @@ export declare class ObsidianMemService extends Service {
     private applySettingsOverrides;
     private readSettingsOverrides;
     private commitCardSettings;
+    private applyCardSettings;
     private effectiveCardSettings;
     private persistSettingsOverrides;
     private copyVaultsFileToStateDir;

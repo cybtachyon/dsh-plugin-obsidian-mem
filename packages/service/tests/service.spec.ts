@@ -309,6 +309,28 @@ const SLOW_CHAIN_MS = 250
 // nothing), never for the chain. Virtual timers make the cap itself instant.
 const TEARDOWN_MARGIN_MS = 5_000
 
+// TOOL_WRITE_BUDGET_MS restates WRITE_TIMEOUT_MS from
+// packages/tools/src/write.ts (the memory_write tool's timeoutMs): service
+// tests must not import the tools package, so the 10 s budget is pinned by
+// comment and measured against by the TASK-008 batch test below.
+const TOOL_WRITE_BUDGET_MS = 10_000
+
+// The TASK-008 batch proof's constants. INDEX_STALL_MS x k is the fake
+// indexer's delay on call k: the shape a real serial index queue shows when
+// every call piles behind the last, which is what the old awaited pipeline
+// summed (~3 s) into later write latencies. WRITE_LATENCY_CEILING_MS is the
+// per-call ceiling catching that pile-up, kept generous (3x3 the fake) for
+// busy CI boxes.
+const BATCH_WRITE_COUNT = 10
+const INDEX_STALL_MS = 300
+const WRITE_LATENCY_CEILING_MS = 1_000
+const GIT_COMMIT_STALL_MS = 5
+
+// BATCH_TEST_TIMEOUT_MS: the green batch run's wall clock is the drain of
+// the scaled fake queue (~3 s); this gives the 5 s default real headroom
+// on a busy CI box without changing the green-path duration.
+const BATCH_TEST_TIMEOUT_MS = 15_000
+
 interface HarnessOptions {
   config?: ObsidianMemConfig
   seedFiles?: Record<string, string>
@@ -1207,6 +1229,110 @@ describe('write follow-up chains', () => {
       expect.stringMatching(/^obsidian-mem: memory_write stuck\.md /),
     ])
   })
+})
+
+// TASK-008 (PLAN-async-writes): the goal's regression proof at the unit
+// tier. Ten consecutive writes against a slow fake index queue must each
+// resolve inside a small fraction of the tools-tier write budget, and the
+// queue must still be draining when the tenth call returned. Re-awaiting
+// the index/commit follow-ups in applyWrite fails this test loudly (per
+// call 4 onward the latency assertion trips, and the queue-prefix proof
+// would already be gone).
+describe('batched writes stay under the tool write budget', () => {
+  /**
+   * BatchGitHarness mirrors writeReadyGitHarness with the queue realism
+   * the batch needs: every successful commit answers after a small stall
+   * and leaves the tree dirty again, because the next queued write lands
+   * its own change behind it (recordingGit's commit cleans the tree, which
+   * would make later writes look like no-op rewrites).
+   */
+  async function batchGitHarness() {
+    const git = recordingGit()
+    const baseRunner = git.gitRunner
+    const gitRunner = (root: string): GitRunner => {
+      const base = baseRunner(root)
+      return async (argv) => {
+        const result = await base(argv)
+        if (argv.includes('commit') && result.code === 0) {
+          await new Promise((resolve) => { setTimeout(resolve, GIT_COMMIT_STALL_MS) })
+          git.markDirty()
+        }
+        return result
+      }
+    }
+    const vault = gitTempDir()
+    const h = gitVaultHarness({ gitRunner }, [{ path: vault }])
+    await h.service.ensureMemoryAccess()
+    git.calls.length = 0
+    git.markDirty()
+    return { git, h, vault }
+  }
+
+  it('ten awaited writes each return ahead of the index queue, then drain in order', async () => {
+    const { git, h, vault } = await batchGitHarness()
+
+    // The fake indexer's per-call latency scales with the call count: a
+    // pile-up fixture, installed on THIS harness's mock only, so sibling
+    // suites keep the instant default.
+    const indexArrivals: string[] = []
+    const indexCompletions: string[] = []
+    let indexCalls = 0
+    h.indexer.indexFile.mockImplementation(async (_vaultPath: string, relPath: string) => {
+      indexCalls += 1
+      indexArrivals.push(relPath)
+      await new Promise((resolve) => { setTimeout(resolve, indexCalls * INDEX_STALL_MS) })
+      indexCompletions.push(relPath)
+      return true
+    })
+
+    const relPaths: string[] = []
+    const latenciesMs: number[] = []
+    for (let write = 1; write <= BATCH_WRITE_COUNT; write += 1) {
+      const relPath = `batch-${write}.md`
+      relPaths.push(relPath)
+      const started = performance.now()
+      await h.service.applyWrite(
+        join(vault, relPath),
+        testMeta({ index_title: `Topic: batch ${write}` }),
+        `fact ${write}\n`,
+      )
+      const latencyMs = performance.now() - started
+      latenciesMs.push(latencyMs)
+      // Asserted per call, not after the loop: a re-awaited follow-up
+      // piles 300 ms x k into call k, and this trips at call 4 (1.2 s)
+      // with the fake queue, well before the old pipeline's full ~16 s
+      // crawl could hit the test timeout. With the async chain every
+      // call is near-instant: the ceiling is 3x the fake's first call
+      // and 1000x under the tools budget, generous for busy CI boxes.
+      expect(latencyMs).toBeLessThan(WRITE_LATENCY_CEILING_MS)
+      expect(latencyMs).toBeLessThan(TOOL_WRITE_BUDGET_MS)
+    }
+
+    // Returned-ahead-of-queue proof: when the tenth call resolved, the
+    // fake indexer had completed at most a prefix of the ten paths.
+    expect(indexCompletions.length).toBeLessThan(BATCH_WRITE_COUNT)
+    expect(indexCompletions).toEqual(relPaths.slice(0, indexCompletions.length))
+
+    // Drain: every path reached the fake indexer in write order and
+    // completed, and the git lane recorded one memory_write commit per
+    // write, in write order, through the runner argv ledger.
+    await h.service.flushWriteFollowUps()
+    expect(indexArrivals).toEqual(relPaths)
+    expect(indexCompletions).toEqual(relPaths)
+    expect(h.indexer.indexFile).toHaveBeenCalledTimes(BATCH_WRITE_COUNT)
+
+    const messages = commitMessages(git)
+    expect(messages).toHaveLength(BATCH_WRITE_COUNT)
+    messages.forEach((message, offset) => {
+      expect(message).toMatch(
+        new RegExp(
+          `^obsidian-mem: memory_write batch-${offset + 1}\\.md `
+          + '\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$',
+        ),
+      )
+    })
+    expect(h.ctx.errors).toEqual([])
+  }, BATCH_TEST_TIMEOUT_MS)
 })
 
 // TASK-003 (PLAN-async-writes): the provisioning pass splits into the fast

@@ -80,7 +80,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 
 ### Phase 3 — Batch verification
 
- - [ ] [TASK-008-batch-unit-test](docs/PLAN-async-writes-TASK-008-batch-unit-test.md)
+ - [x] [TASK-008-batch-unit-test](docs/PLAN-async-writes-TASK-008-batch-unit-test.md)
  - [ ] [TASK-009-live-bench](docs/PLAN-async-writes-TASK-009-live-bench.md)
  - [ ] [TASK-010-verify-suite](docs/PLAN-async-writes-TASK-010-verify-suite.md)
 

@@ -34,3 +34,28 @@ Definition of Done:
   (prove it once by temporarily re-awaiting in a scratch run, not in the
   commit).
 - Coverage floors hold; `pnpm lint` green; tree clean.
+
+## Results
+
+Test landed in `packages/service/tests/service.spec.ts` as the
+`batched writes stay under the tool write budget` describe, one test,
+`pnpm test` tier, ~3.0 s wall (the flush drains the scaled fake queue;
+sibling suites keep the instant indexFile default). The git lane proof
+rides the recordingGit call ledger (fake runner argv), so no real git is
+forked; the wrapped runner stalls each commit 5 ms and re-dirties the
+tree so all ten commits are recorded.
+
+Measured per-call `applyWrite` latencies (ms, successful run, the tenth
+number is call 10):
+
+```text
+2.9 0.4 0.2 0.2 0.1 0.1 0.1 0.1 0.1 0.1
+```
+
+Scratch-fail experiment (DoD pin proof, NOT committed): with the test's
+per-call latency assertion inside the write loop, temporarily replaced
+service.ts's `this.trackFollowUp(indexer.indexFile(...))` with
+`await indexer.indexFile(...)`, ran ONLY this test: it failed loudly with
+`AssertionError: expected 1206.134118 to be less than 1000` at call 4
+(the 300 ms x k pile-up), then `git checkout -- packages/service/src/service.ts`
+restored the source (verified: tree carries only the test + docs).

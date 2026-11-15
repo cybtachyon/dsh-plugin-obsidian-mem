@@ -22,7 +22,8 @@ import {
 
 /**
  * Read-intercept specs (TASK-042): the tools/result filter matrix (tool
- * name, agent presence, errors, vault-contained files, already-injected
+ * name, agent presence, errors, vault-contained files, dream-lineage
+ * suppression (TASK-005), already-injected
  * sources, offline index with warn-once), the session throttle, cap, and
  * directory skip, the per-turn path dedupe, extraction fixtures (import
  * snippet, directory signals), request budget wiring, and the injected
@@ -75,13 +76,15 @@ function readHarness(options: HarnessOptions = {}) {
 
   /**
    * Emit one tools/result for a harness Read. `agent: false` drops the
-   * executing agent from the payload (exactOptionalPropertyTypes-safe).
+   * executing agent from the payload (exactOptionalPropertyTypes-safe); a
+   * given agent replaces the default one.
    */
   function read(call: { name?: string, arguments?: unknown, agent?: LiveAgent | false } = {}, result: ToolResultMirror = readResult): void {
+    const actor = call.agent === undefined ? agent : call.agent
     const exec: ToolExecutionMirror = {
       name: call.name ?? 'read',
       arguments: call.arguments ?? { file_path: '/work/project/src/App.tsx' },
-      ...(call.agent === false ? {} : { agent }),
+      ...(actor === false ? {} : { agent: actor }),
     }
     ctx.emit('tools/result', exec, result)
   }
@@ -136,6 +139,27 @@ describe('tools/result filter matrix', () => {
     await settled()
     expect(memory.exactRequests).toHaveLength(0)
     expect(agent.injected).toHaveLength(0)
+  })
+
+  it('skips dream-lineage sessions entirely (TASK-005); normal sessions still inject', async () => {
+    const { agent, ctx, memory, read, registry } = readHarness({ exactResults: [sectionA] })
+    const dream = fakeAgent({ id: 'dream-run-1', cwd: '/work/project' })
+    ctx.emit('agent/created', dream.asCreated())
+    expect(registry.isDreamLineage('dream-run-1')).toBe(true)
+    read({ agent: dream, arguments: { file_path: '/work/project/src/App.tsx' } })
+    await settled()
+    // No search, no injection, no budget or bookkeeping consumed.
+    expect(memory.exactRequests).toHaveLength(0)
+    expect(dream.injected).toHaveLength(0)
+    expect(registry.ensure('dream-run-1').readInjections).toBe(0)
+    expect(registry.wakeTermsFor('dream-run-1').size).toBe(0)
+    expect(registry.readDirCovered('dream-run-1', '/work/project/src')).toBe(false)
+    expect(registry.recallTokensUsed('dream-run-1')).toBe(0)
+    // The same mount's non-lineaged session is unaffected.
+    read({ arguments: { file_path: '/work/project/src/App.tsx' } })
+    await settled()
+    expect(memory.exactRequests).toHaveLength(1)
+    expect(agent.injected).toHaveLength(2) // the notice, then one recall
   })
 
   it('skips sources already injected this session (query runs, envelope does not)', async () => {

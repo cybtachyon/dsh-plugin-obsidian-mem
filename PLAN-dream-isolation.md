@@ -40,7 +40,7 @@ See the Questionnaire section; answers are persisted here after Step 4.
 
  - [x] [TASK-003-registry-dream-lineage-flag](docs/PLAN-dream-isolation-TASK-003-registry-dream-lineage-flag.md)
  - [x] [TASK-004-created-handler-lineage](docs/PLAN-dream-isolation-TASK-004-created-handler-lineage.md)
- - [ ] [TASK-005-read-intercept-lineage-gate](docs/PLAN-dream-isolation-TASK-005-read-intercept-lineage-gate.md)
+ - [x] [TASK-005-read-intercept-lineage-gate](docs/PLAN-dream-isolation-TASK-005-read-intercept-lineage-gate.md)
  - [ ] [TASK-006-launch-window-suppression](docs/PLAN-dream-isolation-TASK-006-launch-window-suppression.md)
 
 ## Phase 3: Refactor and whole-repo verification

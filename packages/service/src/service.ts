@@ -39,7 +39,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { homedir as osHomedir } from 'node:os'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import type { MilvusClient } from '@zilliz/milvus2-sdk-node'
@@ -53,7 +53,7 @@ import {
   formatLocalDate,
   globalFilePath,
   isOverGlobalBudget,
-  isReservedNonIndexed,
+  isReservedVaultFile,
   isVaultMode,
   metadataDir,
   MILVUS_COLLECTION,
@@ -869,7 +869,7 @@ export class ObsidianMemService extends Service {
    * Write orchestrates a note write end to end: meta validation (core
    * validateMeta errors throw), then applyWrite. The path-scoping,
    * staleness, and read-only guard conversation live in the memory_write
-   * tool (TASK-033); this stays the single write-through primitive chain.
+   * tool (TASK-033); this stays the single note-write primitive chain.
    */
   async write(request: ObsidianMemWriteRequest): Promise<ObsidianMemWriteResult> {
     const { errors } = validateMeta(request.meta)
@@ -886,7 +886,7 @@ export class ObsidianMemService extends Service {
    * un-modelled author key would otherwise be silently dropped on
    * rewrite), writes atomically, and updates the read registry. The
    * returned value confirms the note file landed on disk; it carries no
-   * promise about the slow bookkeeping. The write-through reindex and the
+   * promise about the slow bookkeeping. The reindex and the
    * one git commit per successful write (Q3: no debounce) settle
    * asynchronously on two INDEPENDENT tracked follow-up chains, so a slow
    * embed never delays a commit; vault-internal order stays owned by
@@ -914,10 +914,7 @@ export class ObsidianMemService extends Service {
     }
     // Reserved protocol files (.INTENTS.md, DREAMS.md, <slug>_history.md)
     // are never authored-note targets; the note dir itself is checked next.
-    const fileName = target.slice(Math.max(target.lastIndexOf('/'), target.lastIndexOf('\\')) + 1)
-    if (target.startsWith(`${classified.vault.path}${sep}`)
-      && target.slice(classified.vault.path.length + 1).indexOf(sep) === -1
-      && isReservedNonIndexed(fileName)) {
+    if (isReservedVaultFile(classified.vault.path, target)) {
       throw new Error(`obsidian-mem write: ${target} is a reserved non-indexed vault file`)
     }
     if (!classified.insideNotes) {
@@ -945,7 +942,7 @@ export class ObsidianMemService extends Service {
     const relPath = relative(classified.vault.path, target)
     const indexer = this.indexer
     if (indexer !== null) {
-      // Follow-up chain 1: write-through reindex. A null indexer skips it:
+      // Follow-up chain 1: the written note's reindex. A null indexer skips it:
       // the watcher's dirt, the stat sweep, and the next indexer.start()
       // full-scan converge the path. Under the TASK-003 cold split this is
       // the normal first-write-in-a-process case: ensureWriteAccess
@@ -1444,7 +1441,8 @@ export class ObsidianMemService extends Service {
   // ProvisionCore is the fast half of the one-time provisioning pass; every
   // step awaits only local fs/git work, which is what ensureWriteAccess
   // confirms before letting a write land. See ensureMemoryAccess for
-  // ordering; the slow index stack is startIndexStack.
+  // ordering; the slow index stack is startIndexStack. Each half numbers
+  // its own steps.
   private async provisionCore(): Promise<string | undefined> {
     this.phase = 'provisioning'
     const registry = this.loadRegistry()
@@ -1469,7 +1467,7 @@ export class ObsidianMemService extends Service {
     this.fs.mkdirp(this.config.milvus.dbPath)
     this.fs.mkdirp(this.stateDirPath())
 
-    // 2b. Git adoption for the shared vaults, before any Milvus work: the
+    // 3. Git adoption for the shared vaults, before any Milvus work: the
     // registry is final, so the pass covers the provisioned default vault
     // too, and a degraded Milvus start still leaves the vaults versioned.
     // Warn-don't-die: the manager owns every adoption failure; this belt
@@ -1478,7 +1476,7 @@ export class ObsidianMemService extends Service {
       this.log.error(`vault git adoption pass failed: ${describeError(error)}`)
     })
 
-    // 3. Best-effort background uvx warm (G13 cold starts run into minutes).
+    // 4. Best-effort background uvx warm (G13 cold starts run into minutes).
     if (this.config.milvus.mode === 'spawn') {
       try {
         this.prewarm('uvx', [
@@ -1508,7 +1506,7 @@ export class ObsidianMemService extends Service {
   // reports, search answers IndexOfflineError, writes keep landing), so a
   // write-path caller that never awaits it cannot surface a crash.
   private async startIndexStack(): Promise<void> {
-    // 4. Milvus start with the G13 readiness budget, then G12: the
+    // 1. Milvus start with the G13 readiness budget, then G12: the
     //    long-lived client is created ONLY against a answered server.
     const launcher = this.launcherFactory({
       config: {
@@ -1539,7 +1537,7 @@ export class ObsidianMemService extends Service {
       const client = await this.clientFactory(address)
       this.client = client
 
-      // 5. Collection; dim/sparse drift is answered by a rebuild plus a
+      // 2. Collection; dim/sparse drift is answered by a rebuild plus a
       //    forced full reindex (the vault state files are dropped so the
       //    indexer treats every file as new against the rebuilt collection).
       const collection = await ensureCollection(client, { dim: this.config.vectorDim })
@@ -1552,7 +1550,7 @@ export class ObsidianMemService extends Service {
         this.dropVaultStateFiles()
       }
 
-      // 6. Indexer background start (full-scan + watchers).
+      // 3. Indexer background start (full-scan + watchers).
       this.indexer = this.buildIndexer()
       this.indexer.start()
     } catch (error: unknown) {
@@ -1793,20 +1791,22 @@ export class ObsidianMemService extends Service {
   //   llm.*: object swap plus restartIndexer (buildIndexer reads config.llm).
   //   vectorDim / model.id / model.cacheDir: config swap, drop the lazy
   //     embedder (the hooks.embedder seam stays authoritative), and when
-  //     ready re-run the provision step-5 pair on a width move (rebuild +
-  //     dropVaultStateFiles) before restartIndexer. Same width or a
-  //     cacheDir-only move is just restartIndexer: chunk ids bake
+  //     ready re-run the index-stack collection-rebuild pair (rebuild +
+  //     dropVaultStateFiles) before restartIndexer on a width move. Same
+  //     width or a cacheDir-only move is just restartIndexer: chunk ids bake
   //     modelId+vectorDim, so the indexer's state diff re-embeds changed
   //     content and stale-deletes the old rows by itself. Not yet
   //     provisioned: the config mutation is enough; provisioning picks the
-  //     new values up (dim drift is answered at its step 5 the same way).
+  //     new values up (dim drift is answered at the collection step the
+  //     same way).
   //   milvus.dbPath: persist-only by plan decision; the subsystems keep the
   //     old dir until a restart, and cardSettings' restartPending reports
   //     it (the commit tail's vaults.json carry is its one in-process
   //     effect).
   // An apply landing during 'provisioning' waits the pass out first: that
-  // step-5 pair may already have run against the pre-change config, and no
-  // client exists before it. A failed re-form restores the snapshotted
+  // collection-rebuild pair may already have run against the pre-change
+  // config, and no client exists before it. A failed re-form restores the
+  // snapshotted
   // values so the previous config stays applied, then answers a
   // validation-style error.
   private async escalateCardSettings(
@@ -1820,8 +1820,8 @@ export class ObsidianMemService extends Service {
       // Wait out the in-flight pass, failure included: the phase settles,
       // and a config-only apply stays correct when it never reaches ready.
       // The stack promise carries the whole pass (core chained in) and
-      // never rejects, so the step-5 pair is never mid-flight under a
-      // swapped config.
+      // never rejects, so the collection-rebuild pair is never mid-flight
+      // under a swapped config.
       await this.access.stack
     }
 

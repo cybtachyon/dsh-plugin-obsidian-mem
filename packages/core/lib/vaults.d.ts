@@ -150,6 +150,14 @@ export interface ClassifiedPath {
  */
 export declare function classifyPath(vaults: readonly VaultConfig[], absPath: string): ClassifiedPath | null;
 /**
+ * IsReservedVaultFile tests whether target names a reserved protocol file
+ * (.INTENTS.md, DREAMS.md, <slug>_history.md) inside the vault: a final
+ * path-part match at any depth, the rule that also keeps these out of the
+ * note tree. isNotesPath, the service write throw, and the tool's
+ * reserved_file refusal all ride this one spelling.
+ */
+export declare function isReservedVaultFile(vaultPath: string, target: string): boolean;
+/**
  * INTENT_HINTS is the seed line under each `.INTENTS.md` marker. Audit
  * compares section bodies against these lines to tell a recorded intent
  * from seed-only content.

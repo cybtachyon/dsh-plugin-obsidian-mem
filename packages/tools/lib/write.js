@@ -17,7 +17,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { classifyPath, contentHash, ensureWhyAndHow, formatLocalDate, isPluginInternalPath, isReservedNonIndexed, parseNote, PLUGIN_VAULT_DIR, titleToFilename, TOOL_MEMORY_WRITE, validateMeta, } from '../../core/lib/index.js';
+import { classifyPath, contentHash, ensureWhyAndHow, formatLocalDate, isPluginInternalPath, isReservedVaultFile, parseNote, PLUGIN_VAULT_DIR, titleToFilename, TOOL_MEMORY_WRITE, validateMeta, } from '../../core/lib/index.js';
 import { expandHomePath } from '../../service/lib/config.js';
 import { asRecord, optionalBoolean, requiredString } from './host.js';
 import { defineMemoryTool, makePresentCall, noticeHeader, withNotice } from './toolkit.js';
@@ -179,7 +179,7 @@ export async function executeWrite(service, args) {
     }
     // Guard 2: reserved protocol files are never authored notes. The note
     // tree excludes them from indexing, so this guard is what names them.
-    if (isReservedNonIndexed(basename(target))) {
+    if (isReservedVaultFile(classified.vault.path, target)) {
         return withNotice({
             kind: 'reserved_file',
             path: target,

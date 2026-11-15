@@ -397,7 +397,7 @@ export declare class ObsidianMemService extends Service {
      * Write orchestrates a note write end to end: meta validation (core
      * validateMeta errors throw), then applyWrite. The path-scoping,
      * staleness, and read-only guard conversation live in the memory_write
-     * tool (TASK-033); this stays the single write-through primitive chain.
+     * tool (TASK-033); this stays the single note-write primitive chain.
      */
     write(request: ObsidianMemWriteRequest): Promise<ObsidianMemWriteResult>;
     /**
@@ -407,7 +407,7 @@ export declare class ObsidianMemService extends Service {
      * un-modelled author key would otherwise be silently dropped on
      * rewrite), writes atomically, and updates the read registry. The
      * returned value confirms the note file landed on disk; it carries no
-     * promise about the slow bookkeeping. The write-through reindex and the
+     * promise about the slow bookkeeping. The reindex and the
      * one git commit per successful write (Q3: no debounce) settle
      * asynchronously on two INDEPENDENT tracked follow-up chains, so a slow
      * embed never delays a commit; vault-internal order stays owned by

@@ -398,7 +398,7 @@ describe('offline and migration', () => {
   })
 })
 
-describe('write-through hook', () => {
+describe('write follow-up hook', () => {
   it('indexFile re-indexes one changed file by relative or absolute path', async () => {
     const { fs, writer, indexer } = makeFixture()
     await indexer.reindex()
@@ -1235,7 +1235,7 @@ describe('state file and path guards', () => {
     expect((fs.state() as { version: number }).version).toBe(2)
   })
 
-  it('normalizes away dotfile and reserved names on the write-through hook', async () => {
+  it('normalizes away dotfile and reserved names on the write follow-up hook', async () => {
     const { fs, indexer } = makeFixture()
     await indexer.reindex()
     const stateBefore = JSON.stringify(fs.state())

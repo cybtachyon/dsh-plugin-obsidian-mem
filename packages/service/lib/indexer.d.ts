@@ -3,7 +3,7 @@
  * collection (TASK-023): per-vault diff state under
  * `<vault>/.obsidian-mem/metadata/obsidian-mem-state.json`, the parse →
  * chunk → trigger-extract → embed → delete-stale → insert pipeline, the
- * activation/watcher/write-through triggers, progress counters for ui and
+ * activation/watcher/write follow-up triggers, progress counters for ui and
  * audit, and the optional LLM refinement pass that merges onto the core
  * heuristics and never blocks indexing.
  *
@@ -176,7 +176,7 @@ export interface IndexRunSummary {
  * VaultIndexer owns one vault's state file, pipeline, watcher, and write
  * queue. Constructing starts nothing: start() runs the background
  * full-scan and arms the watcher, reindex()/indexFile() are the manual
- * and write-through entries. The Milvus collection must already exist
+ * and write follow-up entries. The Milvus collection must already exist
  * and be loaded (schema.ts ensureCollection + loadCollectionSync); this
  * module never creates or loads it.
  */
@@ -221,7 +221,7 @@ export declare class VaultIndexer {
     /** Reindex diffs the whole vault against the state file and applies it. */
     reindex(): Promise<IndexRunSummary>;
     /**
-     * IndexFile is the write-through hook for memory_write: re-index one
+     * IndexFile is the write follow-up hook for memory_write: re-index one
      * vault-relative (or vault-absolute) path immediately. Missing files
      * are treated as removals.
      */
@@ -253,7 +253,7 @@ export type IndexerManagerOptions = Omit<VaultIndexerOptions, 'vault'> & {
 /**
  * IndexerManager runs one VaultIndexer per registered vault: start()
  * (background full-scan plus watchers), reindexAll() (card and audit
- * manual trigger), the write-through indexFile(vaultPath, rel) hook, and
+ * manual trigger), the write follow-up indexFile(vaultPath, rel) hook, and
  * summed progress. Lookup is by the exact vault path (registry paths are
  * already realpath-canonical).
  */
@@ -267,7 +267,7 @@ export declare class IndexerManager {
     /** ReindexAll re-diffs every vault sequentially (single writer). */
     reindexAll(): Promise<void>;
     /**
-     * IndexFile is the write-through hook: vaultPath must be a registered
+     * IndexFile is the write follow-up hook: vaultPath must be a registered
      * vault; returns false when it is not.
      */
     indexFile(vaultPath: string, relPath: string): Promise<boolean>;

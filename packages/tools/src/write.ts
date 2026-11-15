@@ -24,7 +24,7 @@ import {
   ensureWhyAndHow,
   formatLocalDate,
   isPluginInternalPath,
-  isReservedNonIndexed,
+  isReservedVaultFile,
   parseNote,
   PLUGIN_VAULT_DIR,
   titleToFilename,
@@ -223,7 +223,7 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
 
   // Guard 2: reserved protocol files are never authored notes. The note
   // tree excludes them from indexing, so this guard is what names them.
-  if (isReservedNonIndexed(basename(target))) {
+  if (isReservedVaultFile(classified.vault.path, target)) {
     return withNotice({
       kind: 'reserved_file' as const,
       path: target,

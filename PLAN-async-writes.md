@@ -75,7 +75,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 
  - [x] [TASK-005-contract-text](docs/PLAN-async-writes-TASK-005-contract-text.md)
  - [x] [TASK-006-fix-affected-tests](docs/PLAN-async-writes-TASK-006-fix-affected-tests.md)
- - [ ] [TASK-007-refactor-phase2](docs/PLAN-async-writes-TASK-007-refactor-phase2.md)
+ - [x] [TASK-007-refactor-phase2](docs/PLAN-async-writes-TASK-007-refactor-phase2.md)
 
 ### Phase 3 — Batch verification
 
@@ -182,3 +182,94 @@ Carried to TASK-007 (found, not touched): `auditGitRunner`
 comments now straddle `provisionCore` and `startIndexStack`; `service.ts`
 spells the reserved-file basename with `lastIndexOf` while `tools/write.ts`
 uses `node:path` `basename` for the same rule.
+
+### TASK-007 refactor pass (Phase 2 smell adjudication, 2026-11-14)
+
+Reviewed the two commits' diffs (`e6e937e`, `66363dd`) and the full files they
+touch: `packages/tools/src/write.ts`, `README.md`, `AGENTS.md`,
+`packages/tools/tests/write.spec.ts`,
+`packages/events/tests/writeLedger.spec.ts`,
+`packages/events/tests/thinkIntercept.spec.ts`, and
+`packages/service/tests/integration/live-pipeline.live.test.ts`. TASK-004's
+four carry-overs and the TASK-006 terminology flag are adjudicated at the
+end. Every risk class gets one line below.
+
+- **Multiple Sources of Truth**: RESOLVED. The reserved-file rule lived twice:
+  `applyWrite` hand-rolled the basename with `lastIndexOf` plus depth
+  arithmetic while the tool's Guard 2 spelled it `basename` +
+  `isReservedNonIndexed`. Core's `vaults.ts` now exports one
+  `isReservedVaultFile(vaultPath, target)` and three sites call it: core's own
+  `isNotesPath`, the service throw, and the tool's `reserved_file` refusal.
+  The card-settings comments no longer reference a fragile "step 5"; they
+  name the collection-rebuild pair.
+- **Duplicate Code**: RESOLVED. `service.spec.ts`'s `auditGitRunner` was a
+  near-copy of `recordingGit` (same call ledger, same status and probe
+  answers); it now wraps `recordingGit` and scripts only the two-commit `log`
+  answer. WAIVED: the two fake `WriteValue` fixtures (`writeLedger.spec.ts`
+  `writtenValue`, `thinkIntercept.spec.ts`'s inline value) mimic the tool's
+  wire shape in another package that never reads the field; a cross-package
+  fixture module would couple suites for zero behavior.
+- **Bloaters**: WAIVED. Neither commit grew a method; `executeWrite`'s length
+  is the documented guard ladder (Guards 1-5) and `renderWrite` is a per-kind
+  render branch.
+- **Data Clumps**: WAIVED. No new parameter groups in scope; the
+  `dreamGitHarness` option record added here carries one field.
+- **Shotgun Edits**: WAIVED. `e6e937e` moved contract text through write.ts,
+  README, and AGENTS together: the tool contract and its docs moving in
+  lockstep is the intended coupling, and each surface was reworded, not
+  copy-pasted.
+- **Feature Envy**: WAIVED. The only place a write tier reached into core's
+  rule internals was the reserved-file guard; after this pass it calls core's
+  helper instead of re-spelling the rule.
+- **Magic Numbers**: WAIVED. The only literals in scope are the already-named
+  exported `WRITE_TIMEOUT_MS` and the `'queued'` contract value (scope note
+  below); the audit fixture's `'e'.repeat(40)` hashes are log-record content,
+  not thresholds.
+- **Overengineering**: WAIVED. `isReservedVaultFile` has three call sites and
+  replaces two hand-rolled spellings; the `auditGitRunner` wrapper has one
+  call site but retires a 20-line near-copy; no new class or one-line method
+  was added.
+
+Scope-note adjudications:
+
+- The `renderWrite` success line vs `WRITE_DESCRIPTION` vs README/AGENTS:
+  WAIVED. Three different jobs (model contract, per-call receipt, human doc)
+  carry three different phrasings; no sentence repeats verbatim across
+  surfaces.
+- The `'queued'` literal: WAIVED. Its home is the `WriteValue` type plus the
+  `WRITE_OUTPUT` schema const pair; the executor value is type-checked
+  against the union and schema-checked by the tests' `matchesOutput`, and
+  `write.spec.ts` pins the raw wire value deliberately so a contract rename
+  breaks the external pin instead of riding an imported const.
+
+Carry-overs from TASK-004, all adjudicated:
+
+- `auditGitRunner`: RESOLVED (wraps `recordingGit`; only the scripted `log`
+  answer stays local).
+- `dreamGitHarness` boolean flag: RESOLVED. Both call sites pass the named
+  `{ gitEnabled }` option, so the git mode reads explicitly at the call.
+- Provisioning step-comment straddle: RESOLVED. `provisionCore` numbers its
+  steps 1-4 and `startIndexStack` numbers its own 1-3 under a header note;
+  the "step-5" cross-references became "collection-rebuild pair" wording in
+  three src comments and one test comment plus one test title (prose only).
+- Reserved-file rule spelled two ways: RESOLVED as described under Multiple
+  Sources of Truth. Honest behavior note: a reserved protocol name deeper
+  than the vault root (say `sub/DREAMS.md`) now takes the service tier's
+  reserved-specific refusal instead of the generic outside-note-tree one.
+  That is the rule core's `isNotesPath` already applies at any depth, and
+  the tool tier already answered `reserved_file` there, so both tiers now
+  match core; no test pinned the old generic wording for those paths and the
+  root-level pins are untouched.
+
+TASK-006's terminology flag: RESOLVED as the rename. The src prose now calls
+`indexer.indexFile` the write follow-up hook: three `service.ts` comments,
+five `indexer.ts` doc lines (module header, both class docs, both `IndexFile`
+docs), and `indexer.spec.ts`'s describe title plus one `it` title. The output
+field name `write_through` stays: Questionnaire answer 1 renamed the value and
+kept the field, so the wire key is contract, not stale prose.
+
+Behavior stayed neutral: no assertion changed, the suite holds at 1103 passed
+/ 2 skipped, and the only test edits are title/prose renames plus the two
+fixture refactors. `pnpm build` exits 0 with the tree clean and the core,
+service, and tools lib carriers riding the src changes; `pnpm test`,
+`pnpm lint`, and `prek` are green.

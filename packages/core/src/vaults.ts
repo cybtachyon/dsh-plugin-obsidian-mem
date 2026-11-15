@@ -292,7 +292,22 @@ function isNotesPath(vaultPath: string, target: string): boolean {
   if (parts.some((part) => part.startsWith('.'))) {
     return false
   }
-  return !isReservedNonIndexed(parts[parts.length - 1] ?? '')
+  return !isReservedVaultFile(vaultPath, target)
+}
+
+/**
+ * IsReservedVaultFile tests whether target names a reserved protocol file
+ * (.INTENTS.md, DREAMS.md, <slug>_history.md) inside the vault: a final
+ * path-part match at any depth, the rule that also keeps these out of the
+ * note tree. isNotesPath, the service write throw, and the tool's
+ * reserved_file refusal all ride this one spelling.
+ */
+export function isReservedVaultFile(vaultPath: string, target: string): boolean {
+  if (!isWithin(vaultPath, target)) {
+    return false
+  }
+  const parts = relative(vaultPath, target).split(sep)
+  return isReservedNonIndexed(parts[parts.length - 1] ?? '')
 }
 
 // Directory-or-equal containment on normalized absolute paths. The trailing

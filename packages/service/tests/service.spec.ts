@@ -1731,7 +1731,7 @@ describe('card settings live apply (TASK-004)', () => {
 
     const view = await h.service.updateCardSettings({ set: { vectorDim: 256 } })
     expect(h.service.config.vectorDim).toBe(256)
-    // The provision step-5 pair ran: drift rebuild, forced full reindex.
+    // The collection-rebuild pair ran: drift rebuild, forced full reindex.
     expect(h.client.calls).toContain('dropCollection')
     expect(h.client.calls.filter((call) => call === 'createCollection')).toHaveLength(1)
     expect(h.fs.has(vaultStatePath)).toBe(false)
@@ -1795,7 +1795,7 @@ describe('card settings live apply (TASK-004)', () => {
     expect(view.restartPending).toEqual([])
   })
 
-  it('answers a vectorDim move during provisioning with the settled step-5 drift pass', async () => {
+  it('answers a vectorDim move during provisioning with the settled collection drift pass', async () => {
     const h = harness({ ...vaultSeeds, existingDim: 384 })
     const access = h.service.ensureMemoryAccess()
     const applying = h.service.updateCardSettings({ set: { vectorDim: 256 } })
@@ -2137,29 +2137,30 @@ describe('vault git wiring', () => {
   // manager's read-only accessors; the audit never adopts and never mutates.
 
   /**
-   * AuditGitRunner: a healthy adopted repo answering the adoption probes,
-   * a two-commit log (newest first, both touching alpha.md, the older one
-   * also beta.md), and a clean status.
+   * AuditGitRunner: recordingGit answers the adoption probes and the clean
+   * status; this only scripts the two-commit log answer (newest first,
+   * both touching alpha.md, the older one also beta.md) the churn window reads.
    */
   function auditGitRunner() {
-    const calls: Array<{ root: string; argv: string[] }> = []
+    const git = recordingGit()
     const logRecord = (hash: string, paths: string[]): string =>
       `\u001e${hash}\u001f2026-11-10T00:00:00+00:00\u001fobsidian-mem: memory_write\n${paths.join('\n')}\n`
-    const gitRunner = (root: string): GitRunner => async (argv) => {
-      calls.push({ root, argv })
-      if (argv.includes('log')) {
+    const baseRunner = git.gitRunner
+    const gitRunner = (root: string): GitRunner => {
+      const base = baseRunner(root)
+      return async (argv) => {
+        if (!argv.includes('log')) {
+          return await base(argv)
+        }
+        git.calls.push({ root, argv })
         return {
           code: 0,
           stdout: `${logRecord('e'.repeat(40), ['alpha.md'])}${logRecord('d'.repeat(40), ['alpha.md', 'beta.md'])}`,
           stderr: '',
         }
       }
-      if (argv.includes('status')) {
-        return { code: 0, stdout: '', stderr: '' }
-      }
-      return { code: 0, stdout: `${'f'.repeat(40)}\n`, stderr: '' }
     }
-    return { calls, gitRunner }
+    return { calls: git.calls, gitRunner }
   }
 
   it('audit never adopts: an unmanaged shared vault answers initialized false with zero git calls', async () => {
@@ -2206,8 +2207,14 @@ describe('vault git wiring', () => {
   // commitAllShared pass, and the launch text names the adopted roots for
   // the prompt's Step 0 Pre-Sync step.
 
-  /** DreamGitHarness: a git-enabled service with the launch gateways mounted. */
-  function dreamGitHarness(git: ReturnType<typeof recordingGit>, gitEnabled: boolean) {
+  /**
+   * DreamGitHarness: a service with the launch gateways mounted; gitEnabled
+   * is a named option because the pin exists in both git modes.
+   */
+  function dreamGitHarness(
+    git: ReturnType<typeof recordingGit>,
+    { gitEnabled }: { gitEnabled: boolean },
+  ) {
     const vault = gitTempDir()
     const agents = fakeGateway()
     const h = harness({
@@ -2231,7 +2238,7 @@ describe('vault git wiring', () => {
 
   it('a successful dream run records one commit pass and names the adopted roots in the launch text', async () => {
     const git = recordingGit()
-    const h = dreamGitHarness(git, true)
+    const h = dreamGitHarness(git, { gitEnabled: true })
     await h.service.ensureMemoryAccess()
     git.calls.length = 0
     git.markDirty()
@@ -2256,7 +2263,7 @@ describe('vault git wiring', () => {
 
   it('a git-disabled dream run reaches no git boundary and omits the roots line', async () => {
     const git = recordingGit()
-    const h = dreamGitHarness(git, false)
+    const h = dreamGitHarness(git, { gitEnabled: false })
     await h.service.ensureMemoryAccess()
 
     const result = await h.service.dream({ operation: 'run' })

@@ -247,6 +247,7 @@ export function baseCardSettings(): CardSettingsView {
         thinkShotsPerTurn: 1,
       },
       llm: { enabled: false, baseUrl: '', model: '', apiKeyEnv: '' },
+      git: { enabled: false, churnThresholdPercent: 50, churnWindowCommits: 8 },
     },
     overrides: {},
     restartPending: [],

@@ -24,6 +24,16 @@ recall behavior. The user's staged verbiage tweaks to the launch heading
   to those expectations.
 - `dreamLineage` registry state is live-only, like `turnRecallTokensUsed`:
   never serialized into `PersistedSession`.
+- Import-extension convention (recurring subagent error, user-flagged):
+  the SOURCE tier (`packages/*/src`, compiled by `tsc -b` under NodeNext)
+  must use `.js` specifiers for every relative import; a `.ts` specifier
+  there is a TS5097-class build break. The TESTS tier (`packages/*/tests`)
+  deliberately uses `.ts` specifiers (vitest resolves them literally; the
+  throwaway `tsconfig.testscheck.json` recipe types them with
+  `allowImportingTsExtensions`); do not churn those to `.js`. Verification
+  grep (must print nothing): `grep -rn "from '\.\{1,2\}/[^']*\.tsx\?'"
+  packages/*/src`. Every new or touched file also gets the repo's other
+  gates (`pnpm build`, `pnpm test`, `pnpm lint`).
 
 # Open questions
 
@@ -41,7 +51,7 @@ See the Questionnaire section; answers are persisted here after Step 4.
  - [x] [TASK-003-registry-dream-lineage-flag](docs/PLAN-dream-isolation-TASK-003-registry-dream-lineage-flag.md)
  - [x] [TASK-004-created-handler-lineage](docs/PLAN-dream-isolation-TASK-004-created-handler-lineage.md)
  - [x] [TASK-005-read-intercept-lineage-gate](docs/PLAN-dream-isolation-TASK-005-read-intercept-lineage-gate.md)
- - [ ] [TASK-006-launch-window-suppression](docs/PLAN-dream-isolation-TASK-006-launch-window-suppression.md)
+ - [x] [TASK-006-launch-window-suppression](docs/PLAN-dream-isolation-TASK-006-launch-window-suppression.md)
 
 ## Phase 3: Refactor and whole-repo verification
 

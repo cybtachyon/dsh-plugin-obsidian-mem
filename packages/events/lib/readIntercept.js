@@ -14,8 +14,9 @@
  * memory injection. On top of that, the session throttle (15 s window),
  * the session cap independent of the Think budget, the covered-directory
  * skip, the per-turn path dedupe, and the once-per-session source rule all
- * gate the fire, and a dream-lineage session returns before every one of
- * them (PLAN-dream-isolation TASK-005). The listener never throws (emit
+ * gate the fire, and a dream-work session (lineage, or the launcher while
+ * its run is in flight) returns before every one of them (the combined
+ * gate of PLAN-dream-isolation TASK-005/006). The listener never throws (emit
  * dispatch runs it raw) and
  * all work is fire-and-forget: a cold index must not delay the tool-result
  * path, and the one-time provisioning notice is prepended when
@@ -26,7 +27,7 @@ import { basename, dirname, extname, isAbsolute, normalize, resolve, sep } from 
 import { classifyPath, normalizeExtension, } from '../../core/lib/index.js';
 import { boundSummary } from './host.js';
 import { isWakeTerm } from './sessions.js';
-import { asRecord, collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
+import { asRecord, collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, isRecallSuppressed, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
 /** The harness Read tool's registry name (verified live: `read`). */
 export const HARNESS_READ_TOOL_NAME = 'read';
 /** Import-ish lines are worth ~2 KB of the result at most. */
@@ -65,11 +66,13 @@ function observeRead(deps, exec, result, warnOnce) {
         return;
     }
     const sessionId = String(agent.id);
-    // Dream-lineage suppression (PLAN-dream-isolation TASK-005): a session in
-    // a dream run's lineage gets no Read recall at all. TASK-006 replaces
-    // this one condition with the combined gate (lineage OR launch-window-
-    // busy), so nothing here may depend on it.
-    if (deps.registry.isDreamLineage(sessionId)) {
+    // Dream-work suppression (PLAN-dream-isolation TASK-005/006): the
+    // combined gate (dream lineage OR the launch window while a run is in
+    // flight) returns before path resolution, the loop guard, the dedupe,
+    // the throttle, the cap, the covered-directory skip, the search, and
+    // every bookkeeping write, so a suppressed Read injects nothing and
+    // consumes nothing.
+    if (isRecallSuppressed(sessionId, deps)) {
         return;
     }
     const absPath = resolveAgainstSession(agent, given);

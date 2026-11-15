@@ -14,8 +14,9 @@
  * memory injection. On top of that, the session throttle (15 s window),
  * the session cap independent of the Think budget, the covered-directory
  * skip, the per-turn path dedupe, and the once-per-session source rule all
- * gate the fire, and a dream-lineage session returns before every one of
- * them (PLAN-dream-isolation TASK-005). The listener never throws (emit
+ * gate the fire, and a dream-work session (lineage, or the launcher while
+ * its run is in flight) returns before every one of them (the combined
+ * gate of PLAN-dream-isolation TASK-005/006). The listener never throws (emit
  * dispatch runs it raw) and
  * all work is fire-and-forget: a cold index must not delay the tool-result
  * path, and the one-time provisioning notice is prepended when

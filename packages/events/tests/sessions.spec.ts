@@ -194,6 +194,39 @@ describe('dream-lineage flag (PLAN-dream-isolation TASK-003)', () => {
   })
 })
 
+describe('dream-launch flag (PLAN-dream-isolation TASK-006)', () => {
+  it('claims through markDreamLaunch, answers per session, and never touches the ledger', () => {
+    const { file } = tempFile()
+    const fs = countingFs()
+    const registry = new SessionRegistry({ file, thinkShotsPerTurn: 3, debounceMs: 0, fs })
+    expect(registry.isDreamLaunch('s1')).toBe(false)
+    registry.markDreamLaunch('s1')
+    expect(registry.isDreamLaunch('s1')).toBe(true)
+    expect(registry.isDreamLaunch('s2')).toBe(false)
+    // Live-only like dreamLineage: the claim alone writes nothing.
+    expect(fs.writes).toBe(0)
+    // A later ledger mutation persists the row; the flag stays out.
+    registry.markInjected('s1', 'vaultA a.md')
+    registry.flush()
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as {
+      sessions: Record<string, Record<string, unknown>>
+    }
+    expect(saved.sessions.s1).not.toHaveProperty('dreamLaunch')
+    expect(saved.sessions.s1).not.toHaveProperty('dreamLineage')
+  })
+
+  it('hydrates false after a restart: the launch window died with the process', () => {
+    const { file } = tempFile()
+    const first = makeRegistry(file)
+    first.markDreamLaunch('launcher')
+    first.markInjected('launcher', 'note', 'fp')
+    first.flush()
+    const second = makeRegistry(file)
+    expect(second.isDreamLaunch('launcher')).toBe(false)
+    expect(second.shouldInject('launcher', 'note', 'fp')).toBe(false)
+  })
+})
+
 describe('written-source ledger (mem-loop-tuning TASK-001)', () => {
   it('records a written source and answers membership per session', () => {
     const { file } = tempFile()

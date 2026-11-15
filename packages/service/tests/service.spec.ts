@@ -1272,6 +1272,50 @@ describe('dream budget rebaseline wiring', () => {
 })
 
 // ---------------------------------------------------------------------------
+// PLAN-dream-isolation TASK-006: the dreamRunBusy() seam the events launch-
+// window recall gate reads. It mirrors the orchestrator's live guard: false
+// before any dream call (the getter reads the private field, it never
+// constructs the engine), true while a run is in flight, false once settled.
+
+describe('dreamRunBusy seam (PLAN-dream-isolation TASK-006)', () => {
+  it('answers false before any dream call, true while a run is in flight, false after it settles', async () => {
+    // The dream.spec order-independent in-flight idiom: drive() reaches
+    // whenIdle only after plan()'s awaits, so the gate records resolvers
+    // until it opens and resolves immediately (or later) once opened.
+    let opened = false
+    const resolvers: Array<() => void> = []
+    const agents = fakeGateway({
+      whenIdle: () => (opened ? Promise.resolve() : new Promise<void>((resolve) => { resolvers.push(resolve) })),
+    })
+    const h = harness({
+      services: {
+        agents: agents.gateway,
+        agentDefaultModel: { currentSelection: () => ({ provider: 'p', model: 'm' }) },
+      },
+    })
+    expect(h.service.dreamRunBusy()).toBe(false)
+    const result = await h.service.dream({ operation: 'run' })
+    if (result.operation !== 'run') {
+      throw new Error('expected the run operation')
+    }
+    expect(h.service.dreamRunBusy()).toBe(true)
+    opened = true
+    resolvers.splice(0).forEach((resolve) => {
+      resolve()
+    })
+    expect((await result.done).ok).toBe(true)
+    expect(h.service.dreamRunBusy()).toBe(false)
+  })
+
+  it('a plan leaves the seam answering false', async () => {
+    const h = harness()
+    const result = await h.service.dream()
+    expect(result.operation).toBe('plan')
+    expect(h.service.dreamRunBusy()).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // PLAN-config-pane TASK-004: the live card-settings escalation on a fully
 // provisioned stack (budgets in-place, thinkShots to the registry, llm and
 // model/dim re-forms, dbPath persist-only, ordering guard + rollback).

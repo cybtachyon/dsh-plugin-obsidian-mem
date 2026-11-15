@@ -32,7 +32,7 @@ import { approxCharsForTokens, approxTokens, isOverGlobalBudget, scanManifest, w
 import { describeError } from '../../service/lib/errors.js';
 import { firstUserText } from './host.js';
 import { sourceKeyFor } from './sessions.js';
-import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
+import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, isRecallSuppressed, logSearchFailure, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, sessionWorkspaceCwd, } from './toolkit.js';
 /** Node ManifestFs over sync fs reads; unreadable paths answer null (skip). */
 export const nodeManifestFs = {
     listDirectory(path) {
@@ -82,6 +82,13 @@ function claimTurnStart(deps, payload) {
     // stays recorded and observable).
     deps.registry.noteTurn(sessionId, payload.turn, firstUserText(payload.messages));
     if (payload.step !== 1 || deps.registry.isTurnStartDone(sessionId)) {
+        return;
+    }
+    // Dream-work suppression (PLAN-dream-isolation TASK-006): the gate runs
+    // BEFORE the slot is claimed, so a suppressed turn-start leaves
+    // turnStartDone false and recall stays eligible for a later turn once
+    // the launch window closes.
+    if (isRecallSuppressed(sessionId, deps)) {
         return;
     }
     deps.registry.markTurnStartDone(sessionId);

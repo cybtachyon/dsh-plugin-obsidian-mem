@@ -48,6 +48,8 @@ export interface FakeMemoryOptions {
   /** The shared vaults' global memory files the seam answers (TASK-014). */
   globalMemorySources?: GlobalMemorySource[]
   budgets?: Partial<MemoryEventsService['config']['budgets']>
+  /** The dreamRunBusy seam answer (TASK-006 launch-window gate); default false. */
+  dreamRunBusy?: boolean
 }
 
 export interface FakeMemoryService extends MemoryEventsService {
@@ -56,6 +58,8 @@ export interface FakeMemoryService extends MemoryEventsService {
   exactRequests: ExactSectionRequest[]
   registryWires: Array<SessionRegistryView | null>
   globalMemorySourcesCalls: number
+  /** Toggle the live dreamRunBusy answer (TASK-006 gate tests). */
+  setDreamRunBusy(value: boolean): void
 }
 
 export function fakeMemory(options: FakeMemoryOptions): FakeMemoryService {
@@ -68,6 +72,7 @@ export function fakeMemory(options: FakeMemoryOptions): FakeMemoryService {
     thinkShotsPerTurn: 3,
     ...options.budgets,
   }
+  let dreamRunBusy = options.dreamRunBusy ?? false
   const fake: FakeMemoryService = {
     ensureCalls: 0,
     searchRequests: [],
@@ -75,6 +80,12 @@ export function fakeMemory(options: FakeMemoryOptions): FakeMemoryService {
     registryWires: [],
     globalMemorySourcesCalls: 0,
     config: { milvus: { dbPath: options.dbPath }, budgets },
+    dreamRunBusy() {
+      return dreamRunBusy
+    },
+    setDreamRunBusy(value) {
+      dreamRunBusy = value
+    },
     async ensureMemoryAccess() {
       fake.ensureCalls += 1
       return fake.ensureCalls === 1 ? options.notice : undefined

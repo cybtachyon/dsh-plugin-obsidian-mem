@@ -28,6 +28,7 @@ import { installMemoryToolWatch } from './turnEnd.js';
 import { installTurnStart } from './turnStart.js';
 import { runGuarded } from './toolkit.js';
 import { installWriteLedger } from './writeLedger.js';
+import { installDreamLaunchLedger } from './dreamLaunch.js';
 export const name = 'obsidian-mem-events';
 export const inject = ['obsidianMem'];
 /**
@@ -137,6 +138,7 @@ export function mountLifecycle(scope, options = {}) {
     installReadIntercept({ ctx, memory, registry, logger: hookLogger });
     installMemoryToolWatch({ ctx, registry, logger: hookLogger });
     installWriteLedger({ ctx, registry, logger: hookLogger });
+    installDreamLaunchLedger({ ctx, registry, logger: hookLogger });
     return registry;
 }
 /**
@@ -158,4 +160,5 @@ export { dirSignalsOf, fileTokensOf, HARNESS_READ_TOOL_NAME, importSnippetFrom, 
 export { extractCompletedThinkBlocks, installThinkIntercept, intentSentencesOf, readRecordedIntentTerms, THINK_QUERY_MAX_CHARS, THINK_SEARCH_TOP_K, THINK_SLEEP_BLOCKS_AFTER_INJECTION, } from './thinkIntercept.js';
 export { installMemoryToolWatch, isTrivialTurn, TRIVIAL_TURN_MAX_CHARS, WORK_MARKER, } from './turnEnd.js';
 export { installWriteLedger } from './writeLedger.js';
+export { installDreamLaunchLedger } from './dreamLaunch.js';
 //# sourceMappingURL=index.js.map

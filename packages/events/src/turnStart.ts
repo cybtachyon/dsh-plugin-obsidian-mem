@@ -42,6 +42,7 @@ import {
   type FreshSource,
   fireAndForget,
   injectNotice,
+  isRecallSuppressed,
   logSearchFailure,
   markSourceInjected,
   messageIdFactory,
@@ -109,6 +110,13 @@ function claimTurnStart(deps: TurnStartDeps, payload: PreStepPayload): void {
   // stays recorded and observable).
   deps.registry.noteTurn(sessionId, payload.turn, firstUserText(payload.messages))
   if (payload.step !== 1 || deps.registry.isTurnStartDone(sessionId)) {
+    return
+  }
+  // Dream-work suppression (PLAN-dream-isolation TASK-006): the gate runs
+  // BEFORE the slot is claimed, so a suppressed turn-start leaves
+  // turnStartDone false and recall stays eligible for a later turn once
+  // the launch window closes.
+  if (isRecallSuppressed(sessionId, deps)) {
     return
   }
   deps.registry.markTurnStartDone(sessionId)

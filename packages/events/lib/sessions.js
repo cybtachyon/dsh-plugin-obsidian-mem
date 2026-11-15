@@ -163,6 +163,8 @@ export class SessionRegistry {
                 // dreamLineage is live-only: the persisted ledger never carries it,
                 // so a hydrated (resumed) session always starts false.
                 dreamLineage: false,
+                // dreamLaunch is live-only for the same reason.
+                dreamLaunch: false,
                 createdAt: persisted?.createdAt ?? this.now(),
                 updatedAt: persisted?.updatedAt ?? this.now(),
             };
@@ -188,6 +190,22 @@ export class SessionRegistry {
      */
     isDreamLineage(sessionId) {
         return this.ensure(sessionId).dreamLineage;
+    }
+    /**
+     * MarkDreamLaunch claims the session as the launcher of a dream run
+     * (PLAN-dream-isolation TASK-006). Live-only like the `dreamLineage`
+     * claim: no touch, no ledger write, because the suppression window ends
+     * the moment the orchestrator's guard is no longer armed.
+     */
+    markDreamLaunch(sessionId) {
+        this.ensure(sessionId).dreamLaunch = true;
+    }
+    /**
+     * IsDreamLaunch answers whether the session launched a dream run, read
+     * with the seam's live `dreamRunBusy()` flag by the combined recall gate.
+     */
+    isDreamLaunch(sessionId) {
+        return this.ensure(sessionId).dreamLaunch;
     }
     /**
      * ShouldInject answers the once-per-session rule: a source the session

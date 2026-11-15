@@ -383,3 +383,30 @@ describe('fileTokensOf (TASK-010)', () => {
     expect(fileTokensOf('/x/deep/File.ts', snippet).length).toBe(24)
   })
 })
+
+describe('dream launch-window gate (PLAN-dream-isolation TASK-006)', () => {
+  it('skips the launcher only while a run is in flight; it recalls normally once the window closes', async () => {
+    const { memory, read, registry } = readHarness({ exactResults: [sectionA] })
+    registry.markDreamLaunch('agent-1')
+    memory.setDreamRunBusy(true)
+    read()
+    await settled()
+    expect(memory.exactRequests).toHaveLength(0)
+    // The window closes with the run: the same session's next Read is
+    // eligible again (the suppressed one spent no throttle, cap, or dirs).
+    memory.setDreamRunBusy(false)
+    read()
+    await settled()
+    expect(memory.exactRequests).toHaveLength(1)
+  })
+
+  it('leaves an unrelated session injecting while a run is busy', async () => {
+    const { ctx, memory, read } = readHarness({ exactResults: [sectionA] })
+    memory.setDreamRunBusy(true)
+    const other = fakeAgent({ id: 'agent-2', cwd: '/work/project' })
+    ctx.emit('agent/created', other.asCreated())
+    read({ agent: other })
+    await settled()
+    expect(memory.exactRequests).toHaveLength(1)
+  })
+})

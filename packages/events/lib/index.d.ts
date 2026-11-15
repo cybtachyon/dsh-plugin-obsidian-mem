@@ -78,4 +78,6 @@ export { installMemoryToolWatch, isTrivialTurn, TRIVIAL_TURN_MAX_CHARS, WORK_MAR
 export type { MemoryToolWatchDeps } from './turnEnd.js';
 export { installWriteLedger } from './writeLedger.js';
 export type { WriteLedgerDeps } from './writeLedger.js';
+export { installDreamLaunchLedger } from './dreamLaunch.js';
+export type { DreamLaunchLedgerDeps } from './dreamLaunch.js';
 //# sourceMappingURL=index.d.ts.map

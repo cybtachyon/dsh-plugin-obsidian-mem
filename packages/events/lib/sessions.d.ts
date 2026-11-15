@@ -121,6 +121,16 @@ export interface SessionRecord {
      * run dies with its process), hydrates false.
      */
     dreamLineage: boolean;
+    /**
+     * This session launched a dream run through `memory_dream` (PLAN-dream-
+     * isolation TASK-006): claimed by the launch observer on the successful
+     * run's tool result, and read by `isDreamLaunch()` together with the
+     * service's live busy flag so the launcher's recall stays suppressed for
+     * exactly the window the run is in flight. Live-only like
+     * {@link SessionRecord.dreamLineage}: the window closes with the run and
+     * a restart ends it, so nothing persists and hydration defaults false.
+     */
+    dreamLaunch: boolean;
     readonly createdAt: number;
     updatedAt: number;
 }
@@ -192,6 +202,18 @@ export declare class SessionRegistry {
      * lineage, the suppression gate every recall flow reads.
      */
     isDreamLineage(sessionId: string): boolean;
+    /**
+     * MarkDreamLaunch claims the session as the launcher of a dream run
+     * (PLAN-dream-isolation TASK-006). Live-only like the `dreamLineage`
+     * claim: no touch, no ledger write, because the suppression window ends
+     * the moment the orchestrator's guard is no longer armed.
+     */
+    markDreamLaunch(sessionId: string): void;
+    /**
+     * IsDreamLaunch answers whether the session launched a dream run, read
+     * with the seam's live `dreamRunBusy()` flag by the combined recall gate.
+     */
+    isDreamLaunch(sessionId: string): boolean;
     /**
      * ShouldInject answers the once-per-session rule: a source the session
      * never saw is eligible; one injected with the same (or unknown) content

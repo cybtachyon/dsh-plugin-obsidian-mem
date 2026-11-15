@@ -162,6 +162,16 @@ export interface SessionRecord {
    * run dies with its process), hydrates false.
    */
   dreamLineage: boolean
+  /**
+   * This session launched a dream run through `memory_dream` (PLAN-dream-
+   * isolation TASK-006): claimed by the launch observer on the successful
+   * run's tool result, and read by `isDreamLaunch()` together with the
+   * service's live busy flag so the launcher's recall stays suppressed for
+   * exactly the window the run is in flight. Live-only like
+   * {@link SessionRecord.dreamLineage}: the window closes with the run and
+   * a restart ends it, so nothing persists and hydration defaults false.
+   */
+  dreamLaunch: boolean
   readonly createdAt: number
   updatedAt: number
 }
@@ -187,10 +197,10 @@ export interface SessionRegistryOptions {
 }
 
 // The persisted file shape. Live-only fields (turnStartDone, counters,
-// dreamLineage) are never persisted: a resumed process re-runs turn-start
-// recall, the once-per-session rule is enforced by `injected` alone, the
-// self-authored exclusion by `written` alone, and dream runs die with
-// their process.
+// dreamLineage, dreamLaunch) are never persisted: a resumed process re-runs
+// turn-start recall, the once-per-session rule is enforced by `injected`
+// alone, the self-authored exclusion by `written` alone, dream runs die
+// with their process, and the launch window closes with the run.
 interface PersistedSession {
   injected: Record<string, InjectedSourceRecord>
   written: Record<string, number>
@@ -295,6 +305,8 @@ export class SessionRegistry {
         // dreamLineage is live-only: the persisted ledger never carries it,
         // so a hydrated (resumed) session always starts false.
         dreamLineage: false,
+        // dreamLaunch is live-only for the same reason.
+        dreamLaunch: false,
         createdAt: persisted?.createdAt ?? this.now(),
         updatedAt: persisted?.updatedAt ?? this.now(),
       }
@@ -322,6 +334,24 @@ export class SessionRegistry {
    */
   isDreamLineage(sessionId: string): boolean {
     return this.ensure(sessionId).dreamLineage
+  }
+
+  /**
+   * MarkDreamLaunch claims the session as the launcher of a dream run
+   * (PLAN-dream-isolation TASK-006). Live-only like the `dreamLineage`
+   * claim: no touch, no ledger write, because the suppression window ends
+   * the moment the orchestrator's guard is no longer armed.
+   */
+  markDreamLaunch(sessionId: string): void {
+    this.ensure(sessionId).dreamLaunch = true
+  }
+
+  /**
+   * IsDreamLaunch answers whether the session launched a dream run, read
+   * with the seam's live `dreamRunBusy()` flag by the combined recall gate.
+   */
+  isDreamLaunch(sessionId: string): boolean {
+    return this.ensure(sessionId).dreamLaunch
   }
 
   /**

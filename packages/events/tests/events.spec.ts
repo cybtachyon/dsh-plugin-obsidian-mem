@@ -74,9 +74,10 @@ describe('mountLifecycle (session registry wiring)', () => {
       'agent/assistant-stream',
       'agent/pre-step',
     ])
-    // Plugin ctx: the three tools/result observers (read intercept, memory
-    // watch, write ledger); the watch is all that rides turn end.
-    expect(ctx.handlers.get('tools/result') ?? []).toHaveLength(3)
+    // Plugin ctx: the four tools/result observers (read intercept, memory
+    // watch, write ledger, dream-launch ledger); the watch is all that
+    // rides turn end.
+    expect(ctx.handlers.get('tools/result') ?? []).toHaveLength(4)
     tmp.cleanup()
   })
 

@@ -244,6 +244,13 @@ export interface MemoryEventsService {
   searchExactSections(request: ExactSectionRequest): Promise<MemorySearchResult[]>
   /** Wires the events-owned SessionRegistry (TASK-040 seam). */
   setSessionRegistry(view: SessionRegistryView | null): void
+  /**
+   * The dream orchestrator's live single-flight guard (PLAN-dream-isolation
+   * TASK-006): true only while a dream run is in flight; false before the
+   * engine exists. The launch-window half of the recall gate pairs it with
+   * SessionRegistry.isDreamLaunch.
+   */
+  dreamRunBusy(): boolean
   readonly config: {
     milvus: { dbPath: string }
     budgets: {

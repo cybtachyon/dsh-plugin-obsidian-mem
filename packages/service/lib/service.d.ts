@@ -484,6 +484,14 @@ export declare class ObsidianMemService extends Service {
      * the tool maps them to their kind values.
      */
     dream(request?: DreamRequest): Promise<DreamEngineResult>;
+    /**
+     * DreamRunBusy answers the orchestrator's live single-flight guard for
+     * the events launch-window recall gate (PLAN-dream-isolation TASK-006).
+     * It reads the private field directly (never {@link
+     * ObsidianMemService.dreamEngine}), so answering the hot recall path
+     * never constructs the orchestrator; false before any dream call.
+     */
+    dreamRunBusy(): boolean;
     private dreamEngine;
     private fetchNoteVectors;
     /**

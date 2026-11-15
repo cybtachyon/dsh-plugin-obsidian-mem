@@ -583,3 +583,40 @@ describe('pinned global memory injection', () => {
     expect(registry.totalRecallTokensUsed()).toBe(expected)
   })
 })
+
+describe('dream launch-window gate (PLAN-dream-isolation TASK-006)', () => {
+  it('spends nothing while the launcher window is open and stays eligible after it closes', async () => {
+    const { agent, memory, registry, preStep } = turnStartHarness({
+      searchResults: [factA],
+      notice: null,
+    })
+    registry.markDreamLaunch('agent-1')
+    memory.setDreamRunBusy(true)
+    await preStep(1, 1)
+    await settled()
+    // The gate runs BEFORE the slot claim: turnStartDone stays false, so
+    // nothing is spent and the session keeps its once-per-session slot.
+    expect(memory.searchRequests).toHaveLength(0)
+    expect(agent.injected).toHaveLength(0)
+    expect(registry.isTurnStartDone('agent-1')).toBe(false)
+    // The window closes with the run: the next step-1 gets its recall.
+    memory.setDreamRunBusy(false)
+    await preStep(2, 1)
+    await settled()
+    expect(memory.searchRequests).toHaveLength(1)
+    expect(recalledBlocks(agent)).toHaveLength(1)
+  })
+
+  it('leaves an unrelated session untouched while a run is busy', async () => {
+    const { ctx, memory } = turnStartHarness({ searchResults: [factA], notice: null })
+    memory.setDreamRunBusy(true)
+    const other = fakeAgent({ id: 'agent-2' })
+    ctx.emit('agent/created', other.asCreated())
+    await other.emitPreStep(
+      { agent: other as never, messages: [userMessage('How do we deploy?')], turn: 1, step: 1 } as PreStepPayload,
+      async () => ({ kind: 'enter', messages: [] }),
+    )
+    await settled()
+    expect(memory.searchRequests).toHaveLength(1)
+  })
+})

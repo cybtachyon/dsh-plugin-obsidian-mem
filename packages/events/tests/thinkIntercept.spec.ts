@@ -670,3 +670,25 @@ describe('mount wiring', () => {
     expect(memory.searchRequests.at(-1)?.wakeKeywords).toContain('milvus')
   })
 })
+
+describe('dream launch-window gate (PLAN-dream-isolation TASK-006)', () => {
+  it('spends nothing while the launcher window is open and recalls again once it closes', async () => {
+    const h = harness()
+    freshSources(h)
+    h.registry.markDreamLaunch('session-1')
+    h.memory.setDreamRunBusy(true)
+    stream(h.agent, streamStart('a1', 1), textDelta('<think>why does the build fail</think>', 'a1'), streamEnd('a1'))
+    await h.settle()
+    // The gate sits above the scan, the sleep, and the budget: a
+    // suppressed completed block spends nothing at all.
+    expect(h.memory.searchRequests).toHaveLength(0)
+    expect(h.agent.injected).toHaveLength(0)
+    expect(h.registry.thinkBudgetLeft('session-1')).toBe(3)
+    // The window closes with the run: the next completed block recalls.
+    h.memory.setDreamRunBusy(false)
+    stream(h.agent, streamStart('a2', 2), textDelta('<think>how to fix the flaky spec</think>', 'a2'), streamEnd('a2'))
+    await h.settle()
+    expect(h.memory.searchRequests).toHaveLength(1)
+    expect(h.agent.injected).toHaveLength(1)
+  })
+})

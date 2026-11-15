@@ -64,6 +64,7 @@ import {
   deliverProvisionNotice,
   fireAndForget,
   injectNotice,
+  isRecallSuppressed,
   logSearchFailure,
   makeWarnOnce,
   markSourceInjected,
@@ -261,6 +262,13 @@ function observeChunk(
 
 function scheduleThinkRecall(watcher: ThinkWatcher, sessionId: string, blockText: string): void {
   const { deps } = watcher
+  // Dream-work suppression (PLAN-dream-isolation TASK-006): the gate sits
+  // above the scan, the post-injection sleep, the budget, and the search/
+  // shot/injection below, so a suppressed session spends nothing. The
+  // per-turn noteTurn bookkeeping stays in the frame-start listener.
+  if (isRecallSuppressed(sessionId, deps)) {
+    return
+  }
   // The post-injection sleep consumes a completed block whole: no scan, no
   // search, no budget (the breathing room the last injection was for).
   if (watcher.sleepBlocks > 0) {

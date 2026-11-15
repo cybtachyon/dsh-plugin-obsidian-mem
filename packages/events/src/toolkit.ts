@@ -10,11 +10,14 @@
  * drops every source the session itself wrote (a session never gets back
  * what it authored, no matter which agent instance of it wrote that), the
  * notice injector with token accounting, the one-time provisioning-notice
- * prepend, and the per-source ledger mark.
+ * prepend, and the per-source ledger mark. Alongside them sits the ONE
+ * shared suppression gate (isRecallSuppressed): like the written-source
+ * exclusion, it is one rule every recall flow must answer the same way,
+ * so it has one home here while each flow applies it at its own decision.
  *
- * Nothing here decides when a flow fires: the gates stay with their owners
- * (SessionRegistry for budgets, throttles, and the once-per-session rule;
- * each listener for its own cheap filters).
+ * Nothing else here decides when a flow fires: the gates stay with their
+ * owners (SessionRegistry for budgets, throttles, and the once-per-session
+ * rule; each listener for its own cheap filters).
  * @module dsh-plugin-obsidian-mem/events/toolkit
  */
 
@@ -23,7 +26,7 @@ import { approxTokens, wrapRecalled } from '../../core/lib/index.js'
 import { describeError } from '../../service/lib/errors.js'
 import { IndexOfflineError } from '../../service/lib/search.js'
 import type { MemorySearchResult } from '../../service/lib/search.js'
-import type { HookLogger, LiveAgent } from './host.js'
+import type { HookLogger, LiveAgent, MemoryEventsService } from './host.js'
 import { makeNoticeMessage } from './host.js'
 import { sourceKeyFor, wakeTermsForSource, type SessionRegistry } from './sessions.js'
 
@@ -58,6 +61,26 @@ export function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null
+}
+
+/** Dependencies of the combined dream-suppression gate: seam + registry. */
+export interface RecallSuppressionDeps {
+  memory: Pick<MemoryEventsService, 'dreamRunBusy'>
+  registry: SessionRegistry
+}
+
+/**
+ * IsRecallSuppressed is the single home of the PLAN-dream-isolation recall
+ * gate (TASK-006): a dream-run-lineage session never gets recall, and the
+ * session that launched a run through `memory_dream` gets none while the
+ * orchestrator's guard is armed (the window closes the moment
+ * `dreamRunBusy` answers false; other sessions are untouched). Every
+ * injection decision calls this at its own gate, always before spending
+ * any once-per-session or per-turn budget.
+ */
+export function isRecallSuppressed(sessionId: string, deps: RecallSuppressionDeps): boolean {
+  return deps.registry.isDreamLineage(sessionId)
+    || (deps.memory.dreamRunBusy() && deps.registry.isDreamLaunch(sessionId))
 }
 
 /** WarnOnce is a keyed warning sink: every key logs at most once. */

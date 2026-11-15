@@ -22,6 +22,17 @@ Run the repo gates and bring the docs to the shipped behavior.
    state without the lineage gate (turnStart, thinkIntercept,
    readIntercept are the three injection homes; turnEnd watch and
    writeLedger are bookkeeping).
+4. Import-extension sweep (plan header convention):
+   `grep -rn "from '\.\{1,2\}/[^']*\.tsx\?'" packages/*/src` must print
+   nothing. Additionally run the throwaway `tsconfig.testscheck.json`
+   recipe (one per package under `packages/`, extending that package's
+   tsconfig with `noEmit` and `allowImportingTsExtensions: true`,
+   `include: ["tests"]`) over the events and service test trees, then
+   DELETE the throwaway configs before committing.
+5. Note for the docs pass: the TASK-014 "prompt constants byte-identical
+   from a113305" anchor no longer holds for DEFAULT_DREAM_PROMPT (the
+   TASK-001 verbiage and the user's a863357 tweaks moved it); the two
+   tools-package constants remain unchanged. Do not restate the anchor.
 
 ## Definition of Done
 

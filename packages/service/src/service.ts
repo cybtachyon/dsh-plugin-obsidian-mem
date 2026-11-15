@@ -1231,6 +1231,17 @@ export class ObsidianMemService extends Service {
     return { operation: 'run', id: handle.id, done: handle.done }
   }
 
+  /**
+   * DreamRunBusy answers the orchestrator's live single-flight guard for
+   * the events launch-window recall gate (PLAN-dream-isolation TASK-006).
+   * It reads the private field directly (never {@link
+   * ObsidianMemService.dreamEngine}), so answering the hot recall path
+   * never constructs the orchestrator; false before any dream call.
+   */
+  dreamRunBusy(): boolean {
+    return this.dreamEngineValue !== null && this.dreamEngineValue.busy
+  }
+
   private dreamEngine(): DreamOrchestrator {
     if (this.dreamEngineValue === null) {
       this.dreamEngineValue = new DreamOrchestrator({

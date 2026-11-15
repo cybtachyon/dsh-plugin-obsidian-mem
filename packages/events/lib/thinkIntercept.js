@@ -45,7 +45,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { INTENT_MARKERS, INTENTS_FILE, isIntentMarker, } from '../../core/lib/index.js';
 import { boundSummary } from './host.js';
-import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, } from './toolkit.js';
+import { collectFreshSources, deliverProvisionNotice, fireAndForget, injectNotice, isRecallSuppressed, logSearchFailure, makeWarnOnce, markSourceInjected, messageIdFactory, retainProvisionNotice, runGuarded, } from './toolkit.js';
 /** Completed-block search top K (task file: topK=2). */
 export const THINK_SEARCH_TOP_K = 2;
 /** Query cap: the block text enters the hybrid search capped at 500 chars. */
@@ -182,6 +182,13 @@ function observeChunk(watcher, sessionId, state, frame) {
 }
 function scheduleThinkRecall(watcher, sessionId, blockText) {
     const { deps } = watcher;
+    // Dream-work suppression (PLAN-dream-isolation TASK-006): the gate sits
+    // above the scan, the post-injection sleep, the budget, and the search/
+    // shot/injection below, so a suppressed session spends nothing. The
+    // per-turn noteTurn bookkeeping stays in the frame-start listener.
+    if (isRecallSuppressed(sessionId, deps)) {
+        return;
+    }
     // The post-injection sleep consumes a completed block whole: no scan, no
     // search, no budget (the breathing room the last injection was for).
     if (watcher.sleepBlocks > 0) {

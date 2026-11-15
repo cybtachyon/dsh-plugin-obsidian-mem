@@ -45,7 +45,7 @@ import type {
 } from '../src/service.ts'
 import type { MilvusLauncherOptions, MilvusStartResult } from '../src/milvus/launcher.ts'
 import type { IndexerManagerOptions } from '../src/indexer.ts'
-import { fakeGateway } from './dream-testkit.ts'
+import { createdEntry, fakeGateway } from './dream-testkit.ts'
 
 /** validValue unwraps a successful validation, throwing on issues. */
 function validValue(result: ObsidianMemConfigValidation): ResolvedObsidianMemConfig {
@@ -1173,8 +1173,9 @@ describe('status, placeholders, and not-implemented seams', () => {
 
 // ---------------------------------------------------------------------------
 // TASK-002: dream run launch wiring through the ctx.get gateways. The
-// agents-gateway double is the shared dream-testkit fakeGateway, so both
-// specs read one create() recorder (TASK-005).
+// agents-gateway double is the shared dream-testkit fakeGateway and the
+// pin shape is the shared createdEntry, so both specs read one create()
+// recorder (TASK-005; PLAN-dream-isolation TASK-007 dedupe).
 
 describe('dream run launch wiring (TASK-002)', () => {
   it('launches with the host default-model selection in the create agentOptions', async () => {
@@ -1191,7 +1192,7 @@ describe('dream run launch wiring (TASK-002)', () => {
     }
     expect((await result.done).ok).toBe(true)
     expect(agents.created).toEqual([
-      { sessionId: `dream-${result.id}`, agentOptions: { provider: 'p', model: 'm' }, meta: { cwd: DB_PATH }, setup: expect.any(Function) },
+      createdEntry({ sessionId: `dream-${result.id}`, provider: 'p', model: 'm', cwd: DB_PATH }),
     ])
   })
 

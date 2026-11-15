@@ -24,7 +24,7 @@ import { DEFAULT_CHURN_THRESHOLD_PERCENT, DEFAULT_CHURN_WINDOW_COMMITS, GLOBAL_M
 import type { NoteMeta } from '../../core/lib/index.js'
 import { DEFAULT_DREAM_PROMPT, DreamBlockedError, DreamBusyError, DreamOrchestrator, dreamPromptIsolationSetup, renderPromptTunables } from '../src/dream.ts'
 import type { DreamAgentPromptScope, DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
-import { failedTurnError, fakeGateway, turnEndRecord } from './dream-testkit.ts'
+import { createdEntry, failedTurnError, fakeGateway, turnEndRecord } from './dream-testkit.ts'
 import type { AuditedNote, VaultInventory } from '../src/audit.ts'
 import type { ResolvedObsidianMemConfig } from '../src/config.ts'
 import type { ServiceFs } from '../src/service.ts'
@@ -509,7 +509,7 @@ describe('run: single flight and the launch sequence', () => {
     expect(summary.ok).toBe(true)
 
     expect(handle.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i)
-    expect(recorder.created).toEqual([{ sessionId: `dream-${handle.id}`, agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB }, setup: expect.any(Function) }])
+    expect(recorder.created).toEqual([createdEntry({ sessionId: `dream-${handle.id}`, provider: 'acme', model: 'm-1', cwd: DB })])
     expect(recorder.calls).toEqual(['create', 'followup', 'whenIdle', 'dispose'])
     const message = recorder.followups[0] as { content: Array<{ type: string; text: string }>; source: { kind: string } }
     expect(message.source).toEqual({ kind: 'user' })
@@ -540,7 +540,7 @@ describe('run: single flight and the launch sequence', () => {
     const recorder = fakeGateway()
     const config = configFixture({ dreaming: { schedules: [], model: '', nearDuplicateThreshold: 0.92 } })
     await new DreamOrchestrator(deps({ gateway: recorder.gateway, config })).startRun().done
-    expect(recorder.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB }, setup: expect.any(Function) })
+    expect(recorder.created[0]).toEqual(createdEntry({ sessionId: expect.stringMatching(/^dream-/), provider: 'acme', model: 'm-1', cwd: DB }))
   })
 
   it('passes meta.cwd as the configured dbPath so the session lands in a GUI-addressable bucket', async () => {
@@ -560,10 +560,10 @@ describe('run: single flight and the launch sequence', () => {
     const overridden = fakeGateway()
     await new DreamOrchestrator(deps({ gateway: overridden.gateway, config })).startRun({ model: 'some/model-x' }).done
     // The override replaces only the model id; provider routing is host-only.
-    expect(overridden.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'some/model-x' }, meta: { cwd: DB }, setup: expect.any(Function) })
+    expect(overridden.created[0]).toEqual(createdEntry({ sessionId: expect.stringMatching(/^dream-/), provider: 'acme', model: 'some/model-x', cwd: DB }))
     const configured = fakeGateway()
     await new DreamOrchestrator(deps({ gateway: configured.gateway, config })).startRun().done
-    expect(configured.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'cfg/model' }, meta: { cwd: DB }, setup: expect.any(Function) })
+    expect(configured.created[0]).toEqual(createdEntry({ sessionId: expect.stringMatching(/^dream-/), provider: 'acme', model: 'cfg/model', cwd: DB }))
   })
 
   it('rejects the run as blocked when no provider/model pair resolves', () => {

@@ -6,6 +6,8 @@
  * builders name the turn/end shapes the failed-turn scan reads.
  */
 
+import { expect } from 'vitest'
+
 import type { DreamAgentHandle, DreamAgentsGateway, DreamAgentPromptScope } from '../src/dream.ts'
 
 export interface GatewayRecorder {
@@ -19,6 +21,28 @@ export interface GatewayRecorder {
   followups: unknown[]
   calls: string[]
   disposed: number
+}
+
+/**
+ * CreatedEntry builds the expected {@link GatewayRecorder.created} entry of
+ * one dream launch: the provider/model pair, the dbPath meta bucket, and the
+ * prompt-isolation setup the orchestrator always hands create(). The entry
+ * SHAPE lives in this one home, so a new create() option is added here, not
+ * retyped at every exact-equality pin (dream.spec and service.spec share
+ * these pins). `sessionId` takes a literal or an asymmetric matcher.
+ */
+export function createdEntry(expected: {
+  sessionId: unknown
+  provider: string
+  model: string
+  cwd: string
+}): Record<string, unknown> {
+  return {
+    sessionId: expected.sessionId,
+    agentOptions: { provider: expected.provider, model: expected.model },
+    meta: { cwd: expected.cwd },
+    setup: expect.any(Function),
+  }
 }
 
 export type SessionRecord = { type: string; data?: unknown }

@@ -5,11 +5,12 @@
  * the on-disk content-hash re-check, the
  * brand-new path exemption, read-only refusal), core validateMeta as a
  * refusal value with discipline warnings on success, title-slugged naming
- * with collision suffixes for new notes, and the frontmatter round-trip
- * of what actually lands on disk.
+ * with collision suffixes for new notes plus the rule for which directory
+ * a path target names, and the frontmatter round-trip of what actually
+ * lands on disk.
  */
 
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -215,6 +216,48 @@ describe('memory_write success paths', () => {
     if (value.kind !== 'written') return
     expect(value.path).toBe(join(sharedRoot, 'notes', 'deploys-friday-releases.md'))
     expect(value.created).toBe(true)
+    expect(matchesOutput(createWriteTool(service), value)).toEqual([])
+  })
+
+  it('slugs an existing directory target without a trailing separator INTO it', async () => {
+    const value = await write({ path: join(sharedRoot, 'notes') })
+    expect(value.kind).toBe('written')
+    if (value.kind !== 'written') return
+    expect(value.path).toBe(join(sharedRoot, 'notes', 'deploys-friday-releases.md'))
+    expect(matchesOutput(createWriteTool(service), value)).toEqual([])
+  })
+
+  it('slugs a missing-directory target INTO the directory it names', async () => {
+    // The path supplies the directory even when it does not exist yet; the
+    // write creates it. The bench hit the old parent-of-the-directory slip.
+    const missingDir = join(sharedRoot, 'plans')
+    expect(existsSync(missingDir)).toBe(false)
+
+    const value = await write({ path: missingDir })
+    expect(value.kind).toBe('written')
+    if (value.kind !== 'written') return
+    expect(value.path).toBe(join(missingDir, 'deploys-friday-releases.md'))
+    expect(existsSync(value.path)).toBe(true)
+    expect(matchesOutput(createWriteTool(service), value)).toEqual([])
+  })
+
+  it('slugs a trailing-separator missing-directory target the same way', async () => {
+    const missingDir = join(sharedRoot, 'plans')
+    const value = await write({ path: `${missingDir}/` })
+    expect(value.kind).toBe('written')
+    if (value.kind !== 'written') return
+    expect(value.path).toBe(join(missingDir, 'deploys-friday-releases.md'))
+    expect(existsSync(value.path)).toBe(true)
+    expect(matchesOutput(createWriteTool(service), value)).toEqual([])
+  })
+
+  it('keeps a .md basename target landing inside its missing parent directory', async () => {
+    // The "pass a file inside the new directory" spelling stays valid.
+    const value = await write({ path: join(sharedRoot, 'plans', 'draft-note.md') })
+    expect(value.kind).toBe('written')
+    if (value.kind !== 'written') return
+    expect(value.path).toBe(join(sharedRoot, 'plans', 'deploys-friday-releases.md'))
+    expect(existsSync(value.path)).toBe(true)
     expect(matchesOutput(createWriteTool(service), value)).toEqual([])
   })
 

@@ -85,7 +85,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 
 ### Phase 3b — Live-bench defects (inserted from TASK-009 findings 1 and 3)
 
- - [ ] [TASK-009b-missing-dir-target](docs/PLAN-async-writes-TASK-009b-missing-dir-target.md)
+ - [x] [TASK-009b-missing-dir-target](docs/PLAN-async-writes-TASK-009b-missing-dir-target.md)
  - [ ] [TASK-009c-sidecar-ignore-convergence](docs/PLAN-async-writes-TASK-009c-sidecar-ignore-convergence.md)
 
 ### Phase 3c — Whole-repo verification

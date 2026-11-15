@@ -9,9 +9,10 @@
  * path absent from disk is the only exemption). Frontmatter goes through
  * core validateMeta (errors are values, discipline nudges come back as
  * warnings); a new file's name is slugged from index_title with collision
- * suffixes, so the response reports the FINAL absolute path. The service's
- * applyWrite does the raw-merging atomic write and confirms the note on
- * disk; the reindex and the git commit settle asynchronously afterwards.
+ * suffixes into the directory the passed path names, so the response
+ * reports the FINAL absolute path. The service's applyWrite does the
+ * raw-merging atomic write and confirms the note on disk; the reindex and
+ * the git commit settle asynchronously afterwards.
  * @module dsh-plugin-obsidian-mem/tools/write
  */
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js';

@@ -9,9 +9,10 @@
  * path absent from disk is the only exemption). Frontmatter goes through
  * core validateMeta (errors are values, discipline nudges come back as
  * warnings); a new file's name is slugged from index_title with collision
- * suffixes, so the response reports the FINAL absolute path. The service's
- * applyWrite does the raw-merging atomic write and confirms the note on
- * disk; the reindex and the git commit settle asynchronously afterwards.
+ * suffixes into the directory the passed path names, so the response
+ * reports the FINAL absolute path. The service's applyWrite does the
+ * raw-merging atomic write and confirms the note on disk; the reindex and
+ * the git commit settle asynchronously afterwards.
  * @module dsh-plugin-obsidian-mem/tools/write
  */
 
@@ -53,7 +54,7 @@ export const WRITE_PARAMETERS: JsonSchemaNode = {
   properties: {
     path: {
       type: 'string',
-      description: 'Absolute .md path inside a shared vault (the vault root is the note root). An existing file is updated at this exact path; for a new note only the directory is used and the filename is slugged from index_title.',
+      description: 'Absolute .md path inside a shared vault (the vault root is the note root). An existing file is updated at this exact path; for a new note only the directory is used (a non-.md path names that directory, a .md path its parent) and the filename is slugged from index_title.',
     },
     index_title: {
       type: 'string',
@@ -303,8 +304,7 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
 
   // New notes take their filename from the title (slug plus collision
   // ordinal); updates keep the exact read path so links into it hold.
-  // A directory target slugs INTO that directory, not its parent.
-  const newNoteDir = targetStat?.isDirectory() ? target : dirname(target)
+  const newNoteDir = newNoteDirectory(target, targetStat?.isDirectory() ?? false)
   const finalPath = exists ? target : join(newNoteDir, titleToFilename(indexTitle, takenMarkdownNames(newNoteDir)))
 
   const result = await service.applyWrite(finalPath, meta, contents)
@@ -316,6 +316,22 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
     warnings,
     write_through: 'queued' as const,
   }, notice)
+}
+
+// NewNoteDirectory is the one place a new note's path picks its directory:
+// an existing directory, or a path spelled with a trailing separator, IS
+// the directory; a `.md` basename names a file, so the note lands beside
+// it; any other path names a directory to create. The `path` parameter
+// promises that a path supplies the directory, missing ones included:
+// applyWrite mkdirs it.
+function newNoteDirectory(target: string, isExistingDirectory: boolean): string {
+  // The trim requires a non-separator character, so a separator-only
+  // path keeps what it was given (the guards upstream never let one here).
+  const trimmed = target.replace(/^(.+)[/\\]+$/s, '$1')
+  if (isExistingDirectory || trimmed !== target) {
+    return trimmed
+  }
+  return basename(trimmed).endsWith('.md') ? dirname(trimmed) : trimmed
 }
 
 // Existing .md names beside the target, for titleToFilename's collision

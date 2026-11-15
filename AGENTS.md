@@ -242,6 +242,15 @@
   DRY and avoid reinventing the wheel.
 - Never use grammatical shortcuts like emdash. Use separate sentences; commas
   and semicolons if necessary. Avoid pronouns and adverbs whenever possible.
+- **Import specifiers follow NodeNext.** In the SOURCE tier
+  (`packages/*/src`, compiled by `tsc -b`), a relative import ends in
+  `.js`/`.tsx`-preserving form; a `.ts` specifier there is a TS5097-class
+  build break. The TESTS tier (`packages/*/tests`) deliberately imports
+  `../src/x.ts` with `.ts` specifiers (vitest resolves them literally; the
+  throwaway `tsconfig.testscheck.json` recipe types them with
+  `allowImportingTsExtensions: true`, `composite: false`, `rootDir: "."`).
+  Do not churn tests-tier specifiers to `.js`. Verification grep (must
+  print nothing): `grep -rn "from '\.\{1,2\}/[^']*\.tsx\?'" packages/*/src`.
 - **Doc comments** start with the name and state what it does. Structure:
   `// [Name] [verb]s [what]. [Optional: when/why to use it].`
   Put useful information where users make decisions: usually the constructor,

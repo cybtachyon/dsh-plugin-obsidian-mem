@@ -206,7 +206,7 @@ describe('dream-launch flag (PLAN-dream-isolation TASK-006)', () => {
     // Live-only like dreamLineage: the claim alone writes nothing.
     expect(fs.writes).toBe(0)
     // A later ledger mutation persists the row; the flag stays out.
-    registry.markInjected('s1', 'vaultA a.md')
+    registry.markInjected('s1', 'vaultA\u0000a.md')
     registry.flush()
     const saved = JSON.parse(readFileSync(file, 'utf8')) as {
       sessions: Record<string, Record<string, unknown>>

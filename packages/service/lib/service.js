@@ -118,6 +118,9 @@ export class ObsidianMemService extends Service {
     registry = null;
     sessionRegistryValue = null;
     readRegistry = new Map();
+    // Fired-but-unsettled write follow-up chains (index + git); each handle
+    // removes itself on settle and flushWriteFollowUps drains the set.
+    pendingFollowUps = new Set();
     access = null;
     phase = 'inactive';
     noticeText = null;
@@ -435,15 +438,17 @@ export class ObsidianMemService extends Service {
      * before serializing (TASK-025 carry-over #1: serializeNote renders the
      * modelled keys only, so keywords/trigger_extensions and every other
      * un-modelled author key would otherwise be silently dropped on
-     * rewrite), writes atomically, updates the read registry, hands the path
-     * to the indexer's write-through queue, and records one git commit in the
-     * owning shared vault (Q3: one commit per successful write, serialized
-     * per vault, no debounce). Read-only vaults refuse. The commit rides
-     * inside applyWrite for both the memory_write tool path and this service
-     * write() path (the UI); a commit failure logs in the VaultGitManager and
-     * settles to null, so it never unwinds the write. applyWrite already
-     * awaits the write-through index, so one serialized commit fits the same
-     * latency envelope (WRITE_TIMEOUT_MS in the tool bounds that budget).
+     * rewrite), writes atomically, and updates the read registry. The
+     * returned value confirms the note file landed on disk; it carries no
+     * promise about the slow bookkeeping. The write-through reindex and the
+     * one git commit per successful write (Q3: no debounce) settle
+     * asynchronously on two INDEPENDENT tracked follow-up chains, so a slow
+     * embed never delays a commit; vault-internal order stays owned by
+     * VaultIndexer.enqueueOp and the VaultGitManager per-vault lane, and
+     * commitAllShared (the dream end seam) enqueues onto the git lane behind
+     * pending per-write commits. Read-only vaults refuse. A follow-up failure
+     * is warn-logged and never unwinds the write; flushWriteFollowUps awaits
+     * the chains for tests and teardown.
      */
     async applyWrite(path, meta, body) {
         await this.ensureMemoryAccess();
@@ -483,18 +488,46 @@ export class ObsidianMemService extends Service {
         const relPath = relative(classified.vault.path, target);
         const indexer = this.indexer;
         if (indexer !== null) {
-            // Write-through reindex: the note is searchable the moment the file
-            // write lands. A cold/degraded indexer keeps the watcher's dirt.
-            await indexer.indexFile(classified.vault.path, relPath).catch((error) => {
-                this.log.warn(`write-through index failed for ${target}: ${describeError(error)}`);
-            });
+            // Follow-up chain 1: write-through reindex. A null indexer skips it:
+            // the watcher's dirt, the stat sweep, and the next indexer.start()
+            // full-scan converge the path.
+            this.trackFollowUp(indexer.indexFile(classified.vault.path, relPath));
         }
-        // One commit per successful write (Q3). commitVault answers a settled
-        // null when git is off, the vault was never adopted, or the tree is
-        // clean (an identical rewrite), and logs-and-nulls a failed commit:
-        // the memory file is the source of truth, so no catch here.
-        await this.vaultGit.commitVault(classified.vault.path, datedCommitMessage(`memory_write ${relPath}`));
+        // Follow-up chain 2: one commit per successful write (Q3). commitVault
+        // answers a settled null when git is off, the vault was never adopted,
+        // or the tree is clean (an identical rewrite), and logs-and-nulls a
+        // failed commit; trackFollowUp's catch is the belt.
+        this.trackFollowUp(this.vaultGit.commitVault(classified.vault.path, datedCommitMessage(`memory_write ${relPath}`)));
         return { path: target, created, vaultPath: classified.vault.path, relPath };
+    }
+    /**
+     * TrackFollowUp retains one fired write follow-up until it settles: the
+     * handle removes itself from the pending set and a rejection is
+     * warn-logged here, so a chain never rejects unobserved and never wedges
+     * flushWriteFollowUps.
+     * @param followUp - the chain's promise; its value is not used.
+     */
+    trackFollowUp(followUp) {
+        const settled = followUp
+            .then(() => undefined)
+            .catch((error) => {
+            this.log.warn(`write follow-up failed: ${describeError(error)}`);
+        })
+            .finally(() => {
+            this.pendingFollowUps.delete(settled);
+        });
+        this.pendingFollowUps.add(settled);
+    }
+    /**
+     * FlushWriteFollowUps awaits every tracked write follow-up chain,
+     * re-checking until the pending set drains; it answers resolved when
+     * nothing is pending. Callers that must observe a write's indexing or
+     * commit (tests, the bounded TASK-002 teardown) ride this.
+     */
+    async flushWriteFollowUps() {
+        while (this.pendingFollowUps.size > 0) {
+            await Promise.allSettled([...this.pendingFollowUps]);
+        }
     }
     /**
      * Search routes through ensureMemoryAccess and the shared hybridSearch

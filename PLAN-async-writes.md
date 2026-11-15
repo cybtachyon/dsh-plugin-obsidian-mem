@@ -66,7 +66,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 
 ### Phase 1 — Async follow-up core (service)
 
- - [ ] [TASK-001-followup-chains](docs/PLAN-async-writes-TASK-001-followup-chains.md)
+ - [x] [TASK-001-followup-chains](docs/PLAN-async-writes-TASK-001-followup-chains.md)
  - [ ] [TASK-002-teardown-flush](docs/PLAN-async-writes-TASK-002-teardown-flush.md)
  - [ ] [TASK-003-cold-write-split](docs/PLAN-async-writes-TASK-003-cold-write-split.md)
  - [ ] [TASK-004-refactor-phase1](docs/PLAN-async-writes-TASK-004-refactor-phase1.md)

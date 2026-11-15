@@ -394,6 +394,63 @@ function testMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
   }
 }
 
+/**
+ * RecordingGit answers like a healthy adopted repo and logs every call's
+ * root. markDirty scripts the change a write lands for the next status
+ * probe (a clean tree is what commitAll answers null on); a recorded
+ * commit cleans the tree again like real git; commitFails scripts git
+ * refusing the commit itself.
+ */
+function recordingGit(options: { adoptionFails?: boolean; commitFails?: boolean } = {}) {
+  const calls: Array<{ root: string; argv: string[] }> = []
+  let dirty = false
+  const gitRunner = (root: string): GitRunner => async (argv) => {
+    calls.push({ root, argv })
+    if (options.adoptionFails === true) {
+      return { code: 128, stdout: '', stderr: 'fatal: fake adoption failure' }
+    }
+    if (argv.includes('status')) {
+      return { code: 0, stdout: dirty ? '?? pending.md\n' : '', stderr: '' }
+    }
+    if (argv.includes('commit')) {
+      if (options.commitFails === true) {
+        return { code: 1, stdout: '', stderr: 'fatal: fake commit failure' }
+      }
+      dirty = false
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    if (argv[0] === 'rev-parse' && argv[1] === 'HEAD') {
+      return { code: 0, stdout: `${'f'.repeat(40)}\n`, stderr: '' }
+    }
+    return { code: 0, stdout: '', stderr: '' }
+  }
+  return {
+    calls,
+    gitRunner,
+    /** MarkDirty scripts a working-tree change for the next status probe. */
+    markDirty(): void {
+      dirty = true
+    },
+  }
+}
+
+/** CommitMessages lists the -m message of every recorded `commit` call. */
+function commitMessages(git: ReturnType<typeof recordingGit>): Array<string | undefined> {
+  return git.calls
+    .filter((call) => call.argv.includes('commit'))
+    .map((call) => call.argv[call.argv.indexOf('-m') + 1])
+}
+
+/** GitWriteHarness: a git-enabled service over one real temp-dir shared vault. */
+function gitWriteHarness(git: ReturnType<typeof recordingGit>, vault: string) {
+  return harness({
+    gitEnabled: true,
+    seedDirs: [vault],
+    config: { vaults: [{ path: vault }] },
+    gitRunner: git.gitRunner,
+  })
+}
+
 // ---------------------------------------------------------------------------
 
 describe('config schema', () => {
@@ -966,6 +1023,7 @@ old body
     const h = harness({ seedFiles: { [target]: existing } })
     await h.service.ensureMemoryAccess()
     const result = await h.service.applyWrite(target, { ...meta, index_title: 'New title' }, 'new body\n')
+    await h.service.flushWriteFollowUps()
     expect(result.created).toBe(false)
     expect(result.relPath).toBe('keep.md')
     const roundTrip = parseNote(h.fs.content(target) ?? '')
@@ -1010,6 +1068,103 @@ old body
       path: join(DEFAULT_VAULT, 'w.md'), meta, body: 'b\n',
     })
     expect(result.created).toBe(true)
+  })
+})
+
+// TASK-001 (PLAN-async-writes): applyWrite confirms the file write and
+// leaves the index and git chains to settle asynchronously, tracked.
+describe('write follow-up chains', () => {
+  const followUpDirs: string[] = []
+
+  /** TempVault: a real dir so MemoryGit's ignore-file write lands, cleaned after. */
+  function tempVault(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'obsidian-mem-svc-followup-'))
+    followUpDirs.push(dir)
+    return dir
+  }
+
+  afterEach(() => {
+    for (const dir of followUpDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('applyWrite resolves while a slow index chain is still pending, file on disk', async () => {
+    const git = recordingGit()
+    const vault = tempVault()
+    const h = gitWriteHarness(git, vault)
+    await h.service.ensureMemoryAccess()
+    git.calls.length = 0
+    git.markDirty()
+    let indexSettled = false
+    h.indexer.indexFile.mockImplementation(async () => {
+      await new Promise((resolve) => { setTimeout(resolve, 250) })
+      indexSettled = true
+      return true
+    })
+
+    const started = Date.now()
+    const result = await h.service.applyWrite(join(vault, 'slow.md'), testMeta(), 'body\n')
+
+    expect(result.relPath).toBe('slow.md')
+    expect(h.fs.has(join(vault, 'slow.md'))).toBe(true)
+    // The slow chain is still outstanding: the write did not await it.
+    expect(indexSettled).toBe(false)
+    expect(Date.now() - started).toBeLessThan(250)
+
+    await h.service.flushWriteFollowUps()
+    expect(indexSettled).toBe(true)
+    expect(h.indexer.indexFile).toHaveBeenCalledWith(vault, 'slow.md')
+    expect(commitMessages(git)).toEqual([
+      expect.stringMatching(/^obsidian-mem: memory_write slow\.md /),
+    ])
+  })
+
+  it('flushWriteFollowUps answers resolved when nothing is pending', async () => {
+    const h = harness()
+    await h.service.ensureMemoryAccess()
+    await h.service.flushWriteFollowUps()
+  })
+
+  it('a rejecting indexFile settles quietly and leaves later follow-ups running', async () => {
+    const h = harness()
+    await h.service.ensureMemoryAccess()
+    h.indexer.indexFile.mockRejectedValueOnce(new Error('embed exploded'))
+
+    const first = await h.service.applyWrite(join(DEFAULT_VAULT, 'bad.md'), testMeta(), 'b\n')
+    expect(first.created).toBe(true)
+    await expect(h.service.flushWriteFollowUps()).resolves.toBeUndefined()
+    expect(h.ctx.warnings.join('\n')).toContain('write follow-up failed: embed exploded')
+
+    // The rejected chain left no wedge: the next write's chain still runs.
+    const second = await h.service.applyWrite(join(DEFAULT_VAULT, 'good.md'), testMeta(), 'b\n')
+    expect(second.created).toBe(true)
+    await h.service.flushWriteFollowUps()
+    expect(h.indexer.indexFile).toHaveBeenLastCalledWith(DEFAULT_VAULT, 'good.md')
+    expect(h.indexer.indexFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('a never-settling index chain does not hold the git chain of the same write', async () => {
+    const git = recordingGit()
+    const vault = tempVault()
+    const h = gitWriteHarness(git, vault)
+    await h.service.ensureMemoryAccess()
+    git.calls.length = 0
+    git.markDirty()
+    h.indexer.indexFile.mockReturnValue(new Promise<boolean>(() => {}))
+
+    await h.service.applyWrite(join(vault, 'stuck.md'), testMeta(), 'b\n')
+
+    // flush only resolves after BOTH chains, so the pin observes order
+    // through a race: the commit landed while flush is still blocked on
+    // the stuck index chain.
+    const outcome = await Promise.race([
+      h.service.flushWriteFollowUps().then(() => 'flushed'),
+      new Promise((resolve) => { setTimeout(resolve, 100, 'blocked') }),
+    ])
+
+    expect(outcome).toBe('blocked')
+    expect(commitMessages(git)).toEqual([
+      expect.stringMatching(/^obsidian-mem: memory_write stuck\.md /),
+    ])
   })
 })
 
@@ -1544,49 +1699,15 @@ describe('vault git wiring', () => {
     for (const dir of gitDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   })
 
-  /**
-   * RecordingGit answers like a healthy adopted repo and logs every call's
-   * root. markDirty scripts the change a write lands for the next status
-   * probe (a clean tree is what commitAll answers null on); a recorded
-   * commit cleans the tree again like real git; commitFails scripts git
-   * refusing the commit itself.
-   */
-  function recordingGit(options: { adoptionFails?: boolean; commitFails?: boolean } = {}) {
-    const calls: Array<{ root: string; argv: string[] }> = []
-    let dirty = false
-    const gitRunner = (root: string): GitRunner => async (argv) => {
-      calls.push({ root, argv })
-      if (options.adoptionFails === true) {
-        return { code: 128, stdout: '', stderr: 'fatal: fake adoption failure' }
-      }
-      if (argv.includes('status')) {
-        return { code: 0, stdout: dirty ? '?? pending.md\n' : '', stderr: '' }
-      }
-      if (argv.includes('commit')) {
-        if (options.commitFails === true) {
-          return { code: 1, stdout: '', stderr: 'fatal: fake commit failure' }
-        }
-        dirty = false
-        return { code: 0, stdout: '', stderr: '' }
-      }
-      if (argv[0] === 'rev-parse' && argv[1] === 'HEAD') {
-        return { code: 0, stdout: `${'f'.repeat(40)}\n`, stderr: '' }
-      }
-      return { code: 0, stdout: '', stderr: '' }
-    }
-    return {
-      calls,
-      gitRunner,
-      /** MarkDirty scripts a working-tree change for the next status probe. */
-      markDirty(): void {
-        dirty = true
-      },
-    }
-  }
-
   /** Flush drains the floating addVault adoption promise (microtask-only chain). */
   async function flush(): Promise<void> {
     await new Promise((resolve) => { setTimeout(resolve, 0) })
+  }
+
+  /** WriteHarness: a git-enabled service over one real temp-dir shared vault. */
+  function writeHarness(git: ReturnType<typeof recordingGit>) {
+    const vault = gitTempDir()
+    return { ...gitWriteHarness(git, vault), vault }
   }
 
   it('construction and activation never touch git, even with git enabled', () => {
@@ -1707,28 +1828,10 @@ describe('vault git wiring', () => {
     await expect(h.service.vaultGit.statusShared(vault)).resolves.toBeNull()
   })
 
-  // Write-commit seam (TASK-005): applyWrite ends every successful write
-  // with one commit in the owning shared vault, serialized per vault by
-  // the manager (Q3 answer; no debounce, no tools-layer changes).
-
-  /** WriteHarness: a git-enabled service over one real temp-dir shared vault. */
-  function writeHarness(git: ReturnType<typeof recordingGit>) {
-    const vault = gitTempDir()
-    const h = harness({
-      gitEnabled: true,
-      seedDirs: [vault],
-      config: { vaults: [{ path: vault }] },
-      gitRunner: git.gitRunner,
-    })
-    return { ...h, vault }
-  }
-
-  /** CommitMessages lists the -m message of every recorded `commit` call. */
-  function commitMessages(git: ReturnType<typeof recordingGit>): Array<string | undefined> {
-    return git.calls
-      .filter((call) => call.argv.includes('commit'))
-      .map((call) => call.argv[call.argv.indexOf('-m') + 1])
-  }
+  // Write-commit seam (TASK-005, async since TASK-001): every successful
+  // write fires one tracked commit follow-up in the owning shared vault,
+  // serialized per vault by the manager (Q3 answer; no debounce, no
+  // tools-layer changes); the tests flush to observe the settled chain.
 
   it('one successful write lands exactly one commit with the pinned message shape', async () => {
     const git = recordingGit()
@@ -1740,6 +1843,7 @@ describe('vault git wiring', () => {
     const result = await h.service.write({
       path: join(h.vault, 'topic.md'), meta: testMeta(), body: 'the fact, stated plainly\n',
     })
+    await h.service.flushWriteFollowUps()
 
     expect(result.created).toBe(true)
     expect(result.vaultPath).toBe(h.vault)
@@ -1761,6 +1865,7 @@ describe('vault git wiring', () => {
       path: join(h.vault, 'again.md'), meta: testMeta(), body: 'same bytes\n',
     }
     const first = await h.service.write(request)
+    await h.service.flushWriteFollowUps()
     expect(first.created).toBe(true)
     expect(commitMessages(git)).toHaveLength(1)
 
@@ -1768,6 +1873,7 @@ describe('vault git wiring', () => {
     // identical rewrite looks like to git: commitVault answers null and
     // the write still returns.
     const second = await h.service.write(request)
+    await h.service.flushWriteFollowUps()
     expect(second.created).toBe(false)
     expect(commitMessages(git)).toHaveLength(1)
     expect(h.ctx.errors).toEqual([])
@@ -1786,6 +1892,7 @@ describe('vault git wiring', () => {
     const result = await h.service.write({
       path: join(vault, 'off.md'), meta: testMeta(), body: 'b\n',
     })
+    await h.service.flushWriteFollowUps()
 
     expect(result.created).toBe(true)
     expect(git.calls).toEqual([])
@@ -1801,6 +1908,7 @@ describe('vault git wiring', () => {
     const result = await h.service.write({
       path: join(h.vault, 'kept.md'), meta: testMeta(), body: 'b\n',
     })
+    await h.service.flushWriteFollowUps()
 
     expect(result.created).toBe(true)
     expect(result.relPath).toBe('kept.md')
@@ -1817,6 +1925,7 @@ describe('vault git wiring', () => {
     await h.service.write({
       path: join(h.vault, 'retired.md'), meta: testMeta({ archive: true }), body: 'b\n',
     })
+    await h.service.flushWriteFollowUps()
 
     expect(parseNote(h.fs.content(join(h.vault, 'retired.md')) ?? '').meta.archive).toBe(true)
     expect(commitMessages(git)).toHaveLength(1)

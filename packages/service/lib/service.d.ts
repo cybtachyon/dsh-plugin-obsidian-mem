@@ -281,6 +281,7 @@ export declare class ObsidianMemService extends Service {
     private registry;
     private sessionRegistryValue;
     private readonly readRegistry;
+    private readonly pendingFollowUps;
     private access;
     private phase;
     private noticeText;
@@ -379,17 +380,34 @@ export declare class ObsidianMemService extends Service {
      * before serializing (TASK-025 carry-over #1: serializeNote renders the
      * modelled keys only, so keywords/trigger_extensions and every other
      * un-modelled author key would otherwise be silently dropped on
-     * rewrite), writes atomically, updates the read registry, hands the path
-     * to the indexer's write-through queue, and records one git commit in the
-     * owning shared vault (Q3: one commit per successful write, serialized
-     * per vault, no debounce). Read-only vaults refuse. The commit rides
-     * inside applyWrite for both the memory_write tool path and this service
-     * write() path (the UI); a commit failure logs in the VaultGitManager and
-     * settles to null, so it never unwinds the write. applyWrite already
-     * awaits the write-through index, so one serialized commit fits the same
-     * latency envelope (WRITE_TIMEOUT_MS in the tool bounds that budget).
+     * rewrite), writes atomically, and updates the read registry. The
+     * returned value confirms the note file landed on disk; it carries no
+     * promise about the slow bookkeeping. The write-through reindex and the
+     * one git commit per successful write (Q3: no debounce) settle
+     * asynchronously on two INDEPENDENT tracked follow-up chains, so a slow
+     * embed never delays a commit; vault-internal order stays owned by
+     * VaultIndexer.enqueueOp and the VaultGitManager per-vault lane, and
+     * commitAllShared (the dream end seam) enqueues onto the git lane behind
+     * pending per-write commits. Read-only vaults refuse. A follow-up failure
+     * is warn-logged and never unwinds the write; flushWriteFollowUps awaits
+     * the chains for tests and teardown.
      */
     applyWrite(path: string, meta: NoteMeta, body: string): Promise<ObsidianMemWriteResult>;
+    /**
+     * TrackFollowUp retains one fired write follow-up until it settles: the
+     * handle removes itself from the pending set and a rejection is
+     * warn-logged here, so a chain never rejects unobserved and never wedges
+     * flushWriteFollowUps.
+     * @param followUp - the chain's promise; its value is not used.
+     */
+    private trackFollowUp;
+    /**
+     * FlushWriteFollowUps awaits every tracked write follow-up chain,
+     * re-checking until the pending set drains; it answers resolved when
+     * nothing is pending. Callers that must observe a write's indexing or
+     * commit (tests, the bounded TASK-002 teardown) ride this.
+     */
+    flushWriteFollowUps(): Promise<void>;
     /**
      * Search routes through ensureMemoryAccess and the shared hybridSearch
      * pipeline; an offline or crashed index answers with the typed

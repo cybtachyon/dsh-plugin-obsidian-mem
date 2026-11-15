@@ -218,14 +218,7 @@ export class ObsidianMemService extends Service {
      * the next call may retry.
      */
     async ensureMemoryAccess() {
-        if (this.phase === 'ready' || this.phase === 'degraded') {
-            return undefined;
-        }
-        const isTrigger = this.access === null;
-        const pass = this.beginProvisioning();
-        const notice = await pass.core;
-        await pass.stack;
-        return isTrigger ? notice : undefined;
+        return await this.settlePass('full');
     }
     /**
      * EnsureWriteAccess is the write-path provisioning gate (TASK-003): it
@@ -240,11 +233,23 @@ export class ObsidianMemService extends Service {
      * {@link ensureMemoryAccess}.
      */
     async ensureWriteAccess() {
+        return await this.settlePass('core');
+    }
+    // SettlePass is the one gate both provisioning entries ride: the settled
+    // flight short-circuit, the start-once pass, and the rule that the one-time
+    // notice belongs to the triggering caller. `half` is how far the caller
+    // waits: `core` alone (the write path; the stack still starts, chained) or
+    // the whole pass (`full`, the read-facing flows).
+    async settlePass(half) {
         if (this.phase === 'ready' || this.phase === 'degraded') {
             return undefined;
         }
         const isTrigger = this.access === null;
-        const notice = await this.beginProvisioning().core;
+        const pass = this.beginProvisioning();
+        const notice = await pass.core;
+        if (half === 'full') {
+            await pass.stack;
+        }
         return isTrigger ? notice : undefined;
     }
     // BeginProvisioning answers the in-flight pass, starting it once: the

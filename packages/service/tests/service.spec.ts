@@ -32,6 +32,7 @@ import {
   validateObsidianMemConfig,
 } from '../src/config.ts'
 import type {
+  MountedVaultEntry,
   ObsidianMemConfig,
   ObsidianMemConfigValidation,
   ResolvedObsidianMemConfig,
@@ -299,6 +300,15 @@ const DB_PATH = dbDir(HOME)
 const VAULTS_JSON = join(stateDir(HOME), 'vaults.json')
 const DEFAULT_VAULT = defaultVaultPath(HOME)
 
+// SLOW_CHAIN_MS is the slow fake chain's latency and the ceiling the write
+// that fired it must beat to prove it never awaited the chain.
+const SLOW_CHAIN_MS = 250
+
+// TEARDOWN_MARGIN_MS is the wall-clock ceiling on a teardown whose follow-up
+// chain is wedged: it proves teardown only waited for the cap timer (or
+// nothing), never for the chain. Virtual timers make the cap itself instant.
+const TEARDOWN_MARGIN_MS = 5_000
+
 interface HarnessOptions {
   config?: ObsidianMemConfig
   seedFiles?: Record<string, string>
@@ -326,6 +336,11 @@ interface HarnessOptions {
 const INERT_GIT_RUNNER = (root: string): GitRunner => {
   void root
   return async () => ({ code: 0, stdout: '', stderr: '' })
+}
+
+/** NeverSettling answers a promise that never settles: a wedged chain fixture. */
+function neverSettling<T>(): Promise<T> {
+  return new Promise<T>(() => {})
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -398,6 +413,12 @@ function testMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
   }
 }
 
+/** GitRecorderOptions scripts the two git failure modes a write must survive. */
+interface GitRecorderOptions {
+  adoptionFails?: boolean
+  commitFails?: boolean
+}
+
 /**
  * RecordingGit answers like a healthy adopted repo and logs every call's
  * root. markDirty scripts the change a write lands for the next status
@@ -405,7 +426,7 @@ function testMeta(overrides: Partial<NoteMeta> = {}): NoteMeta {
  * commit cleans the tree again like real git; commitFails scripts git
  * refusing the commit itself.
  */
-function recordingGit(options: { adoptionFails?: boolean; commitFails?: boolean } = {}) {
+function recordingGit(options: GitRecorderOptions = {}) {
   const calls: Array<{ root: string; argv: string[] }> = []
   let dirty = false
   const gitRunner = (root: string): GitRunner => async (argv) => {
@@ -445,15 +466,54 @@ function commitMessages(git: ReturnType<typeof recordingGit>): Array<string | un
     .map((call) => call.argv[call.argv.indexOf('-m') + 1])
 }
 
-/** GitWriteHarness: a git-enabled service over one real temp-dir shared vault. */
-function gitWriteHarness(git: ReturnType<typeof recordingGit>, vault: string) {
+/** GitWriteHarness: a git-enabled service over one fresh real temp-dir shared vault, with its path. */
+function gitWriteHarness(git: ReturnType<typeof recordingGit>) {
+  const vault = gitTempDir()
+  return { vault, ...gitVaultHarness(git, [{ path: vault }]) }
+}
+
+/**
+ * WriteReadyGitHarness answers a git service over a fresh adopted vault after
+ * provisioning, with the adoption calls cleared and a dirty working tree
+ * scripted: the next write's commit is the only git activity a test sees.
+ */
+async function writeReadyGitHarness(options: GitRecorderOptions = {}) {
+  const git = recordingGit(options)
+  const h = gitWriteHarness(git)
+  await h.service.ensureMemoryAccess()
+  git.calls.length = 0
+  git.markDirty()
+  return { git, h }
+}
+
+/** GitVaultHarness: a git-enabled harness over given real temp-dir vault roots. */
+function gitVaultHarness(
+  git: { gitRunner: (root: string) => GitRunner },
+  vaults: MountedVaultEntry[],
+) {
   return harness({
     gitEnabled: true,
-    seedDirs: [vault],
-    config: { vaults: [{ path: vault }] },
+    seedDirs: vaults.map((vault) => vault.path),
+    config: { vaults },
     gitRunner: git.gitRunner,
   })
 }
+
+// Temp vault roots behind the git-enabled services: MemoryGit writes its
+// .gitignore through node:fs, so these cases need real directories. The
+// module afterEach removes whatever the running test created.
+const gitTempDirs: string[] = []
+
+/** GitTempDir answers a fresh real directory registered for afterEach cleanup. */
+function gitTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'obsidian-mem-svc-git-'))
+  gitTempDirs.push(dir)
+  return dir
+}
+
+afterEach(() => {
+  for (const dir of gitTempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 // ---------------------------------------------------------------------------
 
@@ -1078,45 +1138,27 @@ old body
 // TASK-001 (PLAN-async-writes): applyWrite confirms the file write and
 // leaves the index and git chains to settle asynchronously, tracked.
 describe('write follow-up chains', () => {
-  const followUpDirs: string[] = []
-
-  /** TempVault: a real dir so MemoryGit's ignore-file write lands, cleaned after. */
-  function tempVault(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'obsidian-mem-svc-followup-'))
-    followUpDirs.push(dir)
-    return dir
-  }
-
-  afterEach(() => {
-    for (const dir of followUpDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
-  })
-
   it('applyWrite resolves while a slow index chain is still pending, file on disk', async () => {
-    const git = recordingGit()
-    const vault = tempVault()
-    const h = gitWriteHarness(git, vault)
-    await h.service.ensureMemoryAccess()
-    git.calls.length = 0
-    git.markDirty()
+    const { git, h } = await writeReadyGitHarness()
     let indexSettled = false
     h.indexer.indexFile.mockImplementation(async () => {
-      await new Promise((resolve) => { setTimeout(resolve, 250) })
+      await new Promise((resolve) => { setTimeout(resolve, SLOW_CHAIN_MS) })
       indexSettled = true
       return true
     })
 
     const started = Date.now()
-    const result = await h.service.applyWrite(join(vault, 'slow.md'), testMeta(), 'body\n')
+    const result = await h.service.applyWrite(join(h.vault, 'slow.md'), testMeta(), 'body\n')
 
     expect(result.relPath).toBe('slow.md')
-    expect(h.fs.has(join(vault, 'slow.md'))).toBe(true)
+    expect(h.fs.has(join(h.vault, 'slow.md'))).toBe(true)
     // The slow chain is still outstanding: the write did not await it.
     expect(indexSettled).toBe(false)
-    expect(Date.now() - started).toBeLessThan(250)
+    expect(Date.now() - started).toBeLessThan(SLOW_CHAIN_MS)
 
     await h.service.flushWriteFollowUps()
     expect(indexSettled).toBe(true)
-    expect(h.indexer.indexFile).toHaveBeenCalledWith(vault, 'slow.md')
+    expect(h.indexer.indexFile).toHaveBeenCalledWith(h.vault, 'slow.md')
     expect(commitMessages(git)).toEqual([
       expect.stringMatching(/^obsidian-mem: memory_write slow\.md /),
     ])
@@ -1147,15 +1189,10 @@ describe('write follow-up chains', () => {
   })
 
   it('a never-settling index chain does not hold the git chain of the same write', async () => {
-    const git = recordingGit()
-    const vault = tempVault()
-    const h = gitWriteHarness(git, vault)
-    await h.service.ensureMemoryAccess()
-    git.calls.length = 0
-    git.markDirty()
-    h.indexer.indexFile.mockReturnValue(new Promise<boolean>(() => {}))
+    const { git, h } = await writeReadyGitHarness()
+    h.indexer.indexFile.mockReturnValue(neverSettling<boolean>())
 
-    await h.service.applyWrite(join(vault, 'stuck.md'), testMeta(), 'b\n')
+    await h.service.applyWrite(join(h.vault, 'stuck.md'), testMeta(), 'b\n')
 
     // flush only resolves after BOTH chains, so the pin observes order
     // through a race: the commit landed while flush is still blocked on
@@ -1200,7 +1237,7 @@ describe('cold write access split', () => {
 
   it('applyWrite resolves while launcher.start() never resolves, file landed', async () => {
     const h = harness()
-    h.launcher.start.mockReturnValue(new Promise<MilvusStartResult>(() => {}))
+    h.launcher.start.mockReturnValue(neverSettling<MilvusStartResult>())
 
     const result = await h.service.applyWrite(join(DEFAULT_VAULT, 'cold.md'), testMeta(), 'body\n')
 
@@ -1848,19 +1885,20 @@ describe('teardown', () => {
   it('a never-settling chain caps the flush: teardown completes, warns, disposes', async () => {
     const h = harness()
     await h.service.ensureMemoryAccess()
-    h.indexer.indexFile.mockReturnValue(new Promise<boolean>(() => {}))
+    h.indexer.indexFile.mockReturnValue(neverSettling<boolean>())
     await h.service.applyWrite(join(DEFAULT_VAULT, 'stuck.md'), testMeta(), 'body\n')
 
-    // Virtual setTimeout (Date stays real) so the 60 s cap fires without a
-    // 60 s wall-clock wait; the margin pins that teardown only waited for
-    // the cap timer, never for the wedged chain.
+    // Virtual setTimeout (Date stays real) so the imported
+    // TEARDOWN_FLUSH_TIMEOUT_MS cap fires without waiting out its real
+    // duration; the margin pins that teardown only waited for the cap timer,
+    // never for the wedged chain.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       const started = Date.now()
       const stopping = h.service.stop()
       await vi.advanceTimersByTimeAsync(TEARDOWN_FLUSH_TIMEOUT_MS)
       await stopping
-      expect(Date.now() - started).toBeLessThan(5_000)
+      expect(Date.now() - started).toBeLessThan(TEARDOWN_MARGIN_MS)
     } finally {
       vi.useRealTimers()
     }
@@ -1879,7 +1917,7 @@ describe('teardown', () => {
     const started = Date.now()
     await h.service.stop()
 
-    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(Date.now() - started).toBeLessThan(TEARDOWN_MARGIN_MS)
     expect(h.ctx.warnings.join('\n')).not.toContain('write-follow-up flush')
   })
 })
@@ -1890,39 +1928,15 @@ describe('teardown', () => {
 // manager-level policy pins live in tests/vault-git.spec.ts.
 
 describe('vault git wiring', () => {
-  const gitDirs: string[] = []
-
-  /** GitTempDir: a real dir so the ignore-file write lands, cleaned after the test. */
-  function gitTempDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'obsidian-mem-svc-git-'))
-    gitDirs.push(dir)
-    return dir
-  }
-
-  afterEach(() => {
-    for (const dir of gitDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
-  })
-
   /** Flush drains the floating addVault adoption promise (microtask-only chain). */
   async function flush(): Promise<void> {
     await new Promise((resolve) => { setTimeout(resolve, 0) })
   }
 
-  /** WriteHarness: a git-enabled service over one real temp-dir shared vault. */
-  function writeHarness(git: ReturnType<typeof recordingGit>) {
-    const vault = gitTempDir()
-    return { ...gitWriteHarness(git, vault), vault }
-  }
-
   it('construction and activation never touch git, even with git enabled', () => {
-    const vault = gitTempDir()
     const git = recordingGit()
-    harness({
-      gitEnabled: true,
-      seedDirs: [vault],
-      config: { vaults: [{ path: vault }] },
-      gitRunner: git.gitRunner,
-    })
+    // gitWriteHarness only constructs the service; nothing has reached git.
+    gitWriteHarness(git)
     expect(git.calls).toEqual([])
   })
 
@@ -1931,18 +1945,11 @@ describe('vault git wiring', () => {
     const sharedB = gitTempDir()
     const readOnly = gitTempDir()
     const git = recordingGit()
-    const h = harness({
-      gitEnabled: true,
-      seedDirs: [sharedA, sharedB, readOnly],
-      config: {
-        vaults: [
-          { path: sharedA },
-          { path: sharedB },
-          { path: readOnly, mode: 'read-only' },
-        ],
-      },
-      gitRunner: git.gitRunner,
-    })
+    const h = gitVaultHarness(git, [
+      { path: sharedA },
+      { path: sharedB },
+      { path: readOnly, mode: 'read-only' },
+    ])
 
     await h.service.ensureMemoryAccess()
 
@@ -1977,20 +1984,14 @@ describe('vault git wiring', () => {
   })
 
   it('a failed adoption is logged and the service keeps serving', async () => {
-    const shared = gitTempDir()
     const git = recordingGit({ adoptionFails: true })
-    const h = harness({
-      gitEnabled: true,
-      seedDirs: [shared],
-      config: { vaults: [{ path: shared }] },
-      gitRunner: git.gitRunner,
-    })
+    const h = gitWriteHarness(git)
 
     await h.service.ensureMemoryAccess()
 
-    expect(h.ctx.errors.join('\n')).toContain(`git adoption failed for vault ${shared}`)
+    expect(h.ctx.errors.join('\n')).toContain(`git adoption failed for vault ${h.vault}`)
     expect(h.service.status().state).toBe('ready')
-    expect(h.service.listVaults().map((entry) => entry.path)).toContain(shared)
+    expect(h.service.listVaults().map((entry) => entry.path)).toContain(h.vault)
     expect(h.service.vaultGit.adoptedRoots()).toEqual([])
   })
 
@@ -2038,12 +2039,7 @@ describe('vault git wiring', () => {
   // tools-layer changes); the tests flush to observe the settled chain.
 
   it('one successful write lands exactly one commit with the pinned message shape', async () => {
-    const git = recordingGit()
-    const h = writeHarness(git)
-    await h.service.ensureMemoryAccess()
-    git.calls.length = 0
-
-    git.markDirty()
+    const { git, h } = await writeReadyGitHarness()
     const result = await h.service.write({
       path: join(h.vault, 'topic.md'), meta: testMeta(), body: 'the fact, stated plainly\n',
     })
@@ -2061,7 +2057,7 @@ describe('vault git wiring', () => {
 
   it('an identical-content rewrite (clean tree) commits nothing and still returns written', async () => {
     const git = recordingGit()
-    const h = writeHarness(git)
+    const h = gitWriteHarness(git)
     await h.service.ensureMemoryAccess()
 
     git.markDirty()
@@ -2103,12 +2099,7 @@ describe('vault git wiring', () => {
   })
 
   it('a failing commit still returns the written result; the manager logs it', async () => {
-    const git = recordingGit({ commitFails: true })
-    const h = writeHarness(git)
-    await h.service.ensureMemoryAccess()
-    git.calls.length = 0
-
-    git.markDirty()
+    const { h } = await writeReadyGitHarness({ commitFails: true })
     const result = await h.service.write({
       path: join(h.vault, 'kept.md'), meta: testMeta(), body: 'b\n',
     })
@@ -2120,12 +2111,7 @@ describe('vault git wiring', () => {
   })
 
   it('an archive write commits like any other write', async () => {
-    const git = recordingGit()
-    const h = writeHarness(git)
-    await h.service.ensureMemoryAccess()
-    git.calls.length = 0
-
-    git.markDirty()
+    const { git, h } = await writeReadyGitHarness()
     await h.service.write({
       path: join(h.vault, 'retired.md'), meta: testMeta({ archive: true }), body: 'b\n',
     })
@@ -2139,12 +2125,7 @@ describe('vault git wiring', () => {
     const git = recordingGit()
     const shared = gitTempDir()
     const readOnly = gitTempDir()
-    const h = harness({
-      gitEnabled: true,
-      seedDirs: [shared, readOnly],
-      config: { vaults: [{ path: shared }, { path: readOnly, mode: 'read-only' }] },
-      gitRunner: git.gitRunner,
-    })
+    const h = gitVaultHarness(git, [{ path: shared }, { path: readOnly, mode: 'read-only' }])
     await h.service.ensureMemoryAccess()
 
     await expect(h.service.applyWrite(join(readOnly, 'x.md'), testMeta(), 'b'))
@@ -2182,19 +2163,13 @@ describe('vault git wiring', () => {
   }
 
   it('audit never adopts: an unmanaged shared vault answers initialized false with zero git calls', async () => {
-    const vault = gitTempDir()
     const git = recordingGit()
-    const h = harness({
-      gitEnabled: true,
-      seedDirs: [vault],
-      config: { vaults: [{ path: vault }] },
-      gitRunner: git.gitRunner,
-    })
+    const h = gitWriteHarness(git)
 
     const report = await h.service.audit()
 
     expect(git.calls).toEqual([])
-    expect(report.stats.git).toEqual([{ vault, initialized: false, clean: null, headHash: null, error: null }])
+    expect(report.stats.git).toEqual([{ vault: h.vault, initialized: false, clean: null, headHash: null, error: null }])
     expect(report.issues.filter((entry) => entry.id === 'git-not-adopted').map((entry) => entry.severity))
       .toEqual(['INFO'])
     expect(report.rows.every((row) => row.churn === 0)).toBe(true)
@@ -2207,12 +2182,7 @@ describe('vault git wiring', () => {
     writeFileSync(join(vault, 'alpha.md'), serializeNoteWithRaw({ meta: testMeta({ index_title: 'Alpha: one' }), body: 'fact\n' }), 'utf8')
     writeFileSync(join(vault, 'beta.md'), serializeNoteWithRaw({ meta: testMeta({ index_title: 'Beta: two' }), body: 'fact\n' }), 'utf8')
     const git = auditGitRunner()
-    const h = harness({
-      gitEnabled: true,
-      seedDirs: [vault],
-      config: { vaults: [{ path: vault }] },
-      gitRunner: git.gitRunner,
-    })
+    const h = gitVaultHarness(git, [{ path: vault }])
     // The live group swap a card churnWindowCommits patch performs.
     h.service.config.git = { ...h.service.config.git, churnWindowCommits: 1 }
 

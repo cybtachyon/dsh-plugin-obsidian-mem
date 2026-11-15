@@ -95,6 +95,12 @@ export interface FakeMemoryService extends MemoryService {
 export function createFakeService(options: FakeServiceOptions): FakeMemoryService {
   const budgets = options.budgets ?? { searchTopK: 6, readSectionTokens: 350 }
   const records = options.readRecords ?? new Map<string, ReadRegistryEntry>()
+  // The two provisioning entries share one ledger: the fake answers the
+  // notice exactly once no matter which gate a tool rode.
+  const ensureAccess = async (): Promise<string | undefined> => {
+    fake.ensureCalls += 1
+    return fake.ensureCalls === 1 ? options.notice : undefined
+  }
   const fake: FakeMemoryService = {
     ensureCalls: 0,
     readCalls: [],
@@ -102,14 +108,8 @@ export function createFakeService(options: FakeServiceOptions): FakeMemoryServic
     writeRequests: [],
     records,
     config: { budgets },
-    async ensureMemoryAccess() {
-      fake.ensureCalls += 1
-      return fake.ensureCalls === 1 ? options.notice : undefined
-    },
-    async ensureWriteAccess() {
-      fake.ensureCalls += 1
-      return fake.ensureCalls === 1 ? options.notice : undefined
-    },
+    ensureMemoryAccess: ensureAccess,
+    ensureWriteAccess: ensureAccess,
     listVaults() {
       return options.vaults.map((entry) => ({ ...entry }))
     },

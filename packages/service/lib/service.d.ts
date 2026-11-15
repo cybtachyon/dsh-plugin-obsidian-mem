@@ -339,6 +339,7 @@ export declare class ObsidianMemService extends Service {
      * {@link ensureMemoryAccess}.
      */
     ensureWriteAccess(): Promise<string | undefined>;
+    private settlePass;
     private beginProvisioning;
     /** ListVaults returns the live registry; it never provisions. */
     listVaults(): VaultEntry[];

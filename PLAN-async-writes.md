@@ -69,7 +69,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
  - [x] [TASK-001-followup-chains](docs/PLAN-async-writes-TASK-001-followup-chains.md)
  - [x] [TASK-002-teardown-flush](docs/PLAN-async-writes-TASK-002-teardown-flush.md)
  - [x] [TASK-003-cold-write-split](docs/PLAN-async-writes-TASK-003-cold-write-split.md)
- - [ ] [TASK-004-refactor-phase1](docs/PLAN-async-writes-TASK-004-refactor-phase1.md)
+ - [x] [TASK-004-refactor-phase1](docs/PLAN-async-writes-TASK-004-refactor-phase1.md)
 
 ### Phase 2 — Model contract and docs
 
@@ -112,3 +112,73 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 ## Results
 
 (to be filled at TASK-010 with measured totals)
+
+### TASK-004 refactor pass (Phase 1 smell adjudication, 2026-11-14)
+
+Reviewed the three commits' stat and diffs, then the full files they touch:
+`packages/service/src/service.ts`, `packages/service/tests/service.spec.ts`,
+`packages/tools/src/host.ts`, `packages/tools/src/write.ts`,
+`packages/tools/tests/testkit.ts`. Every risk class gets one line below.
+
+- **Multiple Sources of Truth**: RESOLVED. The settled-flight short-circuit,
+  the start-once call, and the "the notice belongs to the triggering caller"
+  rule lived once per provisioning entry; both entries now ride one
+  `settlePass(half)` gate where `half` is the only difference. The tests'
+  comment that restated the cap as "60 s" now names
+  `TEARDOWN_FLUSH_TIMEOUT_MS`, which stays imported and never redefined.
+- **Duplicate Code**: RESOLVED. `service.spec.ts`: the flagged
+  `writeHarness` wrapper is gone (one `gitWriteHarness` that owns its temp
+  vault and returns the path), the duplicated temp-dir-plus-afterEach pair is
+  one module-scope `gitTempDir` and one `afterEach`, the six inline
+  git-enabled harness option blocks are `gitVaultHarness`/`gitWriteHarness`,
+  the five-copy adopt-then-clear-then-markDirty ritual is
+  `writeReadyGitHarness`, and the thrice-written never-settling promise is
+  `neverSettling<T>()`. `tools/tests/testkit.ts`: `ensureWriteAccess`
+  repeated `ensureMemoryAccess` line for line; both entries bind one
+  `ensureAccess` closure. WAIVED: the two `startIndexStack` degrade catch
+  blocks share two field assignments inside one method and differ in the
+  operator-facing warn text; a helper would only rename the assignments.
+- **Bloaters**: WAIVED. The phase already split the bloated method
+  (`provision` into `provisionCore` plus `startIndexStack`) and gave teardown
+  its `boundedFollowUpFlush`; `applyWrite`'s remaining length is the
+  pre-existing path-classification guards (blame b86396f) plus the
+  confirm-then-fire sequence, and moving the guards out relocates code without
+  dropping a concept.
+- **Data Clumps**: RESOLVED in the tests (the `(git, vault)` pair every git
+  case threaded is now produced and returned by `gitWriteHarness`). WAIVED in
+  src: `(vaultPath, relPath)` reaches both follow-ups and the result from one
+  method's own locals; a record with a single producer and reader would be new
+  ceremony.
+- **Shotgun Edits**: WAIVED. No commit changed one concept across unrelated
+  files; TASK-003's four files are the `MemoryService` seam, its caller, and
+  its fake moving together, which is typed coupling. The related latent edit
+  pair (the write path gates in `write.ts` for the notice and again in
+  `applyWrite` for non-tool callers) is documented on both sides and left
+  alone.
+- **Feature Envy**: WAIVED. No Phase 1 method spends most of its body on
+  another class: the follow-up trio and `boundedFollowUpFlush` touch only
+  `pendingFollowUps`, and the index and git hand-offs are one line each into
+  collaborators that own their lanes.
+- **Magic Numbers**: RESOLVED in the tests: the `250` that was both the slow
+  chain's latency and the ceiling its write had to beat is one
+  `SLOW_CHAIN_MS`, and the twice-written `5_000` teardown ceiling is
+  `TEARDOWN_MARGIN_MS`. In src the only new literal is the already-named
+  exported `TEARDOWN_FLUSH_TIMEOUT_MS`.
+- **Overengineering**: WAIVED. `ProvisioningPass` carries the two promises
+  three call sites consume (both entries plus the card-settings wait on
+  `access.stack`), and `boundedFollowUpFlush` has one caller but is the
+  doc-anchored owner of the cap discipline. Every helper this pass added has
+  at least two call sites.
+
+Behavior stayed neutral: no assertion changed, no test was added or removed
+(1103 passed, 2 skipped before and after), and the scope-note invariants hold
+(one follow-up-tracking home, one `TEARDOWN_FLUSH_TIMEOUT_MS`, one single-flight
+mechanism with two pass halves). `tools/src/write.ts` contract text is
+untouched for TASK-005.
+
+Carried to TASK-007 (found, not touched): `auditGitRunner`
+(`service.spec.ts` L2144) is `recordingGit` plus a `log` answer;
+`dreamGitHarness` takes a `gitEnabled` boolean flag; the 1..6 provisioning step
+comments now straddle `provisionCore` and `startIndexStack`; `service.ts`
+spells the reserved-file basename with `lastIndexOf` while `tools/write.ts`
+uses `node:path` `basename` for the same rule.

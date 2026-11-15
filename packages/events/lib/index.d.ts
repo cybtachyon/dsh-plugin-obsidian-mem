@@ -45,8 +45,10 @@ export declare function apply(ctx: Context, options?: MountOptions): void;
  * MountLifecycle wires one profile's lifecycle: session registry, seam
  * hookup, and the agent create/dispose pairing whose per-agent
  * `agent.ctx.effect()` carries every agent-scoped listener this row
- * installs (turn-start recall and the Think-stream intercept). Answers the
- * registry (tests assert on it).
+ * installs (turn-start recall and the Think-stream intercept). A
+ * dream-lineage session claims its flag at creation and gets none of those
+ * listeners (PLAN-dream-isolation Phase 2). Answers the registry (tests
+ * assert on it).
  */
 export declare function mountLifecycle(scope: MemoryEventsScope, options?: MountOptions): SessionRegistry;
 /**

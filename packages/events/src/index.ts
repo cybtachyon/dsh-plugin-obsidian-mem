@@ -22,7 +22,7 @@
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 
-import { dbStateDir } from '../../core/lib/index.js'
+import { DREAM_SESSION_PREFIX, dbStateDir } from '../../core/lib/index.js'
 import type { ManifestFs } from '../../core/lib/index.js'
 // Type import only: pulls the `obsidianMem` Context augmentation in.
 import type {} from '../../service/lib/index.js'
@@ -66,8 +66,10 @@ export function apply(ctx: Context, options: MountOptions = {}): void {
  * MountLifecycle wires one profile's lifecycle: session registry, seam
  * hookup, and the agent create/dispose pairing whose per-agent
  * `agent.ctx.effect()` carries every agent-scoped listener this row
- * installs (turn-start recall and the Think-stream intercept). Answers the
- * registry (tests assert on it).
+ * installs (turn-start recall and the Think-stream intercept). A
+ * dream-lineage session claims its flag at creation and gets none of those
+ * listeners (PLAN-dream-isolation Phase 2). Answers the registry (tests
+ * assert on it).
  */
 export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions = {}): SessionRegistry {
   const ctx = scope
@@ -102,7 +104,21 @@ export function mountLifecycle(scope: MemoryEventsScope, options: MountOptions =
     runGuarded(hookLogger, 'agent/created wiring', () => {
       const agent = payload.agent
       const sessionId = String(agent.id)
-      registry.ensure(sessionId, { subagent: isSubagentAgent(agent) })
+      const header = agent.session?.header
+      // Lineage rule (single home: this handler). A dream- id is the
+      // orchestrator itself; a parentSession already lineaged makes the
+      // child lineaged, so the registry's live flag carries transitivity
+      // (depth unbounded). isDreamLineage on an unknown parent just creates
+      // an unlineaged live record, no ledger write.
+      const dreamLineage = sessionId.startsWith(DREAM_SESSION_PREFIX)
+        || (header?.parentSession !== undefined
+          && registry.isDreamLineage(header.parentSession))
+      registry.ensure(sessionId, { subagent: isSubagentAgent(agent), dreamLineage })
+      if (dreamLineage) {
+        // Dream-lineage suppression: no turn-start recall, no Think-stream
+        // intercept. agent/disposed already tolerates the missing entry.
+        return
+      }
       // Agent-scoped events fire on the AGENT's context: one effect per
       // agent carries every agent-scoped listener this row installs, and
       // its disposer lives in the plugin-side map below (AGENTS.md facts).

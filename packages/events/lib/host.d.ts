@@ -25,6 +25,8 @@ export interface AgentSessionHeader {
     readonly origin?: string;
     /** Subagent nesting depth; absent (zero) for top-level sessions. */
     readonly delegationDepth?: number;
+    /** Id of the parent session for a delegated child; absent for roots. */
+    readonly parentSession?: string;
 }
 /** The agent-side context slice the hooks register through. */
 export interface AgentHostContext {

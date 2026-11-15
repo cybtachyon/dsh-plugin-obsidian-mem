@@ -193,6 +193,7 @@ export interface FakeAgentOptions {
   cwd?: string
   origin?: string
   delegationDepth?: number
+  parentSession?: string
 }
 
 export interface FakeAgent {
@@ -223,6 +224,7 @@ export function fakeAgent(options: FakeAgentOptions): FakeAgent {
         ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         ...(options.origin === undefined ? {} : { origin: options.origin }),
         ...(options.delegationDepth === undefined ? {} : { delegationDepth: options.delegationDepth }),
+        ...(options.parentSession === undefined ? {} : { parentSession: options.parentSession }),
       },
     },
     injected,

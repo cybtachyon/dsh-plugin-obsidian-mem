@@ -80,6 +80,53 @@ describe('mountLifecycle (session registry wiring)', () => {
     tmp.cleanup()
   })
 
+  it('lineages the dream- session, installs no agent-scoped listeners, disposes cleanly (TASK-004)', () => {
+    const { ctx, registry, tmp } = mount()
+    const dream = fakeAgent({ id: 'dream-run-1' })
+    ctx.emit('agent/created', dream.asCreated())
+    expect(registry.isDreamLineage('dream-run-1')).toBe(true)
+    expect([...dream.agentHandlers.keys()]).toEqual([])
+    expect(dream.agentEffects).toHaveLength(0)
+    // No disposer was registered for the lineaged agent; disposal stays clean.
+    expect(() => ctx.emit('agent/disposed', dream.asDisposed())).not.toThrow()
+    expect(ctx.warnings).toEqual([])
+    tmp.cleanup()
+  })
+
+  it('lineages descendants through parentSession at unbounded depth (TASK-004)', () => {
+    const { ctx, registry, tmp } = mount()
+    const dream = fakeAgent({ id: 'dream-run-1' })
+    const child = fakeAgent({ id: 'c-1', parentSession: 'dream-run-1' })
+    const grandchild = fakeAgent({ id: 'g-1', parentSession: 'c-1' })
+    ctx.emit('agent/created', dream.asCreated())
+    ctx.emit('agent/created', child.asCreated())
+    ctx.emit('agent/created', grandchild.asCreated())
+    expect(registry.isDreamLineage('c-1')).toBe(true)
+    expect(registry.isDreamLineage('g-1')).toBe(true)
+    expect([...child.agentHandlers.keys()]).toEqual([])
+    expect([...grandchild.agentHandlers.keys()]).toEqual([])
+    tmp.cleanup()
+  })
+
+  it('installs the hooks for unrelated siblings and unknown-parent sessions (TASK-004)', () => {
+    const { ctx, registry, tmp } = mount()
+    const dream = fakeAgent({ id: 'dream-run-1' })
+    const sibling = fakeAgent({ id: 'session-sib' })
+    const orphan = fakeAgent({ id: 'session-orphan', parentSession: 'never-created' })
+    ctx.emit('agent/created', dream.asCreated())
+    ctx.emit('agent/created', sibling.asCreated())
+    ctx.emit('agent/created', orphan.asCreated())
+    expect(registry.isDreamLineage('session-sib')).toBe(false)
+    expect(registry.isDreamLineage('session-orphan')).toBe(false)
+    for (const agent of [sibling, orphan]) {
+      expect([...agent.agentHandlers.keys()].sort()).toEqual([
+        'agent/assistant-stream',
+        'agent/pre-step',
+      ])
+    }
+    tmp.cleanup()
+  })
+
   it('contains errors in the serial agent/created listener (never fails creation)', () => {
     const { ctx, tmp } = mount()
     const broken = {

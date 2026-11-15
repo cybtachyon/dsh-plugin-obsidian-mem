@@ -129,6 +129,8 @@ export class SessionRegistry {
     /**
      * Ensure returns the live record, hydrating it from the persisted ledger
      * on first sight (a resumed session keeps its injected-sources history).
+     * The `subagent` claim is ledger data (touch); the `dreamLineage` claim
+     * is live-only, so it never touches or persists.
      */
     ensure(sessionId, info = {}) {
         this.ensureLoaded();
@@ -158,6 +160,9 @@ export class SessionRegistry {
                 readPathsThisTurn: new Set(),
                 wakeTerms: new Set(),
                 subagent: persisted?.subagent ?? false,
+                // dreamLineage is live-only: the persisted ledger never carries it,
+                // so a hydrated (resumed) session always starts false.
+                dreamLineage: false,
                 createdAt: persisted?.createdAt ?? this.now(),
                 updatedAt: persisted?.updatedAt ?? this.now(),
             };
@@ -167,11 +172,22 @@ export class SessionRegistry {
             record.subagent = true;
             this.touch(record);
         }
+        // One-way like subagent, but live-only: no touch, no ledger write.
+        if (info.dreamLineage === true && !record.dreamLineage) {
+            record.dreamLineage = true;
+        }
         return record;
     }
     /** IsSubagent answers whether the session was created as a subagent child. */
     isSubagent(sessionId) {
         return this.ensure(sessionId).subagent;
+    }
+    /**
+     * IsDreamLineage answers whether the session belongs to a dream run's
+     * lineage, the suppression gate every recall flow reads.
+     */
+    isDreamLineage(sessionId) {
+        return this.ensure(sessionId).dreamLineage;
     }
     /**
      * ShouldInject answers the once-per-session rule: a source the session

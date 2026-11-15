@@ -130,6 +130,70 @@ describe('once-per-session injection rule', () => {
   })
 })
 
+describe('dream-lineage flag (PLAN-dream-isolation TASK-003)', () => {
+  it('defaults false, is set on ensure, and stays sticky across later ensures', () => {
+    const { file } = tempFile()
+    const registry = makeRegistry(file)
+    // Default false, and answering never disturbs the sibling flag.
+    expect(registry.isDreamLineage('s1')).toBe(false)
+    expect(registry.isSubagent('s1')).toBe(false)
+    registry.ensure('s1', { dreamLineage: true })
+    expect(registry.isDreamLineage('s1')).toBe(true)
+    // A later ensure without the claim (or with false) cannot clear it.
+    registry.ensure('s1')
+    expect(registry.isDreamLineage('s1')).toBe(true)
+    registry.ensure('s1', { dreamLineage: false })
+    expect(registry.isDreamLineage('s1')).toBe(true)
+    // dreamLineage never implies subagent, and one session never colors another.
+    expect(registry.isSubagent('s1')).toBe(false)
+    expect(registry.isDreamLineage('s2')).toBe(false)
+  })
+
+  it('never touches the ledger: no persist, no dreamLineage key in sessions.json', () => {
+    const { file } = tempFile()
+    const fs = countingFs()
+    const registry = new SessionRegistry({ file, thinkShotsPerTurn: 3, debounceMs: 0, fs })
+    // The claim alone writes nothing to disk.
+    registry.ensure('dream', { dreamLineage: true })
+    expect(fs.writes).toBe(0)
+    // An unrelated ledger mutation now persists the row; the flag stays out.
+    registry.markInjected('dream', 'vaultA\u0000a.md')
+    registry.flush()
+    expect(registry.isDreamLineage('dream')).toBe(true)
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as {
+      sessions: Record<string, Record<string, unknown>>
+    }
+    expect(saved.sessions.dream).not.toHaveProperty('dreamLineage')
+    expect(Object.keys(saved.sessions.dream!).sort()).toEqual(
+      ['createdAt', 'injected', 'subagent', 'updatedAt', 'written'],
+    )
+    // Subagent, the ledger-carrying sibling of the same pattern, does persist.
+    expect(saved.sessions.dream?.subagent).toBe(false)
+  })
+
+  it('hydrates false after a restart over the same sessions.json', () => {
+    const { file } = tempFile()
+    const first = makeRegistry(file)
+    first.ensure('dream', { dreamLineage: true })
+    first.markInjected('dream', 'note', 'fp')
+    first.flush()
+    // The live flag died with the process; the ledger row survived.
+    const second = makeRegistry(file)
+    expect(second.isDreamLineage('dream')).toBe(false)
+    expect(second.shouldInject('dream', 'note', 'fp')).toBe(false)
+  })
+
+  it('answers for an unseen session without creating a stray ledger row', () => {
+    const { file } = tempFile()
+    const fs = countingFs()
+    const registry = new SessionRegistry({ file, thinkShotsPerTurn: 3, debounceMs: 0, fs })
+    expect(registry.isDreamLineage('ghost')).toBe(false)
+    // The ensure behind the accessor is read-side only: no write, no file.
+    expect(fs.writes).toBe(0)
+    expect(existsSync(file)).toBe(false)
+  })
+})
+
 describe('written-source ledger (mem-loop-tuning TASK-001)', () => {
   it('records a written source and answers membership per session', () => {
     const { file } = tempFile()

@@ -112,6 +112,15 @@ export interface SessionRecord {
      */
     readonly wakeTerms: Set<string>;
     subagent: boolean;
+    /**
+     * This session belongs to a dream run's lineage (PLAN-dream-isolation
+     * TASK-003): set once by `ensure` when the launch site or the
+     * `agent/created` handler claims it, and read by `isDreamLineage()` so
+     * every recall flow can suppress itself. Live-only like
+     * {@link SessionRecord.turnRecallTokensUsed}: never persisted (a dream
+     * run dies with its process), hydrates false.
+     */
+    dreamLineage: boolean;
     readonly createdAt: number;
     updatedAt: number;
 }
@@ -169,12 +178,20 @@ export declare class SessionRegistry {
     /**
      * Ensure returns the live record, hydrating it from the persisted ledger
      * on first sight (a resumed session keeps its injected-sources history).
+     * The `subagent` claim is ledger data (touch); the `dreamLineage` claim
+     * is live-only, so it never touches or persists.
      */
     ensure(sessionId: string, info?: {
         subagent?: boolean;
+        dreamLineage?: boolean;
     }): SessionRecord;
     /** IsSubagent answers whether the session was created as a subagent child. */
     isSubagent(sessionId: string): boolean;
+    /**
+     * IsDreamLineage answers whether the session belongs to a dream run's
+     * lineage, the suppression gate every recall flow reads.
+     */
+    isDreamLineage(sessionId: string): boolean;
     /**
      * ShouldInject answers the once-per-session rule: a source the session
      * never saw is eligible; one injected with the same (or unknown) content

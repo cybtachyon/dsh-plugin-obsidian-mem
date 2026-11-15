@@ -154,7 +154,8 @@ Pressure-test each memory by simulating its use:
 
 ## Step 3: Post-Cognition Re-run
 
-Post-cognition again: repeat step 1; step 2 churned the notes.
+Post-cognition again: repeat Step 1 without the work plan;
+Step 2 churned the notes.
 
 ## Step 4: Long-Term Memory, Bias, and Forgetting
 
@@ -174,7 +175,9 @@ Settle relevancy, surface stressors, and forget on purpose:
 Global memory injection budget: {{GLOBAL_MEMORY_TOKENS}} tokens.
 Near-duplicate cosine threshold: {{NEAR_DUPLICATE_THRESHOLD}}.
 
+Proceed with Steps 0 - 4.
 Here is the work plan for Step 1:
+
 `
 
 // ---------------------------------------------------------------------------

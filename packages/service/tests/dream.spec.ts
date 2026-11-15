@@ -11,7 +11,8 @@
  * written), the ok-path onRunSucceeded dep firing exactly once
  * (PLAN-budget-rebaseline TASK-002), and the ok-path memory git commit
  * seam with its summary fold plus the launch-text git roots block
- * (PLAN-git-versioning TASK-006). Everything external is a fake:
+ * (PLAN-git-versioning TASK-006), and the launch prompt-isolation setup
+ * handed to create (PLAN-dream-isolation TASK-002). Everything external is a fake:
  * ServiceFs in memory, inventories as data, a fake agents gateway (whose
  * agent double answers ownEvents with a scripted transcript), a fake host
  * default-model route, faked vectors.
@@ -21,8 +22,8 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_CHURN_THRESHOLD_PERCENT, DEFAULT_CHURN_WINDOW_COMMITS, GLOBAL_MEMORY_FILE_DEFAULT, NOTE_TIMELINE_BYTES } from '../../core/lib/index.js'
 import type { NoteMeta } from '../../core/lib/index.js'
-import { DEFAULT_DREAM_PROMPT, DreamBlockedError, DreamBusyError, DreamOrchestrator, renderPromptTunables } from '../src/dream.ts'
-import type { DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
+import { DEFAULT_DREAM_PROMPT, DreamBlockedError, DreamBusyError, DreamOrchestrator, dreamPromptIsolationSetup, renderPromptTunables } from '../src/dream.ts'
+import type { DreamAgentPromptScope, DreamAgentsGateway, DreamDeps, DreamVectorTarget } from '../src/dream.ts'
 import { failedTurnError, fakeGateway, turnEndRecord } from './dream-testkit.ts'
 import type { AuditedNote, VaultInventory } from '../src/audit.ts'
 import type { ResolvedObsidianMemConfig } from '../src/config.ts'
@@ -508,7 +509,7 @@ describe('run: single flight and the launch sequence', () => {
     expect(summary.ok).toBe(true)
 
     expect(handle.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i)
-    expect(recorder.created).toEqual([{ sessionId: `dream-${handle.id}`, agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB } }])
+    expect(recorder.created).toEqual([{ sessionId: `dream-${handle.id}`, agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB }, setup: expect.any(Function) }])
     expect(recorder.calls).toEqual(['create', 'followup', 'whenIdle', 'dispose'])
     const message = recorder.followups[0] as { content: Array<{ type: string; text: string }>; source: { kind: string } }
     expect(message.source).toEqual({ kind: 'user' })
@@ -539,7 +540,7 @@ describe('run: single flight and the launch sequence', () => {
     const recorder = fakeGateway()
     const config = configFixture({ dreaming: { schedules: [], model: '', nearDuplicateThreshold: 0.92 } })
     await new DreamOrchestrator(deps({ gateway: recorder.gateway, config })).startRun().done
-    expect(recorder.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB } })
+    expect(recorder.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'm-1' }, meta: { cwd: DB }, setup: expect.any(Function) })
   })
 
   it('passes meta.cwd as the configured dbPath so the session lands in a GUI-addressable bucket', async () => {
@@ -559,10 +560,10 @@ describe('run: single flight and the launch sequence', () => {
     const overridden = fakeGateway()
     await new DreamOrchestrator(deps({ gateway: overridden.gateway, config })).startRun({ model: 'some/model-x' }).done
     // The override replaces only the model id; provider routing is host-only.
-    expect(overridden.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'some/model-x' }, meta: { cwd: DB } })
+    expect(overridden.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'some/model-x' }, meta: { cwd: DB }, setup: expect.any(Function) })
     const configured = fakeGateway()
     await new DreamOrchestrator(deps({ gateway: configured.gateway, config })).startRun().done
-    expect(configured.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'cfg/model' }, meta: { cwd: DB } })
+    expect(configured.created[0]).toEqual({ sessionId: expect.stringMatching(/^dream-/), agentOptions: { provider: 'acme', model: 'cfg/model' }, meta: { cwd: DB }, setup: expect.any(Function) })
   })
 
   it('rejects the run as blocked when no provider/model pair resolves', () => {
@@ -618,6 +619,68 @@ describe('run: single flight and the launch sequence', () => {
     const before = fs.mutations.length
     await new DreamOrchestrator(deps({ fs, inventories, gateway: fakeGateway().gateway })).startRun().done
     expect(fs.mutations.slice(before).filter((entry) => entry.includes('DREAMS.md'))).toEqual([])
+  })
+})
+
+// PLAN-dream-isolation TASK-002: the launch hands create() a creation-time
+// setup that registers the empty complete system-prompt section in the
+// dream agent's scope and suppresses optional runtime context, so the
+// session's whole context is the launch text. The option is additive: a
+// gateway that ignores it launches exactly as before.
+describe('run: dream prompt isolation setup', () => {
+  it('hands create() a setup function and runs unchanged when the gateway never calls it', async () => {
+    const recorder = fakeGateway()
+    const summary = await new DreamOrchestrator(deps({ gateway: recorder.gateway })).startRun().done
+    expect(summary.ok).toBe(true)
+    expect(recorder.calls).toEqual(['create', 'followup', 'whenIdle', 'dispose'])
+    expect(typeof recorder.created[0]?.setup).toBe('function')
+  })
+
+  it('registers the empty complete section and suppresses runtime context on the agent scope', async () => {
+    const recorder = fakeGateway()
+    await new DreamOrchestrator(deps({ gateway: recorder.gateway })).startRun().done
+    const setup = recorder.created[0]?.setup as (agentCtx: DreamAgentPromptScope) => void
+    const sections: unknown[] = []
+    const suppressions: string[] = []
+    setup({
+      systemPrompt: {
+        section: (options) => {
+          sections.push(options)
+          return undefined
+        },
+        suppressRuntimeContext: () => {
+          suppressions.push('suppressed')
+          return undefined
+        },
+      },
+    })
+    expect(sections).toEqual([{
+      name: 'obsidian-mem:dream-prompt-complete',
+      order: 0,
+      interpolate: false,
+      complete: true,
+      text: '',
+    }])
+    expect(suppressions).toEqual(['suppressed'])
+  })
+
+  it('skips the suppressor when the seam lacks it and a missing seam never throws', () => {
+    const setup = dreamPromptIsolationSetup()
+    // Section seam present, suppressor absent: section still registers.
+    const sections: unknown[] = []
+    setup({
+      systemPrompt: {
+        section: (options) => {
+          sections.push(options)
+          return undefined
+        },
+      },
+    })
+    expect(sections).toHaveLength(1)
+    // Absent or hollow seams: nothing registers, nothing throws.
+    expect(() => setup({})).not.toThrow()
+    expect(() => setup({ systemPrompt: {} } as never)).not.toThrow()
+    expect(() => setup({ systemPrompt: { section: undefined as never } })).not.toThrow()
   })
 })
 

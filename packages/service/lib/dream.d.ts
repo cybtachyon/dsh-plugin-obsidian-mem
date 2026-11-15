@@ -146,8 +146,51 @@ export interface DreamAgentsGateway {
         meta?: {
             cwd?: string;
         };
+        /**
+         * Creation-time composition of the agent's scoped world before
+         * publication (PLAN-dream-isolation TASK-002, the 0.2.1-alpha.3
+         * `CreateAgentOptions.setup` seam): everything registered through
+         * the agent context exists before the first prompt assembly.
+         * Forwarded unchanged; a gateway that ignores the option launches
+         * exactly as before (it is additive).
+         */
+        setup?: (agentCtx: DreamAgentPromptScope) => void;
     }): Promise<DreamAgentHandle>;
 }
+/**
+ * DreamAgentPromptScope is the local structural mirror of the agent-context
+ * slice the launch `setup` composes (never a typed agents import). In the
+ * host contract, `section()` registers in the calling context's scope, a
+ * `complete: true` section makes prompt assembly restore that exact
+ * section as the SOLE prompt section, and `suppressRuntimeContext()`
+ * removes the optional dynamic runtime-context contributions of that
+ * scope. Every member is optional here because the seam may be absent at
+ * runtime, and the setup guards each hop.
+ */
+export interface DreamAgentPromptScope {
+    systemPrompt?: {
+        section(options: {
+            name: string;
+            order: number;
+            interpolate?: boolean;
+            complete?: boolean;
+            text: string;
+        }): unknown;
+        suppressRuntimeContext?(): unknown;
+    };
+}
+/**
+ * DreamPromptIsolationSetup returns the `setup` callback `drive()` passes
+ * to `agents.create`: it registers the empty complete system-prompt
+ * section in the dream agent's own scope and calls `suppressRuntimeContext()`
+ * when the seam answers it, so the dream session carries no deployment
+ * persona, no tool guidance, and no session runtime context. Its whole
+ * session context is the launch text (dream-prompt.md plus the work
+ * plan). Every hop is guarded structurally: the seam may be absent on a
+ * host that predates it, and a missing seam must never throw out of
+ * setup, where a throw would fail the launch itself.
+ */
+export declare function dreamPromptIsolationSetup(): (agentCtx: DreamAgentPromptScope) => void;
 /**
  * The reflection-gateway slice of the host `agentDefaultModel` service
  * (never typed; TASK-002 wiring). The structural shape matches the

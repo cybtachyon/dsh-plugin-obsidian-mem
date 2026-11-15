@@ -165,6 +165,40 @@ export class DreamBlockedError extends Error {
         this.name = 'DreamBlockedError';
     }
 }
+// The sole prompt section of a dream session; empty text renders an
+// empty system prompt (PLAN-dream-isolation questionnaire Q2 answer).
+const DREAM_PROMPT_SECTION_NAME = 'obsidian-mem:dream-prompt-complete';
+/**
+ * DreamPromptIsolationSetup returns the `setup` callback `drive()` passes
+ * to `agents.create`: it registers the empty complete system-prompt
+ * section in the dream agent's own scope and calls `suppressRuntimeContext()`
+ * when the seam answers it, so the dream session carries no deployment
+ * persona, no tool guidance, and no session runtime context. Its whole
+ * session context is the launch text (dream-prompt.md plus the work
+ * plan). Every hop is guarded structurally: the seam may be absent on a
+ * host that predates it, and a missing seam must never throw out of
+ * setup, where a throw would fail the launch itself.
+ */
+export function dreamPromptIsolationSetup() {
+    return (agentCtx) => {
+        const systemPrompt = agentCtx.systemPrompt;
+        if (systemPrompt === undefined) {
+            return;
+        }
+        if (typeof systemPrompt.section === 'function') {
+            systemPrompt.section({
+                name: DREAM_PROMPT_SECTION_NAME,
+                order: 0,
+                interpolate: false,
+                complete: true,
+                text: '',
+            });
+        }
+        if (typeof systemPrompt.suppressRuntimeContext === 'function') {
+            systemPrompt.suppressRuntimeContext();
+        }
+    };
+}
 // Candidate reason codes: these strings are model-facing (the plan's
 // candidate reasons and work lines) and every ranking and plan-shaping
 // decision reads them from here (single home for the values).
@@ -633,6 +667,10 @@ export class DreamOrchestrator {
                 // plugin dbPath is absolute by config contract, one deterministic
                 // bucket, no fallback chain.
                 meta: { cwd: this.deps.config.milvus.dbPath },
+                // Prompt isolation (PLAN-dream-isolation TASK-002): the setup
+                // composes the agent's scoped world before publication, so the
+                // empty complete section is in place at the first assembly.
+                setup: dreamPromptIsolationSetup(),
             });
             try {
                 handle.agent.followup({ content: [{ type: 'text', text: launchText }], source: { kind: 'user' } });

@@ -6,11 +6,16 @@
  * builders name the turn/end shapes the failed-turn scan reads.
  */
 
-import type { DreamAgentHandle, DreamAgentsGateway } from '../src/dream.ts'
+import type { DreamAgentHandle, DreamAgentsGateway, DreamAgentPromptScope } from '../src/dream.ts'
 
 export interface GatewayRecorder {
   gateway: DreamAgentsGateway
-  created: Array<{ sessionId: string; agentOptions?: { provider?: string; model?: string }; meta?: { cwd?: string } }>
+  created: Array<{
+    sessionId: string
+    agentOptions?: { provider?: string; model?: string }
+    meta?: { cwd?: string }
+    setup?: (agentCtx: DreamAgentPromptScope) => void
+  }>
   followups: unknown[]
   calls: string[]
   disposed: number

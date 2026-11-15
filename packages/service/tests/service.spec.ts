@@ -1191,7 +1191,7 @@ describe('dream run launch wiring (TASK-002)', () => {
     }
     expect((await result.done).ok).toBe(true)
     expect(agents.created).toEqual([
-      { sessionId: `dream-${result.id}`, agentOptions: { provider: 'p', model: 'm' }, meta: { cwd: DB_PATH } },
+      { sessionId: `dream-${result.id}`, agentOptions: { provider: 'p', model: 'm' }, meta: { cwd: DB_PATH }, setup: expect.any(Function) },
     ])
   })
 

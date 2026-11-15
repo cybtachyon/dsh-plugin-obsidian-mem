@@ -36,7 +36,7 @@ import type {
   ObsidianMemConfigValidation,
   ResolvedObsidianMemConfig,
 } from '../src/config.ts'
-import { ObsidianMemService } from '../src/service.ts'
+import { ObsidianMemService, TEARDOWN_FLUSH_TIMEOUT_MS } from '../src/service.ts'
 import type {
   IndexerLike,
   MilvusLauncherLike,
@@ -65,7 +65,9 @@ function validValue(result: ObsidianMemConfigValidation): ResolvedObsidianMemCon
  * stats and fill the read registry; applyWrite merges un-modelled
  * frontmatter back before serializing; a failed milvus start degrades
  * (status reports, search throws IndexOfflineError) and never crashes;
- * teardown stops the indexer, kills the child, and closes the client.
+ * teardown drains the write follow-ups bounded by
+ * {@link TEARDOWN_FLUSH_TIMEOUT_MS}, then stops the indexer, kills the
+ * child, and closes the client.
  */
 
 // ---------------------------------------------------------------------------
@@ -1677,6 +1679,71 @@ describe('teardown', () => {
     await h.service.stop()
     expect(h.indexer.stop).not.toHaveBeenCalled()
     expect(h.launcher.dispose).not.toHaveBeenCalled()
+  })
+
+  // TASK-002 (PLAN-async-writes): teardown drains the tracked write
+  // follow-up chains up to TEARDOWN_FLUSH_TIMEOUT_MS before the indexer
+  // stops, so in-flight index/commit bookkeeping lands on a clean shutdown
+  // and a wedged chain can never hang teardown.
+  it('a pending write chain drains before the indexer stops', async () => {
+    const h = harness()
+    await h.service.ensureMemoryAccess()
+    let chainSettled = false
+    h.indexer.indexFile.mockImplementation(async () => {
+      await new Promise<void>((resolve) => { setTimeout(resolve, 10) })
+      chainSettled = true
+      return true
+    })
+    const settledAtStop: boolean[] = []
+    h.indexer.stop.mockImplementation(() => {
+      settledAtStop.push(chainSettled)
+    })
+
+    await h.service.applyWrite(join(DEFAULT_VAULT, 'drain.md'), testMeta(), 'body\n')
+    await h.service.stop()
+
+    // The bounded flush inside teardown waited for the ~10 ms chain.
+    expect(settledAtStop).toEqual([true])
+    expect(h.indexer.indexFile).toHaveBeenCalledWith(DEFAULT_VAULT, 'drain.md')
+    expect(h.ctx.warnings.join('\n')).not.toContain('write-follow-up flush')
+  })
+
+  it('a never-settling chain caps the flush: teardown completes, warns, disposes', async () => {
+    const h = harness()
+    await h.service.ensureMemoryAccess()
+    h.indexer.indexFile.mockReturnValue(new Promise<boolean>(() => {}))
+    await h.service.applyWrite(join(DEFAULT_VAULT, 'stuck.md'), testMeta(), 'body\n')
+
+    // Virtual setTimeout (Date stays real) so the 60 s cap fires without a
+    // 60 s wall-clock wait; the margin pins that teardown only waited for
+    // the cap timer, never for the wedged chain.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const started = Date.now()
+      const stopping = h.service.stop()
+      await vi.advanceTimersByTimeAsync(TEARDOWN_FLUSH_TIMEOUT_MS)
+      await stopping
+      expect(Date.now() - started).toBeLessThan(5_000)
+    } finally {
+      vi.useRealTimers()
+    }
+
+    // The git chain settled; only the wedged index chain is still held.
+    expect(h.ctx.warnings.join('\n')).toContain('1 follow-up chain(s) still unsettled')
+    expect(h.indexer.stop).toHaveBeenCalledTimes(1)
+    expect(h.launcher.dispose).toHaveBeenCalledTimes(1)
+    expect(h.client.closeConnection).toHaveBeenCalledTimes(1)
+  })
+
+  it('an empty follow-up queue settles teardown without waiting', async () => {
+    const h = harness()
+    await h.service.ensureMemoryAccess()
+
+    const started = Date.now()
+    await h.service.stop()
+
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(h.ctx.warnings.join('\n')).not.toContain('write-follow-up flush')
   })
 })
 

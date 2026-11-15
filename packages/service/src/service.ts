@@ -140,6 +140,9 @@ const SETTINGS_FILE_VERSION = 1
 /** Card settings whose apply re-forms the embedder and the indexer (TASK-004 escalation class). */
 const EMBEDDER_CARD_SETTINGS_KEYS: readonly string[] = ['vectorDim', 'model.id', 'model.cacheDir']
 
+/** Milliseconds teardown waits for unsettled write follow-ups before it proceeds (PLAN-async-writes Q3). */
+export const TEARDOWN_FLUSH_TIMEOUT_MS = 60_000
+
 /** Who registered a vault: the row config, the settings card, or lazy provisioning. */
 export type VaultSource = 'settings' | 'card' | 'default'
 
@@ -1358,7 +1361,11 @@ export class ObsidianMemService extends Service {
     return this.readRegistry.get(expandHomePath(absPath, this.homedir()))
   }
 
-  /** Stop tears effects down once: indexers stop, the child dies, the client closes. */
+  /**
+   * Stop tears effects down once: pending write follow-ups get up to
+   * TEARDOWN_FLUSH_TIMEOUT_MS to drain (on timeout it warns and proceeds),
+   * then indexers stop, the child dies, the client closes.
+   */
   stop(): Promise<void> {
     this.teardownPromise ??= this.teardown()
     return this.teardownPromise
@@ -1974,6 +1981,7 @@ export class ObsidianMemService extends Service {
   }
 
   private async teardown(): Promise<void> {
+    await this.boundedFollowUpFlush()
     this.indexer?.stop()
     const launcher = this.launcher
     this.launcher = null
@@ -1991,6 +1999,45 @@ export class ObsidianMemService extends Service {
         await client.closeConnection()
       } catch (error: unknown) {
         this.log.warn(`milvus client close failed: ${describeError(error)}`)
+      }
+    }
+  }
+
+  /**
+   * BoundedFollowUpFlush drains the tracked write follow-ups before the
+   * indexer stops and the Milvus client dies, so a settled insert is not
+   * unwound mid-flight on shutdown. The drain itself can hang forever (a
+   * never-settling chain keeps flushWriteFollowUps looping), so the
+   * TEARDOWN_FLUSH_TIMEOUT_MS cap is external: a Promise.race against an
+   * unref'd timer. On cap or a flush rejection it warns and returns; the
+   * lane keeps running, and the next start's state-file diff re-dirties
+   * whatever did not land, so dropping is safe (PLAN-async-writes Q3).
+   */
+  private async boundedFollowUpFlush(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cap = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => {
+        resolve('timeout')
+      }, TEARDOWN_FLUSH_TIMEOUT_MS)
+      timer.unref?.()
+    })
+    try {
+      const outcome = await Promise.race([
+        this.flushWriteFollowUps().then(() => 'drained' as const),
+        cap,
+      ])
+      if (outcome === 'timeout') {
+        this.log.warn(
+          `write-follow-up flush timed out after ${TEARDOWN_FLUSH_TIMEOUT_MS}ms; `
+          + `${this.pendingFollowUps.size} follow-up chain(s) still unsettled and dropped `
+          + '(the next start re-indexes from the state-file diff)',
+        )
+      }
+    } catch (error: unknown) {
+      this.log.warn(`write-follow-up flush failed: ${describeError(error)}`)
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer)
       }
     }
   }

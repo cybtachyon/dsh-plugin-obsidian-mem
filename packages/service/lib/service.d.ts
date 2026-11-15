@@ -41,6 +41,8 @@ export declare const OBSIDIAN_MEM_SEAM = "obsidianMem";
 export declare const VAULTS_FILE_NAME = "vaults.json";
 /** File holding card settings overrides, anchored at the fixed core state dir. */
 export declare const SETTINGS_FILE_NAME = "settings.json";
+/** Milliseconds teardown waits for unsettled write follow-ups before it proceeds (PLAN-async-writes Q3). */
+export declare const TEARDOWN_FLUSH_TIMEOUT_MS = 60000;
 /** Who registered a vault: the row config, the settings card, or lazy provisioning. */
 export type VaultSource = 'settings' | 'card' | 'default';
 /** A registered vault plus who registered it (the card's remove affordance). */
@@ -518,7 +520,11 @@ export declare class ObsidianMemService extends Service {
      * when the plugin never touched it.
      */
     readRecord(absPath: string): ReadRegistryEntry | undefined;
-    /** Stop tears effects down once: indexers stop, the child dies, the client closes. */
+    /**
+     * Stop tears effects down once: pending write follow-ups get up to
+     * TEARDOWN_FLUSH_TIMEOUT_MS to drain (on timeout it warns and proceeds),
+     * then indexers stop, the child dies, the client closes.
+     */
     stop(): Promise<void>;
     private provision;
     private loadRegistry;
@@ -556,6 +562,17 @@ export declare class ObsidianMemService extends Service {
     private modeForVaultValue;
     private registerTeardown;
     private teardown;
+    /**
+     * BoundedFollowUpFlush drains the tracked write follow-ups before the
+     * indexer stops and the Milvus client dies, so a settled insert is not
+     * unwound mid-flight on shutdown. The drain itself can hang forever (a
+     * never-settling chain keeps flushWriteFollowUps looping), so the
+     * TEARDOWN_FLUSH_TIMEOUT_MS cap is external: a Promise.race against an
+     * unref'd timer. On cap or a flush rejection it warns and returns; the
+     * lane keeps running, and the next start's state-file diff re-dirties
+     * whatever did not land, so dropping is safe (PLAN-async-writes Q3).
+     */
+    private boundedFollowUpFlush;
 }
 /**
  * WithObsidianMemHooks returns a mountable row class whose constructor

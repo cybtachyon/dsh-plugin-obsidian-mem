@@ -145,9 +145,10 @@ function benchArgs(nonce: string, probe: string): Record<string, unknown> {
   return {
     // A non-existent FILE path inside the dir: the tool slugs the title
     // into the path's dirname and applyWrite mkdirps that dir, so the
-    // first write creates dsh-bench/ itself. The dir-as-target shape is
-    // a tool-tier trap: a MISSING directory silently slugs the note into
-    // the parent (the vault root), documented in the bench Results.
+    // first write creates dsh-bench/ itself. Since TASK-009b the
+    // dir-as-target spelling (BENCH_DIR, with or without a trailing
+    // separator) names this same directory; the bench keeps the shape it
+    // actually measured.
     path: join(BENCH_DIR, 'bench-note.md'),
     index_title: `Async-write bench ${probe}: ${nonce}`,
     index_description: `Throwaway TASK-009 bench artifact tagged ${nonce}; delete-safe.`,

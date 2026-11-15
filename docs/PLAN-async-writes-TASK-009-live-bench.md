@@ -108,7 +108,10 @@ Pre-existing issues discovered (found, not touched):
 1. `tools/write.ts` new-note placement: a path naming a MISSING directory
    takes the `dirname()` branch and slugs the note into the directory's
    PARENT, contradicting the "the path you pass supplies the directory"
-   contract. No unit test passes a missing-dir target.
+   contract. No unit test passes a missing-dir target. RESOLVED by
+   TASK-009b: the target itself is the directory unless its basename ends
+   in `.md`, and the bench's file-inside-dir comment no longer calls the
+   dir-as-target shape a trap.
 2. Hybrid search cannot surface rare machine-generated tokens (long
    alphanumerics): the dense route's 0.78 radius floor rejects them and
    the BM25 route's wake-keyword gate can skip the rows. Fine for prose

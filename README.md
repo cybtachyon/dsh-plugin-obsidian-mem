@@ -153,11 +153,15 @@ While `git.enabled` is on, every shared vault is a git repository
 (`read-only` vaults are never versioned). The plugin adopts each shared
 vault on the `main` branch with one initial commit recording whatever
 notes the vault already holds. From then on a successful `memory_write`
-schedules one commit of the vault it touched after the note is confirmed
-(one commit per write, settling in the background, serialized per vault),
-and a finished `memory_dream` run closes with one commit pass over every
-shared vault. A git failure logs and never unwinds a write: the memory
-files are the source of truth and the history is only the book.
+schedules a commit of the vault it touched after the note is confirmed,
+settling in the background and serialized per vault. That commit is one
+whole-tree pass, so a batch of writes arriving faster than the serial
+commit lane drains shares commit entries: history granularity follows
+the commit waves, and one commit per write shows up only when the lane
+is idle between writes. A finished `memory_dream` run closes with one
+commit pass over every shared vault. A git failure logs and never
+unwinds a write: the memory files are the source of truth and the
+history is only the book.
 
 A managed `.gitignore` at the vault root keeps the plugin's
 `.obsidian-mem/` sidecar (indexer state, the `DREAMS.md` diary) out of

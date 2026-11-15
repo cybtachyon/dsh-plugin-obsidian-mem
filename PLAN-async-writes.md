@@ -90,7 +90,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 
 ### Phase 3c — Whole-repo verification
 
- - [ ] [TASK-010-verify-suite](docs/PLAN-async-writes-TASK-010-verify-suite.md)
+ - [x] [TASK-010-verify-suite](docs/PLAN-async-writes-TASK-010-verify-suite.md)
 
 ## Task dependencies
 
@@ -125,7 +125,85 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 
 ## Results
 
-(to be filled at TASK-010 with measured totals)
+### TASK-010 whole-repo verification (2026-11-14, HEAD 0a7944b)
+
+Every repo gate green over the plan's full range (base 603801b, 58 paths
+touched).
+
+1. `pnpm build`: exit 0, verify-emit line
+   `verify-emit: 264 tsc artifacts intact across 6 packages; 3 prompt
+   carriers byte-exact`, and `git status --porcelain` empty (0 paths)
+   after the build: every lib carrier is already committed.
+2. `pnpm test`: exit 0, `Test Files 54 passed | 1 skipped (55)`,
+   `Tests 1113 passed | 2 skipped (1115)`, 4.46 s. The CURRENT
+   default-tier total is 1113 passed / 2 skipped. The 1103 in the
+   TASK-004 and TASK-007 sections below and the 1104 in the TASK-009
+   section are dated run records for those passes and stay as history.
+3. `pnpm test:coverage`: exit 0, `All files` Stmts 94.69 / Branch 88.22 /
+   Funcs 93.01 / Lines 94.90 against the `vitest.config.ts` floors
+   85 / 85 / 78 / 85 (margins +9.69 / +10.22 / +8.01 / +9.90). No
+   threshold or assertion was changed.
+4. `pnpm lint`: exit 0 (`eslint .`). The first attempt died with
+   `ENOENT: no such file or directory, scandir .../coverage/client`
+   because it raced a concurrent `pnpm test:coverage` rewriting the
+   gitignored `coverage/` tree; the sequential re-run on a settled tree
+   is green.
+5. prek 0.5.10, whole-tree mode: `prek run --all-files` Passed all four
+   hooks (trim trailing whitespace, fix end of files, check for added
+   large files, jactionlint), exit 0. The plan-range form
+   `prek run --files` over all 58 paths of
+   `git diff --name-only 603801b..HEAD` is green too (jactionlint
+   skipped: no workflow file in the range).
+6. AGENTS verification grep
+   `grep -rn "from '\.\{1,2\}/[^']*\.tsx\?'" packages/*/src` printed
+   nothing (exit 1, no match).
+7. Live tier, `RUN_LIVE=1 pnpm exec vitest run --reporter=verbose`, both
+   files run sequentially (one milvus-lite port at a time):
+   - `packages/service/tests/integration/live-pipeline.live.test.ts`:
+     11 passed, 6.43 s wall. Per-test wall times: embedder 1200 / 23 /
+     6 ms; full-run index 120 ms; Spanish-query route 41 ms; paraphrase
+     route 17 ms; scalar filters 71 ms; **async settle 140 ms**, the
+     TASK-006 case executed live for the first time (the write, the
+     `flushWriteFollowUps` drain, and the fresh-token search all green);
+     delete-archived 531 ms; dim drift 622 ms; count/drop/dispose 40 ms.
+   - `packages/service/tests/integration/async-write-bench.live.test.ts`:
+     3 passed, 12.51 s wall. Per-test wall times: cold 23 ms, warm batch
+     11 567 ms (the 1 s `WRITE_PACE_MS` spacing), settle 410 ms. Cold
+     first write 21 ms, returning with `status().state` `provisioning`
+     and the launcher unresolved. Ten warm `memory_write` latencies
+     (ms, call order): `4, 13, 18, 20, 18, 14, 18, 16, 22, 10`. Settle
+     0.4 s for all ten probe words; 11 `obsidian-mem: memory_write`
+     commit subjects carrying this run's stamp.
+   - TASK-009c live proof on the testbed: `git -C
+     /home/derek/src/machinae-game ls-files -- .obsidian-mem` answered
+     `.obsidian-mem/metadata/obsidian-mem-state.json` (1 path) before the
+     bench and answered empty (0 paths) after it. The cold write's first
+     adoption wave (testbed commit `1df9066`) appended the
+     `.obsidian-mem/` constant to the testbed's own `.gitignore` (+2
+     lines) and recorded the 839-line sidecar state file's removal from
+     the index in one commit. Testbed end state: 11 pending
+     ` D dsh-bench/...` teardown deletions for the next bench wave, and
+     the previously dirty ` M .obsidian-mem/...state.json` entry is gone
+     (untracked and ignored).
+8. Write-contract read-through: README said "one commit per write" and
+   AGENTS said the manager "commits once per successful `applyWrite`".
+   Both overpromised per-write history granularity for a fast batch
+   (TASK-009 deviation 4: a whole-tree commit wave sweeps writes that
+   arrive while it runs, so one commit per write is observable only when
+   the serial lane is idle between writes), and both now state the wave
+   rule. No sentence promises synchronous write-through; the model-facing
+   contract in `packages/tools/src/write.ts` already reads "indexing and
+   the git commit settle asynchronously afterwards".
+
+Measured write latencies (budget 10 000 ms = `WRITE_TIMEOUT_MS`):
+
+- Unit tier (TASK-008): ten awaited `applyWrite` calls at 0.1 to 2.9 ms
+  each (2.9, 0.4, then eight at 0.1) ahead of a 300 ms-per-call fake
+  index queue.
+- Live tier, TASK-009 first run: cold first write 17 ms, ten warm writes
+  7.2 to 22.7 ms, settle 0.1 s, 11 commits.
+- Live tier, this TASK-010 rerun (current live evidence): cold 21 ms, ten
+  warm writes 4 to 22 ms, settle 0.4 s, 11 commits.
 
 ### TASK-004 refactor pass (Phase 1 smell adjudication, 2026-11-14)
 

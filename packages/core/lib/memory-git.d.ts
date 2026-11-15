@@ -23,11 +23,12 @@ export declare const MEMORY_GITIGNORE_FILE = ".gitignore";
  */
 export declare const GIT_DIR_NAME = ".git";
 /**
- * MEMORY_GITIGNORE_TEXT is the content ensureRepo writes once at the vault
- * root. Unlike the reference plugin, this plugin keeps its vault sidecar
- * INSIDE the indexed root ({@link PLUGIN_VAULT_DIR}, holding the indexer
- * state and DREAMS.md), so the ignore pattern is load-bearing: it keeps
- * sidecar churn out of every `git add -A`.
+ * MEMORY_GITIGNORE_TEXT is the content ensureRepo writes at the vault root,
+ * and its pattern lines converge onto an existing `.gitignore` too. Unlike
+ * the reference plugin, this plugin keeps its vault sidecar INSIDE the
+ * indexed root ({@link PLUGIN_VAULT_DIR}, holding the indexer state and
+ * DREAMS.md), so the ignore pattern is load-bearing: it keeps sidecar churn
+ * out of every `git add -A`.
  */
 export declare const MEMORY_GITIGNORE_TEXT: string;
 /** The message ensureRepo puts on a vault's very first commit. */
@@ -149,10 +150,12 @@ export declare class MemoryGit {
     isRepo(): Promise<boolean>;
     /**
      * EnsureRepo converges the root onto the plugin's expected state: `init -b
-     * main` when it is not yet a repo, the defensive `.gitignore`, and one
-     * initial commit of whatever the vault already holds when the repo has no
-     * commit yet. It is idempotent and cheap to re-run (two probe calls on a
-     * healthy repo), so every writer may call it before committing.
+     * main` when it is not yet a repo, the defensive `.gitignore`, one initial
+     * commit of whatever the vault already holds when the repo has no commit
+     * yet, and the sidecar untrack probe that drops a sidecar a pre-fix
+     * adoption committed from the index. It is idempotent and cheap to re-run
+     * (three probe calls on a healthy repo), so every writer may call it
+     * before committing.
      */
     ensureRepo(): Promise<{
         initialized: boolean;
@@ -201,13 +204,25 @@ export declare class MemoryGit {
      */
     private commitIdentityArgs;
     /**
-     * SyncGitignore converges the root `.gitignore`: the constants (plus any
-     * extra patterns) when the file is absent, and an append of the extra
-     * patterns still missing when one exists. The constants land only on the
-     * file's first write (an existing file may be the user's own); extras
-     * converge on every ensureRepo because a data directory moved inside the
-     * root after adoption must stay out of the next `git add -A`. The append
-     * is additive and idempotent.
+     * UntrackSidecar drops a sidecar an earlier adoption committed from the
+     * index: `ls-files` probes, and when it answers tracked sidecar paths a
+     * `git rm -r --cached` clears the index entries (the worktree files never
+     * move). The next commit wave records the removal and the converged
+     * ignore keeps the sidecar out forever. A failing rm is absorbed as an
+     * ordinary outcome like the clean-tree answer in commitAll: the sidecar
+     * stays versioned and the next ensureRepo retries the probe.
+     */
+    private untrackSidecar;
+    /**
+     * SyncGitignore converges the root `.gitignore` onto the plugin's
+     * patterns: the fresh file carries the constants plus any extras, and an
+     * existing file receives every pattern still missing from it, constants
+     * included. The invariant: the plugin's sidecar is never versioned,
+     * whatever the vault's own `.gitignore` history is (a user who deleted
+     * the pattern gets it back on the next ensureRepo). Extras converge on
+     * every ensureRepo because a data directory moved inside the root after
+     * adoption must stay out of the next `git add -A`. The append is
+     * additive and idempotent.
      */
     private syncGitignore;
 }

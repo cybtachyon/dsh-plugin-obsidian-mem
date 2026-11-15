@@ -131,19 +131,87 @@ describe('MemoryGit with a scripted runner', () => {
         IDENTITY_PROBE_ARGV,
         ['commit', '-m', INITIAL_COMMIT_MESSAGE],
         ['rev-parse', 'HEAD'],
+        ['ls-files', '--', PLUGIN_VAULT_DIR],
       ])
     })
 
-    it('is a no-op on a healthy repo and keeps an existing .gitignore', async () => {
+    it('keeps an existing .gitignore and converges the sidecar pattern onto it', async () => {
       const dir = tempDir()
       writeFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'custom rules\n')
       const { run, calls } = scriptedGit([{ code: 0 }, { code: 0 }])
       await expect(new MemoryGit(dir, run).ensureRepo()).resolves.toEqual({ initialized: false })
-      expect(readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')).toBe('custom rules\n')
+      const kept = readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')
+      // The user's own rules stay untouched; the sidecar pattern lands as an append.
+      expect(kept.startsWith('custom rules\n')).toBe(true)
+      expect(kept.trimEnd().endsWith(`${PLUGIN_VAULT_DIR}/`)).toBe(true)
       expect(calls).toEqual([
         ['rev-parse', '--git-dir'],
         ['rev-parse', '--verify', '--quiet', 'HEAD'],
+        ['ls-files', '--', PLUGIN_VAULT_DIR],
       ])
+    })
+
+    it('converges the sidecar pattern onto an existing .gitignore, idempotently', async () => {
+      const dir = tempDir()
+      writeFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'custom rules\n')
+      await new MemoryGit(dir, scriptedGit([{ code: 0 }, { code: 0 }]).run).ensureRepo()
+      const converged = readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')
+      expect(converged.trimEnd().split('\n')).toContain(`${PLUGIN_VAULT_DIR}/`)
+      // Idempotent: the pattern is present, so a second pass changes nothing.
+      await new MemoryGit(dir, scriptedGit([{ code: 0 }, { code: 0 }]).run).ensureRepo()
+      expect(readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')).toBe(converged)
+    })
+
+    it('untracks a sidecar an earlier adoption committed, once', async () => {
+      const dir = tempDir()
+      writeFileSync(join(dir, MEMORY_GITIGNORE_FILE), MEMORY_GITIGNORE_TEXT)
+      const { run, calls } = scriptedGit([
+        { code: 0 }, // rev-parse --git-dir: already a repo
+        { code: 0 }, // rev-parse --verify --quiet HEAD: has commits
+        { stdout: `${PLUGIN_VAULT_DIR}/metadata/obsidian-mem-state.json\n` }, // ls-files
+        {}, // git rm -r --cached
+      ])
+      await expect(new MemoryGit(dir, run).ensureRepo()).resolves.toEqual({ initialized: false })
+      expect(calls).toEqual([
+        ['rev-parse', '--git-dir'],
+        ['rev-parse', '--verify', '--quiet', 'HEAD'],
+        ['ls-files', '--', PLUGIN_VAULT_DIR],
+        ['rm', '-r', '--cached', '--quiet', '--', PLUGIN_VAULT_DIR],
+      ])
+    })
+
+    it('issues no git rm when the probe tracks nothing or cannot answer', async () => {
+      const clean = scriptedGit([{ code: 0 }, { code: 0 }, { stdout: '' }])
+      await expect(new MemoryGit(tempDir(), clean.run).ensureRepo()).resolves.toEqual({
+        initialized: false,
+      })
+      expect(clean.calls).toEqual([
+        ['rev-parse', '--git-dir'],
+        ['rev-parse', '--verify', '--quiet', 'HEAD'],
+        ['ls-files', '--', PLUGIN_VAULT_DIR],
+      ])
+      const unreadable = scriptedGit([
+        { code: 0 },
+        { code: 0 },
+        { code: 128, stderr: 'fatal: this is not the git you are looking for\n' },
+      ])
+      await expect(new MemoryGit(tempDir(), unreadable.run).ensureRepo()).resolves.toEqual({
+        initialized: false,
+      })
+      expect(unreadable.calls.at(-1)).toEqual(['ls-files', '--', PLUGIN_VAULT_DIR])
+    })
+
+    it('absorbs a failing git rm without unwinding ensureRepo', async () => {
+      const dir = tempDir()
+      writeFileSync(join(dir, MEMORY_GITIGNORE_FILE), MEMORY_GITIGNORE_TEXT)
+      const { run, calls } = scriptedGit([
+        { code: 0 },
+        { code: 0 },
+        { stdout: `${PLUGIN_VAULT_DIR}/metadata/obsidian-mem-state.json\n` },
+        { code: 128, stderr: 'fatal: something refused\n' },
+      ])
+      await expect(new MemoryGit(dir, run).ensureRepo()).resolves.toEqual({ initialized: false })
+      expect(calls.at(-1)).toEqual(['rm', '-r', '--cached', '--quiet', '--', PLUGIN_VAULT_DIR])
     })
 
     it('defers the initial commit when the fresh store still holds nothing', async () => {
@@ -160,6 +228,7 @@ describe('MemoryGit with a scripted runner', () => {
         ['init', '-b', 'main'],
         ['rev-parse', '--verify', '--quiet', 'HEAD'],
         STATUS_ARGV,
+        ['ls-files', '--', PLUGIN_VAULT_DIR],
       ])
     })
 
@@ -186,7 +255,8 @@ describe('MemoryGit with a scripted runner', () => {
     it('appends only the still-missing extras to an existing file, once', async () => {
       const dir = tempDir()
       // No trailing newline: the append must add one before its own lines.
-      writeFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'custom rules')
+      // The sidecar constant is already present, so only extras can land.
+      writeFileSync(join(dir, MEMORY_GITIGNORE_FILE), `custom rules\n${PLUGIN_VAULT_DIR}/`)
       const git = new MemoryGit(dir, scriptedGit([{ code: 0 }, { code: 0 }]).run, {
         extraIgnorePaths: ['sidecar'],
       })
@@ -194,6 +264,7 @@ describe('MemoryGit with a scripted runner', () => {
       const appended = readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')
       const lines = appended.trimEnd().split('\n')
       expect(lines[0]).toBe('custom rules')
+      expect(lines[1]).toBe(`${PLUGIN_VAULT_DIR}/`)
       expect(lines[lines.length - 1]).toBe('/sidecar/')
       // Idempotent: the pattern is present, so a second pass changes nothing.
       await new MemoryGit(dir, scriptedGit([{ code: 0 }, { code: 0 }]).run, {
@@ -201,8 +272,8 @@ describe('MemoryGit with a scripted runner', () => {
       }).ensureRepo()
       expect(readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')).toBe(appended)
       // A late extra on a file that already ends with a newline appends
-      // flush (header plus one line, no blank), and the constants still
-      // never migrate into the user's file.
+      // flush (header plus one line, no blank), and the constant that is
+      // already present never duplicates.
       await new MemoryGit(dir, scriptedGit([{ code: 0 }, { code: 0 }]).run, {
         extraIgnorePaths: ['sidecar', 'later'],
       }).ensureRepo()
@@ -211,7 +282,7 @@ describe('MemoryGit with a scripted runner', () => {
       expect(withLater.endsWith('/later/\n')).toBe(true)
       expect(withLater).not.toContain('\n\n')
       expect(withLater.trimEnd().split('\n')).toHaveLength(lines.length + 2)
-      // No extras configured: an existing file is never rewritten.
+      // No extras configured and every constant present: the file is not rewritten.
       await new MemoryGit(dir, scriptedGit([{ code: 0 }, { code: 0 }]).run).ensureRepo()
       expect(readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')).toBe(withLater)
     })
@@ -564,6 +635,33 @@ describe('MemoryGit against real git', () => {
     await expect(git.status()).resolves.toMatchObject({ untracked: ['note.md'] })
     await git.commitAll('note: add one')
     writeFileSync(join(dir, PLUGIN_VAULT_DIR, 'metadata', 'index-state.json'), '{"churn":1}\n')
+    await expect(git.commitAll('must find nothing')).resolves.toBeNull()
+  })
+
+  it('converges a user .gitignore and untracks a sidecar a pre-fix adoption committed (real git)', async () => {
+    const dir = tempDir()
+    // Recreate the pre-fix state: the vault's own .gitignore and a
+    // force-added sidecar already in the history.
+    writeFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'user rules\n')
+    const base = createGitRunner(dir)
+    const git = realGit(dir)
+    await expect(git.ensureRepo()).resolves.toEqual({ initialized: true })
+    const converged = readFileSync(join(dir, MEMORY_GITIGNORE_FILE), 'utf8')
+    expect(converged.startsWith('user rules\n')).toBe(true)
+    expect(converged.trimEnd().split('\n')).toContain(`${PLUGIN_VAULT_DIR}/`)
+    mkdirSync(join(dir, PLUGIN_VAULT_DIR, 'metadata'), { recursive: true })
+    writeFileSync(join(dir, PLUGIN_VAULT_DIR, 'metadata', 'obsidian-mem-state.json'), '{}\n')
+    await base([...GIT_IDENTITY, 'add', '-f', '--', PLUGIN_VAULT_DIR])
+    await base([...GIT_IDENTITY, 'commit', '-m', 'pre-fix sidecar commit'])
+    await expect(git.ensureRepo()).resolves.toEqual({ initialized: false })
+    // The index no longer carries the sidecar; the next ordinary commit
+    // wave records the removal and the ignore keeps it out forever.
+    const listed = await base([...GIT_IDENTITY, 'ls-files', '--', PLUGIN_VAULT_DIR])
+    expect(listed.stdout.trim()).toBe('')
+    await expect(git.commitAll('record the sidecar removal')).resolves.toMatch(/^[0-9a-f]{40}$/)
+    const history = await git.log(1)
+    expect(history[0]?.paths).toEqual([`${PLUGIN_VAULT_DIR}/metadata/obsidian-mem-state.json`])
+    writeFileSync(join(dir, PLUGIN_VAULT_DIR, 'metadata', 'obsidian-mem-state.json'), '{"x":1}\n')
     await expect(git.commitAll('must find nothing')).resolves.toBeNull()
   })
 

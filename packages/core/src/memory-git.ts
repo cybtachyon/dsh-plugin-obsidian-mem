@@ -36,11 +36,12 @@ export const MEMORY_GITIGNORE_FILE = '.gitignore'
 export const GIT_DIR_NAME = '.git'
 
 /**
- * MEMORY_GITIGNORE_TEXT is the content ensureRepo writes once at the vault
- * root. Unlike the reference plugin, this plugin keeps its vault sidecar
- * INSIDE the indexed root ({@link PLUGIN_VAULT_DIR}, holding the indexer
- * state and DREAMS.md), so the ignore pattern is load-bearing: it keeps
- * sidecar churn out of every `git add -A`.
+ * MEMORY_GITIGNORE_TEXT is the content ensureRepo writes at the vault root,
+ * and its pattern lines converge onto an existing `.gitignore` too. Unlike
+ * the reference plugin, this plugin keeps its vault sidecar INSIDE the
+ * indexed root ({@link PLUGIN_VAULT_DIR}, holding the indexer state and
+ * DREAMS.md), so the ignore pattern is load-bearing: it keeps sidecar churn
+ * out of every `git add -A`.
  */
 export const MEMORY_GITIGNORE_TEXT = [
   '# Written by dsh-plugin-obsidian-mem. The plugin keeps its per-vault',
@@ -50,6 +51,13 @@ export const MEMORY_GITIGNORE_TEXT = [
   `${PLUGIN_VAULT_DIR}/`,
   '',
 ].join('\n')
+
+// The pattern lines of MEMORY_GITIGNORE_TEXT (comments and blanks dropped),
+// derived from the constant so the fresh-file text and the convergence pass
+// over an existing file can never fork their pattern lists.
+const MEMORY_GITIGNORE_PATTERNS = MEMORY_GITIGNORE_TEXT
+  .split('\n')
+  .filter((line) => line.trim() !== '' && !line.trim().startsWith('#'))
 
 // The subject prefix every plugin-authored commit carries. It has one home
 // here so `git log --grep` finds plugin commits by the prefix alone, and the
@@ -74,6 +82,16 @@ export function datedCommitMessage(subject: string, when: Date = new Date()): st
 /** The header ensureRepo puts above any host-requested extra ignore lines. */
 const EXTRA_IGNORE_HEADER =
   '# Ignored sidecar directories (a configured path inside the vault root):'
+
+/** The header ensureRepo puts above sidecar patterns appended to an existing file. */
+const SIDECAR_IGNORE_HEADER =
+  '# Plugin sidecar (its indexer state and the DREAMS.md diary), never versioned:'
+
+// The sidecar probes and fixes run as plain argv through the injected
+// runner; `ls-files` takes the directory name as a prefix pathspec, so the
+// pair lists and untracks exactly the sidecar's own paths.
+const SIDECAR_LS_FILES_ARGV = ['ls-files', '--', PLUGIN_VAULT_DIR]
+const SIDECAR_UNTRACK_ARGV = ['rm', '-r', '--cached', '--quiet', '--', PLUGIN_VAULT_DIR]
 
 // execFile defaults to a 1 MB capture; a long-lived memory tree's name-only
 // log comfortably passes it, and a truncated stream would parse as a shorter
@@ -254,10 +272,12 @@ export class MemoryGit {
 
   /**
    * EnsureRepo converges the root onto the plugin's expected state: `init -b
-   * main` when it is not yet a repo, the defensive `.gitignore`, and one
-   * initial commit of whatever the vault already holds when the repo has no
-   * commit yet. It is idempotent and cheap to re-run (two probe calls on a
-   * healthy repo), so every writer may call it before committing.
+   * main` when it is not yet a repo, the defensive `.gitignore`, one initial
+   * commit of whatever the vault already holds when the repo has no commit
+   * yet, and the sidecar untrack probe that drops a sidecar a pre-fix
+   * adoption committed from the index. It is idempotent and cheap to re-run
+   * (three probe calls on a healthy repo), so every writer may call it
+   * before committing.
    */
   async ensureRepo(): Promise<{ initialized: boolean }> {
     const initialized = !(await this.isRepo())
@@ -265,6 +285,7 @@ export class MemoryGit {
     this.syncGitignore()
     const head = await this.run(['rev-parse', '--verify', '--quiet', 'HEAD'])
     if (head.code !== 0) await this.commitAll(INITIAL_COMMIT_MESSAGE)
+    await this.untrackSidecar()
     return { initialized }
   }
 
@@ -384,13 +405,32 @@ export class MemoryGit {
   }
 
   /**
-   * SyncGitignore converges the root `.gitignore`: the constants (plus any
-   * extra patterns) when the file is absent, and an append of the extra
-   * patterns still missing when one exists. The constants land only on the
-   * file's first write (an existing file may be the user's own); extras
-   * converge on every ensureRepo because a data directory moved inside the
-   * root after adoption must stay out of the next `git add -A`. The append
-   * is additive and idempotent.
+   * UntrackSidecar drops a sidecar an earlier adoption committed from the
+   * index: `ls-files` probes, and when it answers tracked sidecar paths a
+   * `git rm -r --cached` clears the index entries (the worktree files never
+   * move). The next commit wave records the removal and the converged
+   * ignore keeps the sidecar out forever. A failing rm is absorbed as an
+   * ordinary outcome like the clean-tree answer in commitAll: the sidecar
+   * stays versioned and the next ensureRepo retries the probe.
+   */
+  private async untrackSidecar(): Promise<void> {
+    const tracked = await this.run(SIDECAR_LS_FILES_ARGV)
+    if (tracked.code !== 0 || tracked.stdout.trim() === '') return
+    // The result is deliberately unread: a non-zero exit is the absorbed
+    // failure path, and MemoryGit logs nothing (the caller owns logging).
+    await this.run(SIDECAR_UNTRACK_ARGV)
+  }
+
+  /**
+   * SyncGitignore converges the root `.gitignore` onto the plugin's
+   * patterns: the fresh file carries the constants plus any extras, and an
+   * existing file receives every pattern still missing from it, constants
+   * included. The invariant: the plugin's sidecar is never versioned,
+   * whatever the vault's own `.gitignore` history is (a user who deleted
+   * the pattern gets it back on the next ensureRepo). Extras converge on
+   * every ensureRepo because a data directory moved inside the root after
+   * adoption must stay out of the next `git add -A`. The append is
+   * additive and idempotent.
    */
   private syncGitignore(): void {
     const file = path.join(this.root, MEMORY_GITIGNORE_FILE)
@@ -399,13 +439,21 @@ export class MemoryGit {
       fs.writeFileSync(file, memoryGitignoreText(extras))
       return
     }
-    if (extras.length === 0) return
     const current = fs.readFileSync(file, 'utf8')
     const present = new Set(current.split('\n').map((line) => line.trim()))
-    const missing = extras.filter((line) => !present.has(line))
-    if (missing.length === 0) return
+    const missingSidecar = MEMORY_GITIGNORE_PATTERNS.filter((line) => !present.has(line))
+    const missingExtras = extras.filter((line) => !present.has(line))
+    if (missingSidecar.length === 0 && missingExtras.length === 0) return
     const prefix = current.endsWith('\n') ? current : `${current}\n`
-    fs.writeFileSync(file, `${prefix}${EXTRA_IGNORE_HEADER}\n${missing.join('\n')}\n`)
+    const sidecarBlock =
+      missingSidecar.length === 0
+        ? ''
+        : `${SIDECAR_IGNORE_HEADER}\n${missingSidecar.join('\n')}\n`
+    const extrasBlock =
+      missingExtras.length === 0
+        ? ''
+        : `${EXTRA_IGNORE_HEADER}\n${missingExtras.join('\n')}\n`
+    fs.writeFileSync(file, `${prefix}${sidecarBlock}${extrasBlock}`)
   }
 }
 

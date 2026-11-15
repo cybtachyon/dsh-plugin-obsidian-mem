@@ -237,6 +237,7 @@ describe('VaultGitManager with a fake git runner', () => {
 
     expect(rootCalls(h.repo, dir)).toEqual([
       'rev-parse', 'init', 'rev-parse', 'status', 'add', 'config', 'commit', 'rev-parse',
+      'ls-files',
     ])
     expect(h.repo.calls.find((call) => cmdOf(call.argv) === 'init')?.argv)
       .toEqual(['init', '-b', 'main'])
@@ -287,7 +288,8 @@ describe('VaultGitManager with a fake git runner', () => {
     expect(h.repo.commitMessages(dir)).toEqual([INITIAL_COMMIT_MESSAGE, 'msg one', 'msg two'])
     // The second add+commit pair starts only after the first rev-parse: no
     // two status→commit pairs ever interleave inside one vault's history.
-    const after = rootCalls(h.repo, dir).slice(8)
+    // (slice(9) skips the nine-call adoption wave, the ls-files probe last.)
+    const after = rootCalls(h.repo, dir).slice(9)
     expect(after).toEqual([
       'status', 'add', 'commit', 'rev-parse',
       'status', 'add', 'commit', 'rev-parse',

@@ -33,7 +33,7 @@ See the Questionnaire section; answers are persisted here after Step 4.
 
 ## Phase 1: Launch-side isolation (service)
 
- - [ ] [TASK-001-verbiage-carrier-rebuild](docs/PLAN-dream-isolation-TASK-001-verbiage-carrier-rebuild.md)
+ - [x] [TASK-001-verbiage-carrier-rebuild](docs/PLAN-dream-isolation-TASK-001-verbiage-carrier-rebuild.md)
  - [ ] [TASK-002-dream-complete-prompt-setup](docs/PLAN-dream-isolation-TASK-002-dream-complete-prompt-setup.md)
 
 ## Phase 2: Dream-lineage recall suppression (events)

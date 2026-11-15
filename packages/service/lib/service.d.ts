@@ -19,7 +19,11 @@
  * generous readiness timeout, the long-lived client only after readiness
  * (G12), the collection (dim drift → rebuild → forced full reindex), and
  * the indexer background start. A failed Milvus start degrades to status
- * reports and typed IndexOfflineError from search, never a crash.
+ * reports and typed IndexOfflineError from search, never a crash. The pass
+ * is split (TASK-003): `ensureWriteAccess()` gates the write path on the
+ * fast core half only and lets the Milvus/indexer stack boot in the
+ * background, so the first memory_write of a process stays inside its tool
+ * budget; every read-facing flow keeps awaiting the full pass.
  * @module dsh-plugin-obsidian-mem/service
  */
 import { Service } from '@deepseek-ai/cordis';
@@ -253,9 +257,10 @@ export interface ObsidianMemHooks {
  * ObsidianMemService is `ctx.obsidianMem`. Construction resolves config
  * (schema defaults applied, persisted card overrides merged over the row,
  * `~` expanded) and writes or spawns nothing; `ensureMemoryAccess()` runs
- * the one-time provisioning pass; every memory-facing method (read, write,
- * search, addVault persistence) routes through it or owns its explicit disk
- * effect.
+ * the one-time provisioning pass, and `ensureWriteAccess()` gates the write
+ * path on its fast core half; every memory-facing method (read, write,
+ * search, addVault persistence) routes through one of them or owns its
+ * explicit disk effect.
  */
 export declare class ObsidianMemService extends Service {
     /** The plugin config schema every mounted row validates against. */
@@ -311,13 +316,30 @@ export declare class ObsidianMemService extends Service {
      */
     [Service.init](): void;
     /**
-     * EnsureMemoryAccess is the idempotent lazy-provisioning seam. The first
-     * caller runs the provisioning pass and receives the one-time default-
-     * vault notice (when a default was provisioned); later and concurrent
-     * callers await the same pass and get `undefined`. A failed pass clears
-     * the flight so the next call may retry.
+     * EnsureMemoryAccess is the idempotent lazy-provisioning seam every
+     * read-facing flow rides (read, search, audit, dream, the event hooks).
+     * The first caller runs the provisioning pass and receives the one-time
+     * default-vault notice (when a default was provisioned); later and
+     * concurrent callers await the same pass and get `undefined`. Both pass
+     * halves are awaited: the answering call always has the index stack
+     * settled (ready or degraded). A failed core pass clears the flight so
+     * the next call may retry.
      */
     ensureMemoryAccess(): Promise<string | undefined>;
+    /**
+     * EnsureWriteAccess is the write-path provisioning gate (TASK-003): it
+     * awaits only the core pass (default-vault provisioning, dirs, git
+     * adoption, uvx pre-warm — all fast local fs/git work) and lets the
+     * Milvus/indexer stack boot in the background, so the FIRST memory_write
+     * in a process stays inside the 10 000 ms tool budget even while a cold
+     * milvus-lite start runs into minutes. The one-time notice goes to the
+     * triggering call. While the stack is still coming up after the core
+     * landed, status reports `'provisioning'` (the honest in-between). A
+     * failed core pass clears the flight for a retry, exactly as in
+     * {@link ensureMemoryAccess}.
+     */
+    ensureWriteAccess(): Promise<string | undefined>;
+    private beginProvisioning;
     /** ListVaults returns the live registry; it never provisions. */
     listVaults(): VaultEntry[];
     /**
@@ -392,7 +414,9 @@ export declare class ObsidianMemService extends Service {
      * commitAllShared (the dream end seam) enqueues onto the git lane behind
      * pending per-write commits. Read-only vaults refuse. A follow-up failure
      * is warn-logged and never unwinds the write; flushWriteFollowUps awaits
-     * the chains for tests and teardown.
+     * the chains for tests and teardown. The provisioning gate is
+     * {@link ensureWriteAccess}: only the core pass is awaited, so a cold
+     * index-stack boot never lands inside the write's latency envelope.
      */
     applyWrite(path: string, meta: NoteMeta, body: string): Promise<ObsidianMemWriteResult>;
     /**
@@ -526,7 +550,8 @@ export declare class ObsidianMemService extends Service {
      * then indexers stop, the child dies, the client closes.
      */
     stop(): Promise<void>;
-    private provision;
+    private provisionCore;
+    private startIndexStack;
     private loadRegistry;
     private readVaultsFile;
     private persistVaultsFile;

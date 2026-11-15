@@ -19,7 +19,11 @@
  * generous readiness timeout, the long-lived client only after readiness
  * (G12), the collection (dim drift → rebuild → forced full reindex), and
  * the indexer background start. A failed Milvus start degrades to status
- * reports and typed IndexOfflineError from search, never a crash.
+ * reports and typed IndexOfflineError from search, never a crash. The pass
+ * is split (TASK-003): `ensureWriteAccess()` gates the write path on the
+ * fast core half only and lets the Milvus/indexer stack boot in the
+ * background, so the first memory_write of a process stays inside its tool
+ * budget; every read-facing flow keeps awaiting the full pass.
  * @module dsh-plugin-obsidian-mem/service
  */
 
@@ -420,13 +424,22 @@ interface VaultRegistryView {
   vaults: VaultEntry[]
 }
 
+// One in-flight provisioning pass (TASK-003): the fast core pass and the
+// index stack chained behind it. Read-facing flows await both halves; the
+// write path awaits `core` alone. `stack` never rejects.
+interface ProvisioningPass {
+  core: Promise<string | undefined>
+  stack: Promise<void>
+}
+
 /**
  * ObsidianMemService is `ctx.obsidianMem`. Construction resolves config
  * (schema defaults applied, persisted card overrides merged over the row,
  * `~` expanded) and writes or spawns nothing; `ensureMemoryAccess()` runs
- * the one-time provisioning pass; every memory-facing method (read, write,
- * search, addVault persistence) routes through it or owns its explicit disk
- * effect.
+ * the one-time provisioning pass, and `ensureWriteAccess()` gates the write
+ * path on its fast core half; every memory-facing method (read, write,
+ * search, addVault persistence) routes through one of them or owns its
+ * explicit disk effect.
  */
 export class ObsidianMemService extends Service {
   /** The plugin config schema every mounted row validates against. */
@@ -471,7 +484,7 @@ export class ObsidianMemService extends Service {
   // Fired-but-unsettled write follow-up chains (index + git); each handle
   // removes itself on settle and flushWriteFollowUps drains the set.
   private readonly pendingFollowUps = new Set<Promise<void>>()
-  private access: { promise: Promise<string | undefined> } | null = null
+  private access: ProvisioningPass | null = null
   private phase: ObsidianMemStatus['state'] = 'inactive'
   private noticeText: string | null = null
   private defaultVault: VaultConfig | null = null
@@ -556,26 +569,73 @@ export class ObsidianMemService extends Service {
   }
 
   /**
-   * EnsureMemoryAccess is the idempotent lazy-provisioning seam. The first
-   * caller runs the provisioning pass and receives the one-time default-
-   * vault notice (when a default was provisioned); later and concurrent
-   * callers await the same pass and get `undefined`. A failed pass clears
-   * the flight so the next call may retry.
+   * EnsureMemoryAccess is the idempotent lazy-provisioning seam every
+   * read-facing flow rides (read, search, audit, dream, the event hooks).
+   * The first caller runs the provisioning pass and receives the one-time
+   * default-vault notice (when a default was provisioned); later and
+   * concurrent callers await the same pass and get `undefined`. Both pass
+   * halves are awaited: the answering call always has the index stack
+   * settled (ready or degraded). A failed core pass clears the flight so
+   * the next call may retry.
    */
   async ensureMemoryAccess(): Promise<string | undefined> {
     if (this.phase === 'ready' || this.phase === 'degraded') {
       return undefined
     }
     const isTrigger = this.access === null
-    this.access ??= {
-      promise: this.provision().catch((error: unknown) => {
-        this.access = null
-        this.phase = 'inactive'
-        throw error
-      }),
-    }
-    const notice = await this.access.promise
+    const pass = this.beginProvisioning()
+    const notice = await pass.core
+    await pass.stack
     return isTrigger ? notice : undefined
+  }
+
+  /**
+   * EnsureWriteAccess is the write-path provisioning gate (TASK-003): it
+   * awaits only the core pass (default-vault provisioning, dirs, git
+   * adoption, uvx pre-warm — all fast local fs/git work) and lets the
+   * Milvus/indexer stack boot in the background, so the FIRST memory_write
+   * in a process stays inside the 10 000 ms tool budget even while a cold
+   * milvus-lite start runs into minutes. The one-time notice goes to the
+   * triggering call. While the stack is still coming up after the core
+   * landed, status reports `'provisioning'` (the honest in-between). A
+   * failed core pass clears the flight for a retry, exactly as in
+   * {@link ensureMemoryAccess}.
+   */
+  async ensureWriteAccess(): Promise<string | undefined> {
+    if (this.phase === 'ready' || this.phase === 'degraded') {
+      return undefined
+    }
+    const isTrigger = this.access === null
+    const notice = await this.beginProvisioning().core
+    return isTrigger ? notice : undefined
+  }
+
+  // BeginProvisioning answers the in-flight pass, starting it once: the
+  // core pass and the index stack chained behind it (the stack never runs
+  // against a half-provisioned core). Both promises are shared
+  // single-flights, and `stack` never rejects (startIndexStack owns its
+  // failures as `'degraded'`; a core failure answers it resolved), so a
+  // write-path caller that never awaits the stack cannot leave an
+  // unobserved rejection.
+  private beginProvisioning(): ProvisioningPass {
+    if (this.access !== null) {
+      return this.access
+    }
+    const core = this.provisionCore().catch((error: unknown) => {
+      // A failed core pass keeps today's retry semantics: the next call
+      // may run the pass again.
+      this.access = null
+      this.phase = 'inactive'
+      throw error
+    })
+    const stack = core
+      .then(() => this.startIndexStack())
+      // A core rejection is already observed through `core`; the chained
+      // promise settles quietly so stack-only waiters see the core error
+      // from the await above, not a second unhandled one.
+      .catch(() => undefined)
+    this.access = { core, stack }
+    return this.access
   }
 
   /** ListVaults returns the live registry; it never provisions. */
@@ -828,14 +888,16 @@ export class ObsidianMemService extends Service {
    * commitAllShared (the dream end seam) enqueues onto the git lane behind
    * pending per-write commits. Read-only vaults refuse. A follow-up failure
    * is warn-logged and never unwinds the write; flushWriteFollowUps awaits
-   * the chains for tests and teardown.
+   * the chains for tests and teardown. The provisioning gate is
+   * {@link ensureWriteAccess}: only the core pass is awaited, so a cold
+   * index-stack boot never lands inside the write's latency envelope.
    */
   async applyWrite(
     path: string,
     meta: NoteMeta,
     body: string,
   ): Promise<ObsidianMemWriteResult> {
-    await this.ensureMemoryAccess()
+    await this.ensureWriteAccess()
     const target = expandHomePath(path, this.homedir())
     const classified = classifyPath(this.listVaults(), target)
     if (classified === null) {
@@ -879,7 +941,9 @@ export class ObsidianMemService extends Service {
     if (indexer !== null) {
       // Follow-up chain 1: write-through reindex. A null indexer skips it:
       // the watcher's dirt, the stat sweep, and the next indexer.start()
-      // full-scan converge the path.
+      // full-scan converge the path. Under the TASK-003 cold split this is
+      // the normal first-write-in-a-process case: ensureWriteAccess
+      // answers before the index stack lands.
       this.trackFollowUp(indexer.indexFile(classified.vault.path, relPath))
     }
 
@@ -1371,8 +1435,11 @@ export class ObsidianMemService extends Service {
     return this.teardownPromise
   }
 
-  // The one-time provisioning pass; see ensureMemoryAccess for ordering.
-  private async provision(): Promise<string | undefined> {
+  // ProvisionCore is the fast half of the one-time provisioning pass; every
+  // step awaits only local fs/git work, which is what ensureWriteAccess
+  // confirms before letting a write land. See ensureMemoryAccess for
+  // ordering; the slow index stack is startIndexStack.
+  private async provisionCore(): Promise<string | undefined> {
     this.phase = 'provisioning'
     const registry = this.loadRegistry()
 
@@ -1424,6 +1491,17 @@ export class ObsidianMemService extends Service {
     // dispose during the pass still unwinds whatever lands later.
     this.registerTeardown()
 
+    return notice
+  }
+
+  // StartIndexStack is the slow half of the provisioning pass: milvus-lite
+  // readiness (a cold uvx spawn measured up to 400 s against the G13
+  // budget), the long-lived client, the collection drift remedy, and the
+  // indexer background start. It never rejects: every failure settles
+  // `'degraded'` exactly as the combined pass did before TASK-003 (status
+  // reports, search answers IndexOfflineError, writes keep landing), so a
+  // write-path caller that never awaits it cannot surface a crash.
+  private async startIndexStack(): Promise<void> {
     // 4. Milvus start with the G13 readiness budget, then G12: the
     //    long-lived client is created ONLY against a answered server.
     const launcher = this.launcherFactory({
@@ -1448,7 +1526,7 @@ export class ObsidianMemService extends Service {
       this.milvusError = describeError(error)
       this.phase = 'degraded'
       this.log.error(`memory index degraded: milvus start failed: ${this.milvusError}`)
-      return notice
+      return
     }
 
     try {
@@ -1475,11 +1553,10 @@ export class ObsidianMemService extends Service {
       this.milvusError = describeError(error)
       this.phase = 'degraded'
       this.log.error(`memory index degraded after readiness: ${this.milvusError}`)
-      return notice
+      return
     }
 
     this.phase = 'ready'
-    return notice
   }
 
   // Current vault registry (config + card + provisioned default), loaded
@@ -1736,7 +1813,10 @@ export class ObsidianMemService extends Service {
     if (this.phase === 'provisioning' && this.access !== null) {
       // Wait out the in-flight pass, failure included: the phase settles,
       // and a config-only apply stays correct when it never reaches ready.
-      await this.access.promise.catch(() => undefined)
+      // The stack promise carries the whole pass (core chained in) and
+      // never rejects, so the step-5 pair is never mid-flight under a
+      // swapped config.
+      await this.access.stack
     }
 
     const budgetsChanged = changed.some((key) => key.startsWith('budgets.'))

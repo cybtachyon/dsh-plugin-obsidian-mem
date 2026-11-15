@@ -76,6 +76,12 @@ export type MemoryToolScope = Context & {
 export interface MemoryService {
     /** Idempotent lazy provisioning; the trigger call returns the notice. */
     ensureMemoryAccess(): Promise<string | undefined>;
+    /**
+     * Write-path gate (TASK-003): awaits only the fast core provisioning and
+     * boots the Milvus/indexer stack in the background; the trigger call
+     * returns the notice.
+     */
+    ensureWriteAccess(): Promise<string | undefined>;
     listVaults(): VaultEntry[];
     read(absPath: string, options?: {
         offset?: number;

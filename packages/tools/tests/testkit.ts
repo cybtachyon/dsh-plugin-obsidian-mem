@@ -106,6 +106,10 @@ export function createFakeService(options: FakeServiceOptions): FakeMemoryServic
       fake.ensureCalls += 1
       return fake.ensureCalls === 1 ? options.notice : undefined
     },
+    async ensureWriteAccess() {
+      fake.ensureCalls += 1
+      return fake.ensureCalls === 1 ? options.notice : undefined
+    },
     listVaults() {
       return options.vaults.map((entry) => ({ ...entry }))
     },

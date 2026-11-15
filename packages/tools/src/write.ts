@@ -192,7 +192,11 @@ export async function executeWrite(service: MemoryService, args: unknown): Promi
   const contents = requiredString(raw, 'contents')
   const archive = optionalBoolean(raw, 'archive')
 
-  const notice = await service.ensureMemoryAccess()
+  // The cold split (TASK-003): the write gate awaits only core
+  // provisioning, so the first write of a process never waits the index
+  // stack; applyWrite gates the same way, so neither call re-introduces
+  // the full-readiness await.
+  const notice = await service.ensureWriteAccess()
 
   const target = expandHomePath(path, homedir())
 

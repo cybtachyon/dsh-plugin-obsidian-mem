@@ -65,6 +65,8 @@ function validValue(result: ObsidianMemConfigValidation): ResolvedObsidianMemCon
  * stats and fill the read registry; applyWrite merges un-modelled
  * frontmatter back before serializing; a failed milvus start degrades
  * (status reports, search throws IndexOfflineError) and never crashes;
+ * the TASK-003 cold split gates applyWrite on core provisioning alone while
+ * search and ensureMemoryAccess keep awaiting the settled index stack;
  * teardown drains the write follow-ups bounded by
  * {@link TEARDOWN_FLUSH_TIMEOUT_MS}, then stops the indexer, kills the
  * child, and closes the client.
@@ -1167,6 +1169,141 @@ describe('write follow-up chains', () => {
     expect(commitMessages(git)).toEqual([
       expect.stringMatching(/^obsidian-mem: memory_write stuck\.md /),
     ])
+  })
+})
+
+// TASK-003 (PLAN-async-writes): the provisioning pass splits into the fast
+// core half (writes gate here) and the index stack chained behind it
+// (read-facing flows keep awaiting it). The launcher's start seam is
+// parked per test so the core-landed, stack-pending window is observable.
+describe('cold write access split', () => {
+  const START_RESULT: MilvusStartResult = {
+    address: '127.0.0.1:19530', version: 'milvus_lite-3.2.2', spawned: true,
+  }
+
+  /** ParkedStart parks launcher.start() and hands back its release switch. */
+  function parkedStart(launcher: StubLauncher): {
+    release(value: MilvusStartResult): void
+    fail(error: Error): void
+  } {
+    let settle!: { resolve(value: MilvusStartResult): void, reject(error: Error): void }
+    launcher.start.mockReturnValue(
+      new Promise<MilvusStartResult>((resolve, reject) => {
+        settle = { resolve, reject }
+      }),
+    )
+    return {
+      release(value) { settle.resolve(value) },
+      fail(error) { settle.reject(error) },
+    }
+  }
+
+  it('applyWrite resolves while launcher.start() never resolves, file landed', async () => {
+    const h = harness()
+    h.launcher.start.mockReturnValue(new Promise<MilvusStartResult>(() => {}))
+
+    const result = await h.service.applyWrite(join(DEFAULT_VAULT, 'cold.md'), testMeta(), 'body\n')
+
+    expect(result.created).toBe(true)
+    expect(h.fs.has(join(DEFAULT_VAULT, 'cold.md'))).toBe(true)
+    // Core provisioning landed (registry + dirs + stack kicked); the write
+    // did not await the parked stack.
+    expect(h.service.listVaults().map((v) => v.path)).toContain(DEFAULT_VAULT)
+    expect(h.launcher.start).toHaveBeenCalledTimes(1)
+    expect(h.service.status().state).toBe('provisioning')
+    // Chain 1 skipped: the indexer is still null behind the parked stack;
+    // the stack's own full-scan converges the path (chain comment).
+    expect(h.indexer.indexFile).not.toHaveBeenCalled()
+
+    // A parked stack cannot wedge teardown either.
+    await h.service.flushWriteFollowUps()
+    await h.service.stop()
+    expect(h.launcher.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('search behind a parked launcher answers only after readiness lands', async () => {
+    const h = harness()
+    const parked = parkedStart(h.launcher)
+    let searchSettled = false
+    const searching = h.service.search({ query: 'anything' }).then(
+      (results) => {
+        searchSettled = true
+        return results
+      },
+      (error: unknown) => {
+        searchSettled = true
+        throw error
+      },
+    )
+
+    await new Promise((resolve) => { setTimeout(resolve, 20) })
+    // Still awaiting the full pass: readiness, not just core.
+    expect(searchSettled).toBe(false)
+
+    parked.release(START_RESULT)
+    const results = await searching
+    expect(searchSettled).toBe(true)
+    expect(results).toHaveLength(1)
+    expect(h.client.calls).toContain('search')
+    expect(h.service.status().state).toBe('ready')
+  })
+
+  it('search behind a parked launcher rejects only once the stack degrades', async () => {
+    const h = harness()
+    const parked = parkedStart(h.launcher)
+    let searchSettled = false
+    const searching = h.service.search({ query: 'anything' }).catch((error: unknown) => {
+      searchSettled = true
+      throw error
+    })
+
+    await new Promise((resolve) => { setTimeout(resolve, 20) })
+    expect(searchSettled).toBe(false)
+
+    parked.fail(new Error('uvx missing and install failed'))
+    await expect(searching).rejects.toThrow(/memory index is offline/)
+    expect(h.service.status().state).toBe('degraded')
+    expect(h.service.status().milvus.error).toContain('uvx missing')
+  })
+
+  it('the one-time notice lands once, on the write-path trigger', async () => {
+    const h = harness()
+    const parked = parkedStart(h.launcher)
+    const writeNoticePromise = h.service.ensureWriteAccess()
+    const memoryNoticePromise = h.service.ensureMemoryAccess()
+    parked.release(START_RESULT)
+
+    expect(await writeNoticePromise).toContain('default memory vault')
+    expect(await memoryNoticePromise).toBeUndefined()
+    // The flight settled ready: neither entry re-announces.
+    expect(await h.service.ensureWriteAccess()).toBeUndefined()
+    expect(await h.service.ensureMemoryAccess()).toBeUndefined()
+  })
+
+  it('status reports provisioning between core completion and stack completion', async () => {
+    const h = harness()
+    const parked = parkedStart(h.launcher)
+    await h.service.ensureWriteAccess()
+
+    // Core landed (vault registry, dirs); the stack is parked mid-boot:
+    // the honest in-between the card shows.
+    expect(h.service.listVaults().map((v) => v.path)).toContain(DEFAULT_VAULT)
+    expect(h.service.status().state).toBe('provisioning')
+    expect(h.service.status().milvus.version).toBeNull()
+
+    parked.release(START_RESULT)
+    await h.service.ensureMemoryAccess()
+    expect(h.service.status().state).toBe('ready')
+    expect(h.service.status().milvus.version).toBe('milvus_lite-3.2.2')
+  })
+
+  it('a hard core failure still rejects both entries and clears the flight', async () => {
+    const h = harness({ failFirstMkdirp: true })
+    await expect(h.service.ensureWriteAccess()).rejects.toThrow(/disk error mkdir/)
+    expect(h.service.status().state).toBe('inactive')
+    const notice = await h.service.ensureWriteAccess()
+    expect(notice).toContain('default memory vault')
+    await expect(h.service.ensureMemoryAccess()).resolves.toBeUndefined()
   })
 })
 

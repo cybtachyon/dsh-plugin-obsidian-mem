@@ -35,7 +35,7 @@ function writtenValue(overrides: Record<string, unknown> = {}): Record<string, u
     created: true,
     vault: VAULT_PATH,
     warnings: [],
-    write_through: 'attempted',
+    write_through: 'queued',
     ...overrides,
   }
 }

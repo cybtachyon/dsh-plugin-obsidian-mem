@@ -497,7 +497,7 @@ describe('written-source exclusion (TASK-003)', () => {
         created: true,
         vault: selfAuthored.vault,
         warnings: [],
-        write_through: 'attempted',
+        write_through: 'queued',
       }),
     )
     expect(h.registry.wasWrittenIn('session-1', sourceKeyFor(selfAuthored))).toBe(true)

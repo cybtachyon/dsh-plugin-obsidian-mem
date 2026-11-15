@@ -74,7 +74,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 ### Phase 2 — Model contract and docs
 
  - [x] [TASK-005-contract-text](docs/PLAN-async-writes-TASK-005-contract-text.md)
- - [ ] [TASK-006-fix-affected-tests](docs/PLAN-async-writes-TASK-006-fix-affected-tests.md)
+ - [x] [TASK-006-fix-affected-tests](docs/PLAN-async-writes-TASK-006-fix-affected-tests.md)
  - [ ] [TASK-007-refactor-phase2](docs/PLAN-async-writes-TASK-007-refactor-phase2.md)
 
 ### Phase 3 — Batch verification

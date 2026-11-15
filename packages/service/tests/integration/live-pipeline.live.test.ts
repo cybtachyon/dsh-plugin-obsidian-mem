@@ -14,7 +14,8 @@
  *   ObsidianMemService runs its genuine provisioning pass over real
  *   node:fs tmp dirs: ensureCollection, the real-embedder
  *   IndexerManager full run, hybrid search through the service seam,
- *   write-through via applyWrite, archived purge, dim-drift
+ *   applyWrite plus flushWriteFollowUps (the async settle), archived
+ *   purge, dim-drift
  *   {needsRebuild} answered against the live server, then
  *   count/drop/dispose with the child pid verified gone.
  *
@@ -491,7 +492,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     expect(domainHits[0]!.mode).toBe('shared')
   }, 180_000)
 
-  it('write-through: applyWrite makes fresh text searchable without a manual reindex', async () => {
+  it('async settle: applyWrite then flushWriteFollowUps makes fresh text searchable without a manual reindex', async () => {
     const notePath = join(vaultDir, 'petrichor-garden.md')
     const note = parseNote(readFileSync(notePath, 'utf8'))
     const updatedBody = `${note.body}\n## Reblooming\n\nThe greenhouse now runs a zephyrline misting loop.\n`
@@ -500,8 +501,11 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     expect(result.created).toBe(false)
     expect(result.relPath).toBe('petrichor-garden.md')
 
-    // Strong consistency + the write-through hook: the fresh token must
-    // answer without waiting on the watcher or the stat sweep.
+    // The index chain settles asynchronously after applyWrite returns;
+    // the flush drains it. Then strong consistency: the fresh token
+    // must answer without waiting on the watcher or the stat sweep.
+    await service!.flushWriteFollowUps()
+
     const hits = await service!.search({ query: 'zephyrline misting loop', topK: 5 })
     expect(relOf(hits[0]?.source_path ?? '')).toBe('petrichor-garden.md')
     expect(hits[0]!.source_path.startsWith(`${vaultDir}/`)).toBe(true)
@@ -553,7 +557,7 @@ describeLive('live pipeline: real e5 embedder + uvx milvus-lite through the serv
     await fresh.reindexAll()
 
     // The two archived notes stay out of the restored count; the
-    // write-through edit to the garden note is part of the baseline.
+    // async-settle edit to the garden note is part of the baseline.
     const expectedAfterArchive = expectedChunks
       + chunkCount('petrichor-garden.md', readFileSync(join(vaultDir, 'petrichor-garden.md'), 'utf8'))
       - chunkCount('petrichor-garden.md', ACTIVE_NOTES['petrichor-garden.md'])

@@ -191,7 +191,7 @@ describe('memory_write success paths', () => {
     expect(value.path).toBe(join(sharedRoot, 'deploys-friday-releases.md'))
     expect(value.created).toBe(true)
     expect(value.vault).toBe(sharedRoot)
-    expect(value.write_through).toBe('attempted')
+    expect(value.write_through).toBe('queued')
     expect(value.warnings).toEqual([])
     expect(value.notice).toBe(NOTICE)
     expect(matchesOutput(createWriteTool(service), value)).toEqual([])

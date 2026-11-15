@@ -82,6 +82,14 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 
  - [x] [TASK-008-batch-unit-test](docs/PLAN-async-writes-TASK-008-batch-unit-test.md)
  - [x] [TASK-009-live-bench](docs/PLAN-async-writes-TASK-009-live-bench.md)
+
+### Phase 3b — Live-bench defects (inserted from TASK-009 findings 1 and 3)
+
+ - [ ] [TASK-009b-missing-dir-target](docs/PLAN-async-writes-TASK-009b-missing-dir-target.md)
+ - [ ] [TASK-009c-sidecar-ignore-convergence](docs/PLAN-async-writes-TASK-009c-sidecar-ignore-convergence.md)
+
+### Phase 3c — Whole-repo verification
+
  - [ ] [TASK-010-verify-suite](docs/PLAN-async-writes-TASK-010-verify-suite.md)
 
 ## Task dependencies
@@ -92,8 +100,11 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 - TASK-005 → TASK-006 → TASK-007 (tests follow the contract; refactor pass).
 - TASK-007 → TASK-007b (inserted from TASK-007 finding A: core doc wording
   for the any-depth reserved-file rule).
-- TASK-007b → TASK-008 → TASK-009 → TASK-010 (batch proof, then real-system
-  bench, then the whole-repo verification gate).
+- TASK-007b → TASK-008 → TASK-009 (batch proof, then real-system bench).
+- TASK-009 → TASK-009b, TASK-009c (inserted from TASK-009 findings 1 and 3;
+  independent of each other: tools tier vs core tier).
+- TASK-009b, TASK-009c → TASK-010 (the whole-repo verification gate runs
+  after every inserted fix).
 
 ## Questionnaire answers
 

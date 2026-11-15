@@ -76,6 +76,7 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
  - [x] [TASK-005-contract-text](docs/PLAN-async-writes-TASK-005-contract-text.md)
  - [x] [TASK-006-fix-affected-tests](docs/PLAN-async-writes-TASK-006-fix-affected-tests.md)
  - [x] [TASK-007-refactor-phase2](docs/PLAN-async-writes-TASK-007-refactor-phase2.md)
+ - [x] [TASK-007b-reserved-doc-wording](docs/PLAN-async-writes-TASK-007b-reserved-doc-wording.md)
 
 ### Phase 3 — Batch verification
 
@@ -89,7 +90,9 @@ Repo-wide gates (run from the repo root; details in AGENTS.md):
 - TASK-001..003 → TASK-004 (refactor pass over those three commits).
 - TASK-004 → TASK-005 (contract wording settles after the core shape is final).
 - TASK-005 → TASK-006 → TASK-007 (tests follow the contract; refactor pass).
-- TASK-007 → TASK-008 → TASK-009 → TASK-010 (batch proof, then real-system
+- TASK-007 → TASK-007b (inserted from TASK-007 finding A: core doc wording
+  for the any-depth reserved-file rule).
+- TASK-007b → TASK-008 → TASK-009 → TASK-010 (batch proof, then real-system
   bench, then the whole-repo verification gate).
 
 ## Questionnaire answers

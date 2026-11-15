@@ -49,12 +49,15 @@ export declare const VAULT_METADATA_DIR = "metadata";
  * seam.
  */
 export declare const PLUGIN_METADATA_REL = ".obsidian-mem/metadata";
-/** Vault-root file listing the intent markers; never indexed. */
+/**
+ * INTENTS_FILE is the seeded file listing the intent markers, homed at the
+ * vault root. Its name stays reserved from indexing at any depth.
+ */
 export declare const INTENTS_FILE = ".INTENTS.md";
 /**
  * DREAMS_FILE is the dream diary memory_dream appends, kept at
- * `<vault>/.obsidian-mem/metadata/DREAMS.md`. Its name stays reserved at the
- * vault root so a stray root copy is never indexed.
+ * `<vault>/.obsidian-mem/metadata/DREAMS.md`. Its name stays reserved at any
+ * depth so a stray copy is never indexed.
  */
 export declare const DREAMS_FILE = "DREAMS.md";
 /** Suffix of archive-history notes moved out of oversized notes. */
@@ -65,12 +68,18 @@ export declare const ARCHIVE_HISTORY_SUFFIX = "_history.md";
  */
 export declare const GLOBAL_MEMORY_FILE_DEFAULT = "GLOBAL.md";
 /**
- * RESERVED_NON_INDEXED lists the vault-root files the indexer and the audit
- * note enumeration must skip. Archive-history notes join them by suffix;
- * isReservedNonIndexed covers both halves.
+ * RESERVED_NON_INDEXED lists the reserved protocol names excluded from the
+ * note tree at any depth: the note walker drops a file with one of these
+ * names wherever it appears in a vault. Archive-history notes join them by
+ * suffix; isReservedNonIndexed covers both halves. core's
+ * isReservedVaultFile is the single any-depth rule the write tiers ride.
  */
 export declare const RESERVED_NON_INDEXED: readonly [".INTENTS.md", "DREAMS.md"];
-/** Tests whether a vault-root file name is reserved from indexing. */
+/**
+ * Tests whether a file name is a reserved protocol name or an
+ * archive-history note. Callers match it against a file's final path part,
+ * so a reserved name is excluded from the note tree at any depth.
+ */
 export declare function isReservedNonIndexed(fileName: string): boolean;
 /** Builds the default shared-vault path `homedir/.dsh/obsidian-mem`. */
 export declare function defaultVaultPath(homedir: string): string;

@@ -67,6 +67,16 @@ save/audit reminder that used to fire at the end of every agent turn was
 removed; the internal memory-tool usage watch is all that stays at turn
 end.
 
+Dreaming runs in isolation. While a `memory_dream` run is in flight, the
+dream agent session and every session in its subagent lineage receive no
+memory recall injections, and the launching session receives none for
+the window of the run. The dream agent session carries no deployment
+system prompt and no session runtime context: its whole session context
+is the dreaming protocol in the editable `dream-prompt.md` (seeded once
+at `$HOME/.dsh/obsidian-mem-db/dream-prompt.md`) plus the work plan in
+the launch message. Other sessions are unaffected, and the launching
+session's recall resumes the moment the run closes.
+
 ## Why another agentic memory project?
 
 Out of the many, many out there (and I looked at as many as I could),

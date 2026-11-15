@@ -52,7 +52,12 @@
   - Vault registry, embedder (transformers.js, e5-small int8, `passage:` /
     `query:` prefixes, `vectorDim` knob), Milvus-Lite lifecycle (uv/uvx
     auto-spawn, localhost port), indexer manager, hybrid search, and the
-    audit/dream compaction engine.
+    audit/dream compaction engine. The dream orchestrator's `drive()`
+    hands `agents.create` a creation-time `dreamPromptIsolationSetup()`:
+    it registers an agent-scoped `complete: true` system-prompt section
+    with empty text and calls `suppressRuntimeContext()`, so the dream
+    session carries no deployment persona, tool guidance, or session
+    runtime context and its whole context is the launch text.
   - `VaultGitManager` (`vault-git.ts`): one `MemoryGit` per registered
     SHARED vault behind the live `git.enabled` gate and a serial queue
     per vault; it adopts shared vaults on `main` and commits once per
@@ -80,7 +85,19 @@
   Read-tool intercept, the Think-stream keyword intercept, the memory-tool
   watch (the plugin-ctx `tools/result` observer flagging per-turn
   `memory_*` usage; the old turn-end save/audit reminder steer is gone),
-  and the global per-session recall budget.
+  and the global per-session recall budget. The `agent/created` handler
+  claims dream lineage (the session id starts with the core
+  `DREAM_SESSION_PREFIX`, or its `parentSession` answers
+  `registry.isDreamLineage` through the registry's live-only flag) and a
+  lineaged session then skips the turn-start and Think installs.
+  `dreamLaunch.ts` claims the `memory_dream` launcher from the
+  successful `started` value shape on `tools/result`. The combined gate
+  `toolkit.isRecallSuppressed` (dream lineage, or launcher session while
+  the seam answers `dreamRunBusy()`) gates the turn-start claim before
+  the once-per-session slot, the Think scheduler above the scan, sleep,
+  and budget checks, and the Read intercept's early return; the service
+  seam answers `dreamRunBusy()` by reading the live orchestrator field
+  without constructing the engine.
 - **client** is the browser card source:
   - `packages/client` is the source private workspace package
   - ESBuild bundles to lazy-CJS artifact `dsh/client.js` (required since

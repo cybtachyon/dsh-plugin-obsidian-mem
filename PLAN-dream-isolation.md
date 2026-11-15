@@ -56,7 +56,7 @@ See the Questionnaire section; answers are persisted here after Step 4.
 ## Phase 3: Refactor and whole-repo verification
 
  - [x] [TASK-007-refactor-smell-pass](docs/PLAN-dream-isolation-TASK-007-refactor-smell-pass.md)
- - [ ] [TASK-008-whole-repo-verification](docs/PLAN-dream-isolation-TASK-008-whole-repo-verification.md)
+ - [x] [TASK-008-whole-repo-verification](docs/PLAN-dream-isolation-TASK-008-whole-repo-verification.md)
 
 # Task dependencies
 

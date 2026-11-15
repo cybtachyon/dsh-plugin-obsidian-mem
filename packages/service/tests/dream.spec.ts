@@ -417,7 +417,7 @@ describe('prompt: seed once, render tunables on every load', () => {
     expect(first).toContain('_history.md')
     // The seeded protocol names the sidecar diary location, not a vault-root
     // DREAMS.md (PLAN-vault-layout TASK-006).
-    expect(first).toContain('DREAMS.md in the first shared vault\'s .obsidian-mem/metadata/')
+    expect(first).toContain('`DREAMS.md` in the first shared vault\'s .obsidian-mem/metadata/')
     expect(first).not.toContain('at the first shared vault root')
     expect(first).not.toContain('{{')
     expect(fs.mutations).toEqual([`mkdirp ${DB}`, `writeFile ${DB}/dream-prompt.md`])
@@ -512,7 +512,7 @@ describe('run: single flight and the launch sequence', () => {
     expect(recorder.calls).toEqual(['create', 'followup', 'whenIdle', 'dispose'])
     const message = recorder.followups[0] as { content: Array<{ type: string; text: string }>; source: { kind: string } }
     expect(message.source).toEqual({ kind: 'user' })
-    expect(message.content[0]?.text).toContain('# Work plan for this run')
+    expect(message.content[0]?.text).toContain('# Work plan for Step 1 of this run')
     expect(message.content[0]?.text).toContain('dreaming protocol')
 
     // Relevancy: touched bumped to 1.0 (read after the previous stamp),
@@ -810,7 +810,7 @@ describe('run: launch text carries the git roots', () => {
       gitRoots: () => ['/vault/one', '/vault/two'],
     })).startRun().done
     const text = launchText(recorder.followups[0])
-    expect(text).toContain('# Work plan for this run')
+    expect(text).toContain('# Work plan for Step 1 of this run')
     expect(text.endsWith('Memory git roots (for the Pre-Sync step): /vault/one, /vault/two\n')).toBe(true)
   })
 

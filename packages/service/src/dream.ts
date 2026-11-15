@@ -87,10 +87,12 @@ Ground rules:
  - Never change the frontmatter fields read_count or last_read_at; the
    plugin scores relevancy deterministically after this run.
  - After each step, append a dated section "## <YYYY-MM-DD> Step <N>: <step
-   name>" to DREAMS.md in the first shared vault's ${PLUGIN_METADATA_REL}/
-   directory. This is the only file to use the regular read and edit tools on.
+   name>" to \`DREAMS.md\` in the first shared vault's ${PLUGIN_METADATA_REL}/
+   directory.
+   Use the \`read\` and \`edit\` tools ONLY for this file, as it is not a memory.
    The diary is a plain file log: never treat it as a memory note and
    never write a memory note into it.
+
 ## Step 0: Pre-Sync
 
 Synchronize the memory git repository before touching any memory:
@@ -109,7 +111,8 @@ Synchronize the memory git repository before touching any memory:
 ## Step 1: Post-Cognition
 
 Light sleep.
-Sort, rewrite, and tidy the store for the notes the work plan lists:
+Sort, rewrite, and tidy the store using this process for each file in the
+work plan below:
 
 1. Re-sort: move data to where it is most relevant. A memory
    may be coalesced from several files into one, or split apart for cleaner
@@ -170,6 +173,8 @@ Settle relevancy, surface stressors, and forget on purpose:
 
 Global memory injection budget: {{GLOBAL_MEMORY_TOKENS}} tokens.
 Near-duplicate cosine threshold: {{NEAR_DUPLICATE_THRESHOLD}}.
+
+Here is the work plan for Step 1:
 `
 
 // ---------------------------------------------------------------------------
@@ -877,7 +882,7 @@ export class DreamOrchestrator {
       const rootsLine = gitRoots.length === 0
         ? ''
         : `Memory git roots (for the Pre-Sync step): ${gitRoots.join(', ')}\n`
-      const launchText = `${plan.prompt}\n---\n\n# Work plan for this run\n\n${plan.plan}\n\nVaults, budgets, and cluster detail above are authoritative; verify each candidate with memory_read before acting.\n${rootsLine}`
+      const launchText = `${plan.prompt}\n---\n\n# Work plan for Step 1 of this run\n\n${plan.plan}\n\nVaults, budgets, and cluster detail above are authoritative; verify each candidate with memory_read before acting.\n${rootsLine}`
       const route = this.launchRoute(model)
       if (route === null) {
         // startRun's blockedReason already gates this; the host default

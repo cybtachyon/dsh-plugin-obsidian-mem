@@ -10,14 +10,16 @@
  * core validateMeta (errors are values, discipline nudges come back as
  * warnings); a new file's name is slugged from index_title with collision
  * suffixes, so the response reports the FINAL absolute path. The service's
- * applyWrite does the raw-merging atomic write plus write-through reindex.
+ * applyWrite does the raw-merging atomic write and confirms the note on
+ * disk; the reindex and the git commit settle asynchronously afterwards.
  * @module dsh-plugin-obsidian-mem/tools/write
  */
 import type { JsonSchemaNode, MemoryService, ToolDefinition } from './host.js';
-/** Fast file write plus one single-file reindex. */
+/** Bounds the guard ladder plus the atomic write; the process's first
+ * call also bounds core provisioning. Index and git settle after return. */
 export declare const WRITE_TIMEOUT_MS = 10000;
 /** The description the model sees for `memory_write`. */
-export declare const WRITE_DESCRIPTION = "Create or update one memory note in a shared vault (the vault root is the note root). Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and queued for immediate indexing; the result reports the final absolute path and any discipline warnings.";
+export declare const WRITE_DESCRIPTION = "Create or update one memory note in a shared vault (the vault root is the note root). Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and confirmed on disk; indexing and the git commit settle asynchronously afterwards. The result reports the final absolute path and any discipline warnings.";
 /** Parameter schema; every pairing and naming rule lives on its parameter. */
 export declare const WRITE_PARAMETERS: JsonSchemaNode;
 /** Closed output union keyed on kind. */
@@ -29,7 +31,7 @@ export type WriteValue = {
     created: boolean;
     vault: string;
     warnings: string[];
-    write_through: 'attempted';
+    write_through: 'queued';
     notice?: string;
 } | {
     kind: 'read_required';

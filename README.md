@@ -152,12 +152,12 @@ is the built-in default for a path knob.
 While `git.enabled` is on, every shared vault is a git repository
 (`read-only` vaults are never versioned). The plugin adopts each shared
 vault on the `main` branch with one initial commit recording whatever
-notes the vault already holds. From then on every successful
-`memory_write` commits the vault it touched (one commit per write,
-serialized per vault), and a finished `memory_dream` run closes with one
-commit pass over every shared vault. A git failure logs and never
-unwinds a write: the memory files are the source of truth and the
-history is only the book.
+notes the vault already holds. From then on a successful `memory_write`
+schedules one commit of the vault it touched after the note is confirmed
+(one commit per write, settling in the background, serialized per vault),
+and a finished `memory_dream` run closes with one commit pass over every
+shared vault. A git failure logs and never unwinds a write: the memory
+files are the source of truth and the history is only the book.
 
 A managed `.gitignore` at the vault root keeps the plugin's
 `.obsidian-mem/` sidecar (indexer state, the `DREAMS.md` diary) out of
@@ -209,7 +209,7 @@ architecture and the verification commands.
    and can take several minutes).
  - Live loads the real `Xenova/multilingual-e5-small` model from the local
    cache and drives the full provisioning → indexing → hybrid search →
-   write-through → purge pipeline.
+   confirm-then-settle write → purge pipeline.
  - Per-test timeouts are a generous 180 s to absorb cold caches.
  - Everything it writes lands in temporary directories; only the model cache is
    reused.

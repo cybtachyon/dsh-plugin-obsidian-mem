@@ -10,7 +10,8 @@
  * core validateMeta (errors are values, discipline nudges come back as
  * warnings); a new file's name is slugged from index_title with collision
  * suffixes, so the response reports the FINAL absolute path. The service's
- * applyWrite does the raw-merging atomic write plus write-through reindex.
+ * applyWrite does the raw-merging atomic write and confirms the note on
+ * disk; the reindex and the git commit settle asynchronously afterwards.
  * @module dsh-plugin-obsidian-mem/tools/write
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -20,10 +21,11 @@ import { classifyPath, contentHash, ensureWhyAndHow, formatLocalDate, isPluginIn
 import { expandHomePath } from '../../service/lib/config.js';
 import { asRecord, optionalBoolean, requiredString } from './host.js';
 import { defineMemoryTool, makePresentCall, noticeHeader, withNotice } from './toolkit.js';
-/** Fast file write plus one single-file reindex. */
+/** Bounds the guard ladder plus the atomic write; the process's first
+ * call also bounds core provisioning. Index and git settle after return. */
 export const WRITE_TIMEOUT_MS = 10_000;
 /** The description the model sees for `memory_write`. */
-export const WRITE_DESCRIPTION = 'Create or update one memory note in a shared vault (the vault root is the note root). Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and queued for immediate indexing; the result reports the final absolute path and any discipline warnings.';
+export const WRITE_DESCRIPTION = 'Create or update one memory note in a shared vault (the vault root is the note root). Updating an existing file requires a prior memory_read of that exact path in this session; a path not on disk yet is written without one, and its filename is derived from index_title (the path you pass supplies the directory). Notes in read-only vaults are refused. The note is written atomically and confirmed on disk; indexing and the git commit settle asynchronously afterwards. The result reports the final absolute path and any discipline warnings.';
 /** Parameter schema; every pairing and naming rule lives on its parameter. */
 export const WRITE_PARAMETERS = {
     type: 'object',
@@ -69,7 +71,7 @@ export const WRITE_OUTPUT = {
                 created: { type: 'boolean' },
                 vault: { type: 'string' },
                 warnings: { type: 'array', items: { type: 'string' } },
-                write_through: { type: 'string', const: 'attempted' },
+                write_through: { type: 'string', const: 'queued' },
                 notice: { type: 'string' },
             },
         },
@@ -262,7 +264,7 @@ export async function executeWrite(service, args) {
         created: result.created,
         vault: result.vaultPath,
         warnings,
-        write_through: 'attempted',
+        write_through: 'queued',
     }, notice);
 }
 // Existing .md names beside the target, for titleToFilename's collision
@@ -278,7 +280,7 @@ export function renderWrite(value) {
     const notice = noticeHeader(value.notice);
     if (value.kind === 'written') {
         const lines = [
-            `${value.created ? 'Created' : 'Updated'} memory note: ${value.path} (vault ${value.vault}; write-through indexing ran for the note).`,
+            `${value.created ? 'Created' : 'Updated'} memory note: ${value.path} (vault ${value.vault}; note confirmed on disk; indexing and git commit are settling in the background).`,
         ];
         if (value.warnings.length > 0) {
             lines.push('Warnings:', ...value.warnings.map((warning) => `- ${warning}`));

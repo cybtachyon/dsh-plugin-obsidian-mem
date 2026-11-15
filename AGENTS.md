@@ -62,7 +62,8 @@
     SHARED vault behind the live `git.enabled` gate and a serial queue
     per vault; it adopts shared vaults on `main` and commits once per
     successful `applyWrite` (the `memory_write` tool and card-write
-    path) and once when a dream run finishes. Every git failure
+    path), riding the write's async follow-up chain after the note is
+    confirmed, and once when a dream run finishes. Every git failure
     warn-don't-dies to a settled `null` and never unwinds a memory
     write. The audit reads churn through the same manager.
   - Card settings overrides: `CARD_SETTINGS_KEYS` (`config.ts`) whitelists
